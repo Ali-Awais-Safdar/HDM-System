@@ -1,0 +1,2 @@
+-- This initial migration will be replaced by 'drizzle-kit generate' but acts as a placeholder if needed.
+-- Prefer generating from schema.ts to avoid drift.
