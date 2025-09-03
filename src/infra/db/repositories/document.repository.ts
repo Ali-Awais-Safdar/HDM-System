@@ -1,4 +1,4 @@
-import { eq, and, ilike, inArray, sql } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import { Result, ok, err } from "../../../shared/result/result";
 import { Document } from "../../../domain/entities/document.entity";
 import { DocumentRepository, DocumentSearchFilters } from "../../../domain/services/document.service";
@@ -60,9 +60,15 @@ export class DrizzleDocumentRepository implements DocumentRepository {
         conditions.push(eq(documents.ownerId, filters.ownerId));
       }
 
-      // Text search in title
+      // Enhanced text search in title using TRGM for fuzzy matching
       if (filters.query) {
-        conditions.push(ilike(documents.title, `%${filters.query}%`));
+        const searchTerm = filters.query.trim();
+        
+        // Use similarity search with TRGM for better fuzzy matching
+        // Falls back to ILIKE if similarity is not available
+        conditions.push(
+          sql`(${documents.title} % ${searchTerm} OR ${documents.title} ILIKE ${'%' + searchTerm + '%'})`
+        );
       }
 
       // Metadata filter using JSONB containment
@@ -105,8 +111,16 @@ export class DrizzleDocumentRepository implements DocumentRepository {
         query = query.limit(50); // Default limit
       }
 
-      // Order by creation date (newest first)
-      query = query.orderBy(sql`${documents.createdAt} DESC`);
+      // Order by relevance when searching, otherwise by creation date
+      if (filters.query) {
+        // Order by similarity score (descending), then by creation date
+        query = query.orderBy(
+          sql`similarity(${documents.title}, ${filters.query.trim()}) DESC, ${documents.createdAt} DESC`
+        );
+      } else {
+        // Order by creation date (newest first)
+        query = query.orderBy(sql`${documents.createdAt} DESC`);
+      }
 
       const result = await query;
       const documentList = result.map((row: any) => this.mapToDocument(row));

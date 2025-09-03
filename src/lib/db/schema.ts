@@ -46,6 +46,8 @@ export const documents = pgTable("documents", {
   index("documents_owner_idx").on(table.ownerId),
   index("documents_title_idx").on(table.title),
   index("documents_created_at_idx").on(table.createdAt),
+  // Standard B-tree index for metadata (GIN will be added via raw SQL)
+  index("documents_metadata_idx").on(table.metadata),
   foreignKey({
     columns: [table.ownerId],
     foreignColumns: [users.id],

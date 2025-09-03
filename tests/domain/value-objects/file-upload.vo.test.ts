@@ -17,8 +17,13 @@ describe("FileUpload VO", () => {
   it("sanitizes dangerous filenames", () => {
     const data = Buffer.from("x");
     const vo = FileUpload.create('  ev<i>l :name .png  ', "image/png", 1, data);
-    expect(vo.originalName).not.toMatch(/[<>:"/\\|?*\x00-\x1f]/);
-    // Spaces collapsed to underscores, dangerous chars removed
+    expect(vo.originalName).not.toMatch(/[<>:"/\\|?*]/);
+    // Test for control characters without tripping ESLint
+    const hasControl = [...vo.originalName].some((ch) => {
+      const code = ch.charCodeAt(0);
+      return (code >= 0x00 && code <= 0x1F) || code === 0x7F;
+    });
+    expect(hasControl).toBe(false);
     expect(vo.sanitizedName).toBe("ev_i_l_name_.png");
     expect(vo.fileExtension).toBe(".png");
     expect(vo.isImage).toBe(true);
