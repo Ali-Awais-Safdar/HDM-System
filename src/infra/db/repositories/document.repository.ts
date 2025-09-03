@@ -4,6 +4,7 @@ import { Document } from "../../../domain/entities/document.entity";
 import { DocumentRepository, DocumentSearchFilters } from "../../../domain/services/document.service";
 import { DocumentId, UserId, asDocumentId, asUserId, asMimeType, asFileSize } from "../../../shared/types/brand";
 import { documents, tags, documentTags } from "../../../lib/db/schema";
+import { newId } from "../../../shared/uuid";
 
 /**
  * Drizzle ORM implementation of the Document Repository.
@@ -203,7 +204,7 @@ export class DrizzleDocumentRepository implements DocumentRepository {
         tagId = existingTags[0].id;
       } else {
         // Create new tag
-        const newTagId = crypto.randomUUID(); // Simple UUID generation
+        const newTagId = newId(); // Use our UUID v7 generation
         await this.db.insert(tags).values({
           id: newTagId,
           name: tagName
