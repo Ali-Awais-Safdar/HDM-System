@@ -7,6 +7,7 @@ import { healthRouter } from "../http/routes/health";
 import { authRouter } from "../web/http/routes/auth.routes";
 import { documentRouter } from "../web/http/routes/document.routes";
 import { searchRouter } from "../web/http/routes/search.routes";
+import { publicDownloadRouter } from "../web/http/routes/public-download.routes";
 import { JwtServiceImpl } from "../infra/auth/jwt.service";
 import { env } from "../env/env";
 
@@ -37,6 +38,7 @@ export function buildApp() {
   app.use("/auth", authRouter);
   app.use("/documents", documentRouter);
   app.use("/search", searchRouter);
+  app.use("/downloads", publicDownloadRouter); // Public download endpoint
 
   // Error handler last
   app.use(errorHandler);

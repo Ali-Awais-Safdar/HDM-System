@@ -9,10 +9,13 @@ import { GetDocumentUseCase } from "../../../application/use-cases/get-document.
 import { ShareDocumentUseCase } from "../../../application/use-cases/share-document.use-case";
 import { RevokeDocumentAccessUseCase } from "../../../application/use-cases/revoke-document-access.use-case";
 import { GetDocumentPermissionsUseCase } from "../../../application/use-cases/get-document-permissions.use-case";
+import { GenerateDownloadLinkUseCase } from "../../../application/use-cases/generate-download-link.use-case";
+import { DownloadController } from "../controllers/download.controller";
 import { DocumentService } from "../../../domain/services/document.service";
 import { LocalFileStorage } from "../../../infra/storage/local-file-storage";
 import { DrizzleDocumentRepository } from "../../../infra/db/repositories/document.repository";
 import { DrizzlePermissionRepository } from "../../../infra/db/repositories/permission.repository";
+import { DrizzleDownloadTokenRepository } from "../../../infra/db/repositories/download-token.repository";
 import { RequireAuth } from "../../../http/middleware/jwt-mw";
 import { requireAnyRole } from "../../../http/middleware/rbac-mw";
 import { db } from "../../../lib/db/connection";
@@ -59,6 +62,7 @@ export function createDocumentRoutes(): Router {
   const fileStorage = new LocalFileStorage('./storage');
   const documentRepository = new DrizzleDocumentRepository(db);
   const permissionRepository = new DrizzlePermissionRepository(db);
+  const downloadTokenRepository = new DrizzleDownloadTokenRepository(db);
 
   // Domain services
   const documentService = new DocumentService(documentRepository, fileStorage, permissionRepository);
@@ -73,6 +77,9 @@ export function createDocumentRoutes(): Router {
   const shareDocumentUseCase = new ShareDocumentUseCase(documentRepository, permissionRepository);
   const revokeDocumentAccessUseCase = new RevokeDocumentAccessUseCase(documentRepository, permissionRepository);
   const getDocumentPermissionsUseCase = new GetDocumentPermissionsUseCase(documentRepository, permissionRepository);
+  
+  // Download use cases
+  const generateDownloadLinkUseCase = new GenerateDownloadLinkUseCase(documentRepository, permissionRepository, downloadTokenRepository);
 
   // Controllers
   const documentController = new DocumentController(
@@ -86,6 +93,11 @@ export function createDocumentRoutes(): Router {
     shareDocumentUseCase,
     revokeDocumentAccessUseCase,
     getDocumentPermissionsUseCase
+  );
+
+  const downloadController = new DownloadController(
+    generateDownloadLinkUseCase,
+    null as any // We don't need downloadDocumentUseCase here since it's in public routes
   );
 
   // Middleware chain for authentication
@@ -142,6 +154,14 @@ export function createDocumentRoutes(): Router {
     requireAuth.handle.bind(requireAuth),
     requireUserRole.handle.bind(requireUserRole),
     permissionController.getDocumentPermissions.bind(permissionController)
+  );
+
+  // Download routes
+  router.post(
+    "/:id/download-link",
+    requireAuth.handle.bind(requireAuth),
+    requireUserRole.handle.bind(requireUserRole),
+    downloadController.generateDownloadLink.bind(downloadController)
   );
 
   // Error handling middleware for multer
