@@ -5,6 +5,7 @@ import { RequestLogger } from "../http/middleware/logger-mw";
 import { ParseAuthHeader, VerifyJWT, AttachUser } from "../http/middleware/jwt-mw";
 import { healthRouter } from "../http/routes/health";
 import { authRouter } from "../web/http/routes/auth.routes";
+import { documentRouter } from "../web/http/routes/document.routes";
 import { JwtServiceImpl } from "../infra/auth/jwt.service";
 import { env } from "../env/env";
 
@@ -33,6 +34,7 @@ export function buildApp() {
   // Routes
   app.use("/", healthRouter);
   app.use("/auth", authRouter);
+  app.use("/documents", documentRouter);
 
   // Error handler last
   app.use(errorHandler);

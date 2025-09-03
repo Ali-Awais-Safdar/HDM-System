@@ -4,7 +4,7 @@ import { AuthService } from "../../../src/domain/services/auth.service";
 import { JwtService } from "../../../src/application/ports/jwt.service";
 import { User } from "../../../src/domain/entities/user.entity";
 import { ok, err } from "../../../src/shared/result/result";
-import { asUserId, asEmailAddress, newUserId } from "../../../src/shared/types/brand";
+import { asEmailAddress, newUserId } from "../../../src/shared/types/brand";
 
 describe("SignupUseCase", () => {
   let signupUseCase: SignupUseCase;
@@ -117,7 +117,7 @@ describe("SignupUseCase", () => {
       vi.mocked(mockJwtService.generateToken).mockResolvedValue(ok(mockToken));
 
       // Act
-      const result = await signupUseCase.execute(request);
+      await signupUseCase.execute(request);
 
       // Assert
       expect(mockAuthService.signup).toHaveBeenCalledWith(
@@ -201,10 +201,8 @@ describe("SignupUseCase", () => {
         password: "weak"
       };
 
-      // Act
+      // Act & Assert
       const result = await signupUseCase.execute(request);
-
-      // Assert
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain("Password must be at least 8 characters long");
