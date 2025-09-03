@@ -1,6 +1,13 @@
 import { Router } from "express";
-export const healthRouter = Router();
+import { HealthCheckUseCase } from "../../application/use-cases/health-check.use-case";
 
-healthRouter.get("/health", (_req, res) => {
-  res.json({ ok: true, service: "dms-headless", version: "0.1.0" });
+export const healthRouter = Router();
+const healthCheckUseCase = new HealthCheckUseCase();
+
+healthRouter.get("/health", async (_req, res) => {
+  const result = await healthCheckUseCase.execute();
+  
+  // Since health check never fails, we can safely unwrap
+  const healthStatus = result.value;
+  res.json(healthStatus);
 });

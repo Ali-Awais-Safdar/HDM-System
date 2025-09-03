@@ -8,7 +8,7 @@ import { Request, Response, NextFunction } from "express";
 export abstract class Handler {
   private next?: Handler;
   setNext(next: Handler) { this.next = next; return next; }
-  handle(req: Request, res: Response, nextFn: NextFunction) {
+  handle(req: Request, res: Response, nextFn: NextFunction): void {
     if (this.next) return this.next.handle(req, res, nextFn);
     return nextFn();
   }
