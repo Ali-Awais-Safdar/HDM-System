@@ -1,13 +1,18 @@
 import { Router } from "express";
 import multer from "multer";
 import { DocumentController } from "../controllers/document.controller";
+import { PermissionController } from "../controllers/permission.controller";
 import { CreateDocumentUseCase } from "../../../application/use-cases/create-document.use-case";
 import { UpdateDocumentMetadataUseCase } from "../../../application/use-cases/update-document-metadata.use-case";
 import { DeleteDocumentUseCase } from "../../../application/use-cases/delete-document.use-case";
 import { GetDocumentUseCase } from "../../../application/use-cases/get-document.use-case";
+import { ShareDocumentUseCase } from "../../../application/use-cases/share-document.use-case";
+import { RevokeDocumentAccessUseCase } from "../../../application/use-cases/revoke-document-access.use-case";
+import { GetDocumentPermissionsUseCase } from "../../../application/use-cases/get-document-permissions.use-case";
 import { DocumentService } from "../../../domain/services/document.service";
 import { LocalFileStorage } from "../../../infra/storage/local-file-storage";
 import { DrizzleDocumentRepository } from "../../../infra/db/repositories/document.repository";
+import { DrizzlePermissionRepository } from "../../../infra/db/repositories/permission.repository";
 import { RequireAuth } from "../../../http/middleware/jwt-mw";
 import { requireAnyRole } from "../../../http/middleware/rbac-mw";
 import { db } from "../../../lib/db/connection";
@@ -53,22 +58,34 @@ export function createDocumentRoutes(): Router {
   // Infrastructure dependencies
   const fileStorage = new LocalFileStorage('./storage');
   const documentRepository = new DrizzleDocumentRepository(db);
+  const permissionRepository = new DrizzlePermissionRepository(db);
 
   // Domain services
-  const documentService = new DocumentService(documentRepository, fileStorage);
+  const documentService = new DocumentService(documentRepository, fileStorage, permissionRepository);
 
   // Application use cases
   const createDocumentUseCase = new CreateDocumentUseCase(documentService);
   const updateDocumentMetadataUseCase = new UpdateDocumentMetadataUseCase(documentService);
   const deleteDocumentUseCase = new DeleteDocumentUseCase(documentService);
   const getDocumentUseCase = new GetDocumentUseCase(documentService);
+  
+  // Permission use cases
+  const shareDocumentUseCase = new ShareDocumentUseCase(documentRepository, permissionRepository);
+  const revokeDocumentAccessUseCase = new RevokeDocumentAccessUseCase(documentRepository, permissionRepository);
+  const getDocumentPermissionsUseCase = new GetDocumentPermissionsUseCase(documentRepository, permissionRepository);
 
-  // Controller
+  // Controllers
   const documentController = new DocumentController(
     createDocumentUseCase,
     updateDocumentMetadataUseCase,
     deleteDocumentUseCase,
     getDocumentUseCase
+  );
+
+  const permissionController = new PermissionController(
+    shareDocumentUseCase,
+    revokeDocumentAccessUseCase,
+    getDocumentPermissionsUseCase
   );
 
   // Middleware chain for authentication
@@ -103,6 +120,28 @@ export function createDocumentRoutes(): Router {
     requireAuth.handle.bind(requireAuth),
     requireUserRole.handle.bind(requireUserRole),
     documentController.deleteDocument.bind(documentController)
+  );
+
+  // Permission routes
+  router.post(
+    "/:id/share",
+    requireAuth.handle.bind(requireAuth),
+    requireUserRole.handle.bind(requireUserRole),
+    permissionController.shareDocument.bind(permissionController)
+  );
+
+  router.delete(
+    "/:id/share",
+    requireAuth.handle.bind(requireAuth),
+    requireUserRole.handle.bind(requireUserRole),
+    permissionController.revokeDocumentAccess.bind(permissionController)
+  );
+
+  router.get(
+    "/:id/permissions",
+    requireAuth.handle.bind(requireAuth),
+    requireUserRole.handle.bind(requireUserRole),
+    permissionController.getDocumentPermissions.bind(permissionController)
   );
 
   // Error handling middleware for multer

@@ -1,5 +1,7 @@
 import { Document } from "../entities/document.entity";
 import { DocumentPolicy, DocumentPermissionCheck } from "../policies/document.policy";
+import { DocumentAccessPolicy, DocumentAccessContext } from "../policies/document-access.policy";
+import { PermissionRepository } from "./permission.service";
 import { DocumentId, UserId, MimeType, FileSize, newDocumentId } from "../../shared/types/brand";
 import { UserRole } from "../entities/user.entity";
 import { Result, ok, err } from "../../shared/result/result";
@@ -11,7 +13,8 @@ import { Result, ok, err } from "../../shared/result/result";
 export class DocumentService {
   constructor(
     private readonly documentRepository: DocumentRepository,
-    private readonly fileStorage: FileStorage
+    private readonly fileStorage: FileStorage,
+    private readonly permissionRepository?: PermissionRepository
   ) {}
 
   async createDocument(
@@ -78,16 +81,17 @@ export class DocumentService {
 
     const document = documentResult.value;
 
-    // Check permissions
-    const permissionCheck: DocumentPermissionCheck = {
+    // Check permissions using new system
+    const canWrite = await this.checkDocumentAccess(
+      documentId,
+      document.ownerId,
       userId,
       userRole,
-      documentId,
-      ownerId: document.ownerId,
+      "write",
       directPermission
-    };
+    );
 
-    if (!DocumentPolicy.canWrite(permissionCheck)) {
+    if (!canWrite) {
       return err(new DocumentError("Insufficient permissions to update document"));
     }
 
@@ -121,16 +125,17 @@ export class DocumentService {
 
     const document = documentResult.value;
 
-    // Check permissions
-    const permissionCheck: DocumentPermissionCheck = {
+    // Check permissions using new system
+    const canDelete = await this.checkDocumentAccess(
+      documentId,
+      document.ownerId,
       userId,
       userRole,
-      documentId,
-      ownerId: document.ownerId,
+      "admin", // Delete requires admin level access
       directPermission
-    };
+    );
 
-    if (!DocumentPolicy.canDelete(permissionCheck)) {
+    if (!canDelete) {
       return err(new DocumentError("Insufficient permissions to delete document"));
     }
 
@@ -167,16 +172,17 @@ export class DocumentService {
 
     const document = documentResult.value;
 
-    // Check permissions
-    const permissionCheck: DocumentPermissionCheck = {
+    // Check permissions using new system
+    const canRead = await this.checkDocumentAccess(
+      documentId,
+      document.ownerId,
       userId,
       userRole,
-      documentId,
-      ownerId: document.ownerId,
+      "read",
       directPermission
-    };
+    );
 
-    if (!DocumentPolicy.canRead(permissionCheck)) {
+    if (!canRead) {
       return err(new DocumentError("Insufficient permissions to access document"));
     }
 
@@ -201,6 +207,66 @@ export class DocumentService {
     };
 
     return mimeTypeMap[mimeType] || '';
+  }
+
+  /**
+   * Helper method to check document access using the new permission system.
+   * Falls back to the old system if permission repository is not available.
+   */
+  private async checkDocumentAccess(
+    documentId: DocumentId,
+    documentOwnerId: UserId,
+    userId: UserId,
+    userRole: UserRole,
+    requiredLevel: "read" | "write" | "admin",
+    directPermission?: import("../policies/document.policy").Permission
+  ): Promise<boolean> {
+    // If permission repository is available, use the new system
+    if (this.permissionRepository) {
+      try {
+        const permissionsResult = await this.permissionRepository.findByDocumentAndUser(
+          documentId,
+          userId
+        );
+
+        const userPermissions = permissionsResult.ok && permissionsResult.value 
+          ? [permissionsResult.value] 
+          : [];
+
+        const context: DocumentAccessContext = {
+          userId,
+          userRole,
+          documentId,
+          documentOwnerId,
+          userPermissions,
+        };
+
+        const accessResult = DocumentAccessPolicy.canAccess(context, requiredLevel);
+        return accessResult.granted;
+      } catch {
+        // Fall back to old system on error
+      }
+    }
+
+    // Fallback to old permission system
+    const permissionCheck: DocumentPermissionCheck = {
+      userId,
+      userRole,
+      documentId,
+      ownerId: documentOwnerId,
+      directPermission
+    };
+
+    switch (requiredLevel) {
+      case "read":
+        return DocumentPolicy.canRead(permissionCheck);
+      case "write":
+        return DocumentPolicy.canWrite(permissionCheck);
+      case "admin":
+        return DocumentPolicy.canShare(permissionCheck); // Using canShare for admin level
+      default:
+        return false;
+    }
   }
 }
 
