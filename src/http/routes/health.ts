@@ -8,6 +8,10 @@ healthRouter.get("/health", async (_req, res) => {
   const result = await healthCheckUseCase.execute();
   
   // Since health check never fails, we can safely unwrap
-  const healthStatus = result.value;
-  res.json(healthStatus);
+  if (result.ok) {
+    res.json(result.value);
+  } else {
+    // This should never happen for health check, but handle gracefully
+    res.status(500).json({ error: "Health check failed" });
+  }
 });

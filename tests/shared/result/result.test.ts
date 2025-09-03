@@ -53,7 +53,7 @@ describe("Result", () => {
     it("should not map Err values", () => {
       const error = new Error("test");
       const result = err(error);
-      const mapped = map(result, x => x * 2);
+      const mapped = map(result, (x: number) => x * 2);
 
       expect(mapped.ok).toBe(false);
       if (!mapped.ok) {
@@ -76,7 +76,7 @@ describe("Result", () => {
     it("should not flatMap Err values", () => {
       const error = new Error("test");
       const result = err(error);
-      const flatMapped = flatMap(result, x => ok(x * 2));
+      const flatMapped = flatMap(result, (x: number) => ok(x * 2));
 
       expect(flatMapped.ok).toBe(false);
       if (!flatMapped.ok) {

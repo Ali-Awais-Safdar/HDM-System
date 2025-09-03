@@ -1,36 +1,90 @@
 import { Handler } from "./chain";
 import { Request, Response, NextFunction } from "express";
-import jwt from "jsonwebtoken";
-import { env } from "../../env/env";
-import type { Role } from "../../types/auth";
+import { JwtService } from "../../application/ports/jwt.service";
+import { asUserId } from "../../shared/types/brand";
 
-// Minimal shape we expect inside JWT
-interface JwtClaims {
-  sub: string;        // user id
-  role: Role;
-  email?: string;
-  iat?: number;
-  exp?: number;
+/**
+ * Chain of Responsibility handlers for authentication flow:
+ * ParseAuthHeader → VerifyJWT → AttachUser → RequireAuth/RBAC
+ */
+
+/**
+ * Step 1: Parse Authorization header and extract token
+ */
+export class ParseAuthHeader extends Handler {
+  override handle(req: Request, res: Response, next: NextFunction): void {
+    const auth = req.headers.authorization;
+    
+    if (auth?.startsWith("Bearer ")) {
+      const token = auth.slice("Bearer ".length);
+      (req as any).authToken = token;
+    }
+    
+    return super.handle(req, res, next);
+  }
 }
 
 /**
- * Parses JWT if present. Does not enforce auth; enforcement happens via RBAC guard.
+ * Step 2: Verify JWT token and extract payload
  */
-export class JwtParser extends Handler {
-  override handle(req: Request, res: Response, next: NextFunction) {
-    const auth = req.headers["authorization"];
-    if (auth?.startsWith("Bearer ")) {
-      const token = auth.slice("Bearer ".length);
-      try {
-        const payload = jwt.verify(token, env.JWT_SECRET);
-        if (typeof payload === "object" && payload && "sub" in payload && "role" in payload) {
-          const p = payload as JwtClaims;
-          req.user = { id: p.sub, role: p.role, email: p.email };
-        }
-      } catch {
-        // swallow parse error: enforcement is done by RBAC when needed
-      }
+export class VerifyJWT extends Handler {
+  constructor(private readonly jwtService: JwtService) {
+    super();
+  }
+
+  override handle(req: Request, res: Response, next: NextFunction): void {
+    const token = (req as any).authToken;
+    
+    if (token) {
+      this.jwtService.verifyToken(token)
+        .then(result => {
+          if (result.ok) {
+            (req as any).jwt = result.value;
+          }
+          return super.handle(req, res, next);
+        })
+        .catch(() => {
+          // Token verification failed, but continue (enforcement in RequireAuth)
+          return super.handle(req, res, next);
+        });
+    } else {
+      return super.handle(req, res, next);
     }
+  }
+}
+
+/**
+ * Step 3: Attach user information to request
+ */
+export class AttachUser extends Handler {
+  override handle(req: Request, res: Response, next: NextFunction): void {
+    const jwt = (req as any).jwt;
+    
+    if (jwt) {
+      req.user = {
+        id: asUserId(jwt.userId),
+        role: jwt.role,
+        email: jwt.email
+      };
+    }
+    
+    return super.handle(req, res, next);
+  }
+}
+
+/**
+ * Step 4: Require authentication (use this for protected routes)
+ */
+export class RequireAuth extends Handler {
+  override handle(req: Request, res: Response, next: NextFunction): void {
+    if (!req.user) {
+      res.status(401).json({ 
+        error: "Authentication required",
+        code: "UNAUTHORIZED" 
+      });
+      return;
+    }
+    
     return super.handle(req, res, next);
   }
 }

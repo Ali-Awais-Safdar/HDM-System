@@ -1,7 +1,8 @@
-export type Role = "admin" | "user";
+import { UserId } from "../shared/types/brand";
+import { UserRole } from "../domain/entities/user.entity";
 
 export interface AuthUser {
-  id: string;          // subject (user id)
-  role: Role;
-  email?: string;
+  id: UserId;
+  role: UserRole;
+  email: string;
 }
