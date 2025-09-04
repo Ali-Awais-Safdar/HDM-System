@@ -8,6 +8,7 @@ import {
 } from "../../domain/services/download-token.service";
 import { PermissionRepository } from "../../domain/services/permission.service";
 import { DocumentRepository } from "../../domain/services/document.service";
+import { env } from "../../env/env";
 
 /**
  * Use case for generating secure download links for documents.
@@ -21,7 +22,10 @@ export class GenerateDownloadLinkUseCase {
     private readonly permissionRepository: PermissionRepository,
     downloadTokenRepository: DownloadTokenRepository
   ) {
-    this.downloadTokenService = new DownloadTokenService(downloadTokenRepository);
+    this.downloadTokenService = new DownloadTokenService(
+      downloadTokenRepository,
+      env.DOWNLOAD_TOKEN_CLOCK_SKEW_TOLERANCE_MS
+    );
   }
 
   async execute(

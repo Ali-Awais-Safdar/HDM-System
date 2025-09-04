@@ -83,16 +83,20 @@ export class DownloadToken {
 
   /**
    * Checks if the token is valid (not expired and not used).
+   * Includes clock-skew tolerance for expiration check.
    */
-  isValid(): boolean {
-    return !this.isExpired() && !this.isUsed();
+  isValid(clockSkewToleranceMs: number = 0): boolean {
+    return !this.isExpired(clockSkewToleranceMs) && !this.isUsed();
   }
 
   /**
    * Checks if the token has expired.
+   * Includes clock-skew tolerance to handle time differences between client and server.
    */
-  isExpired(): boolean {
-    return new Date() > this.expiresAt;
+  isExpired(clockSkewToleranceMs: number = 0): boolean {
+    const now = new Date();
+    const adjustedExpiryTime = new Date(this.expiresAt.getTime() + clockSkewToleranceMs);
+    return now > adjustedExpiryTime;
   }
 
   /**
@@ -132,10 +136,12 @@ export class DownloadToken {
   /**
    * Gets the remaining time before expiration in milliseconds.
    * Returns 0 if already expired.
+   * Includes clock-skew tolerance in the calculation.
    */
-  getTimeToExpiry(): number {
+  getTimeToExpiry(clockSkewToleranceMs: number = 0): number {
     const now = new Date();
-    const timeLeft = this.expiresAt.getTime() - now.getTime();
+    const adjustedExpiryTime = this.expiresAt.getTime() + clockSkewToleranceMs;
+    const timeLeft = adjustedExpiryTime - now.getTime();
     return Math.max(0, timeLeft);
   }
 
@@ -143,7 +149,7 @@ export class DownloadToken {
    * Returns a plain object representation for serialization.
    * Note: The actual token is excluded for security reasons.
    */
-  toPlainObject() {
+  toPlainObject(clockSkewToleranceMs: number = 0) {
     return {
       id: this.id,
       documentId: this.documentId,
@@ -151,10 +157,10 @@ export class DownloadToken {
       expiresAt: this.expiresAt,
       usedAt: this.usedAt,
       createdAt: this.createdAt,
-      isValid: this.isValid(),
-      isExpired: this.isExpired(),
+      isValid: this.isValid(clockSkewToleranceMs),
+      isExpired: this.isExpired(clockSkewToleranceMs),
       isUsed: this.isUsed(),
-      timeToExpiry: this.getTimeToExpiry(),
+      timeToExpiry: this.getTimeToExpiry(clockSkewToleranceMs),
     };
   }
 

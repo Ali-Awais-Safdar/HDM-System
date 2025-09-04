@@ -125,6 +125,37 @@ describe("DownloadDocumentUseCase", () => {
       }
     });
 
+    it("should handle clock-skew tolerance for recently expired tokens", async () => {
+      // Create a token that expired 30 seconds ago
+      const recentlyExpiredToken = DownloadToken.create({
+        documentId: asDocumentId("doc-123"),
+        issuedTo: asUserId("user-456"),
+        expiresAt: new Date(Date.now() - 30000), // 30 seconds ago
+      });
+
+      const params = { token: recentlyExpiredToken.token };
+
+      // Mock token found
+      mockDownloadTokenRepository.findByToken.mockResolvedValue(ok(recentlyExpiredToken));
+      
+      // Mock successful token update (mark as used)
+      const usedToken = recentlyExpiredToken.markAsUsed();
+      mockDownloadTokenRepository.update.mockResolvedValue(ok(usedToken));
+      
+      // Mock document and file retrieval
+      mockDocumentRepository.findById.mockResolvedValue(ok(mockDocument));
+      mockFileStorage.retrieve.mockResolvedValue(ok(mockFileData));
+
+      const result = await useCase.execute(params);
+
+      // Should succeed due to clock-skew tolerance (default 30 seconds)
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.document).toBe(mockDocument);
+        expect(result.value.fileData).toBe(mockFileData);
+      }
+    });
+
     it("should fail with already used token", async () => {
       const usedToken = mockToken.markAsUsed();
       const params = { token: usedToken.token };

@@ -8,6 +8,7 @@ import { Result, ok, err } from "../../../shared/result/result";
 import { UserId, DocumentId, asDownloadTokenId } from "../../../shared/types/brand";
 import { downloadTokens } from "../../../lib/db/schema";
 import { Database } from "../../../lib/db/connection";
+import { env } from "../../../env/env";
 
 /**
  * Drizzle ORM implementation of the DownloadTokenRepository.
@@ -179,9 +180,11 @@ export class DrizzleDownloadTokenRepository implements DownloadTokenRepository {
   async removeExpiredTokens(): Promise<Result<number, DownloadTokenRepositoryError>> {
     try {
       const now = new Date();
+      // Include clock-skew tolerance when cleaning up expired tokens
+      const cutoffTime = new Date(now.getTime() - env.DOWNLOAD_TOKEN_CLOCK_SKEW_TOLERANCE_MS);
       const result = await this.db
         .delete(downloadTokens)
-        .where(lt(downloadTokens.expiresAt, now));
+        .where(lt(downloadTokens.expiresAt, cutoffTime));
 
       const deletedCount = result.rowCount || 0;
       return ok(deletedCount);

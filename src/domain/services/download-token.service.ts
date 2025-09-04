@@ -74,7 +74,10 @@ export type DownloadTokenRepositoryErrorCode =
  * Domain service for download token business logic.
  */
 export class DownloadTokenService {
-  constructor(private readonly tokenRepository: DownloadTokenRepository) {}
+  constructor(
+    private readonly tokenRepository: DownloadTokenRepository,
+    private readonly clockSkewToleranceMs: number = 0
+  ) {}
 
   /**
    * Generates a new download token for a document and user.
@@ -145,7 +148,7 @@ export class DownloadTokenService {
         ));
       }
       
-      if (token.isExpired()) {
+      if (token.isExpired(this.clockSkewToleranceMs)) {
         return err(new DownloadTokenServiceError(
           "Download token has expired",
           "TOKEN_EXPIRED"
@@ -217,7 +220,7 @@ export class DownloadTokenService {
       }
 
       // Filter only valid tokens
-      const activeTokens = result.value.filter(token => token.isValid());
+      const activeTokens = result.value.filter(token => token.isValid(this.clockSkewToleranceMs));
       return ok(activeTokens);
     } catch (error) {
       return err(new DownloadTokenServiceError(

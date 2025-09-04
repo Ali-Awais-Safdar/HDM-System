@@ -38,6 +38,9 @@ const EnvSchema = z.object({
     origins === "*" ? "*" : origins.split(",").map(origin => origin.trim())
   ),
   
+  // Download Token Security
+  DOWNLOAD_TOKEN_CLOCK_SKEW_TOLERANCE_MS: z.coerce.number().int().min(0).max(300000).default(30000), // 30 seconds default, max 5 minutes
+  
   // Logging
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
   LOG_FORMAT: z.enum(["json", "pretty"]).default("json"),

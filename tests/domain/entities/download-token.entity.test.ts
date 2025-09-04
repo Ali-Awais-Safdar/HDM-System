@@ -146,6 +146,23 @@ describe("DownloadToken Entity", () => {
       const usedToken = token.markAsUsed();
       expect(usedToken.isValid()).toBe(false);
     });
+
+    it("should handle clock-skew tolerance in validation", () => {
+      const expiresAt = new Date('2023-01-01T09:59:30Z'); // 30 seconds ago
+      const clockSkewTolerance = 60000; // 1 minute tolerance
+      
+      const token = DownloadToken.create({
+        documentId: mockDocumentId,
+        issuedTo: mockUserId,
+        expiresAt,
+      });
+
+      // Without clock-skew tolerance, should be invalid
+      expect(token.isValid(0)).toBe(false);
+      
+      // With clock-skew tolerance, should be valid
+      expect(token.isValid(clockSkewTolerance)).toBe(true);
+    });
   });
 
   describe("isExpired", () => {
@@ -171,6 +188,37 @@ describe("DownloadToken Entity", () => {
       });
 
       expect(token.isExpired()).toBe(true);
+    });
+
+    it("should handle clock-skew tolerance", () => {
+      const expiresAt = new Date('2023-01-01T09:59:30Z'); // 30 seconds ago
+      const clockSkewTolerance = 60000; // 1 minute tolerance
+      
+      const token = DownloadToken.create({
+        documentId: mockDocumentId,
+        issuedTo: mockUserId,
+        expiresAt,
+      });
+
+      // Without clock-skew tolerance, should be expired
+      expect(token.isExpired(0)).toBe(true);
+      
+      // With clock-skew tolerance, should not be expired
+      expect(token.isExpired(clockSkewTolerance)).toBe(false);
+    });
+
+    it("should still be expired with clock-skew tolerance if too far past", () => {
+      const expiresAt = new Date('2023-01-01T09:50:00Z'); // 10 minutes ago
+      const clockSkewTolerance = 60000; // 1 minute tolerance
+      
+      const token = DownloadToken.create({
+        documentId: mockDocumentId,
+        issuedTo: mockUserId,
+        expiresAt,
+      });
+
+      // Even with clock-skew tolerance, should be expired
+      expect(token.isExpired(clockSkewTolerance)).toBe(true);
     });
   });
 
@@ -285,6 +333,25 @@ describe("DownloadToken Entity", () => {
 
       expect(token.getTimeToExpiry()).toBe(0);
     });
+
+    it("should handle clock-skew tolerance in time calculation", () => {
+      const expiresAt = new Date('2023-01-01T09:59:30Z'); // 30 seconds ago
+      const clockSkewTolerance = 60000; // 1 minute tolerance
+      
+      const token = DownloadToken.create({
+        documentId: mockDocumentId,
+        issuedTo: mockUserId,
+        expiresAt,
+      });
+
+      // Without clock-skew tolerance, should be 0 (expired)
+      expect(token.getTimeToExpiry(0)).toBe(0);
+      
+      // With clock-skew tolerance, should have remaining time
+      const remainingTime = token.getTimeToExpiry(clockSkewTolerance);
+      expect(remainingTime).toBeGreaterThan(0);
+      expect(remainingTime).toBeLessThanOrEqual(30000); // Should be around 30 seconds
+    });
   });
 
   describe("toPlainObject", () => {
@@ -334,6 +401,29 @@ describe("DownloadToken Entity", () => {
       
       expect(deserialized.id).toBe(token.id);
       expect(deserialized.isValid).toBe(true);
+    });
+
+    it("should handle clock-skew tolerance in plain object", () => {
+      const expiresAt = new Date('2023-01-01T09:59:30Z'); // 30 seconds ago
+      const clockSkewTolerance = 60000; // 1 minute tolerance
+      
+      const token = DownloadToken.create({
+        documentId: mockDocumentId,
+        issuedTo: mockUserId,
+        expiresAt,
+      });
+
+      // Without clock-skew tolerance
+      const plainObjectWithoutTolerance = token.toPlainObject(0);
+      expect(plainObjectWithoutTolerance.isValid).toBe(false);
+      expect(plainObjectWithoutTolerance.isExpired).toBe(true);
+      expect(plainObjectWithoutTolerance.timeToExpiry).toBe(0);
+
+      // With clock-skew tolerance
+      const plainObjectWithTolerance = token.toPlainObject(clockSkewTolerance);
+      expect(plainObjectWithTolerance.isValid).toBe(true);
+      expect(plainObjectWithTolerance.isExpired).toBe(false);
+      expect(plainObjectWithTolerance.timeToExpiry).toBeGreaterThan(0);
     });
   });
 });

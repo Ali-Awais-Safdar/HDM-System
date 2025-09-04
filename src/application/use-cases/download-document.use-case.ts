@@ -6,6 +6,7 @@ import {
   DownloadTokenRepository 
 } from "../../domain/services/download-token.service";
 import { DocumentRepository, FileStorage } from "../../domain/services/document.service";
+import { env } from "../../env/env";
 
 /**
  * Use case for downloading documents using secure tokens.
@@ -19,7 +20,10 @@ export class DownloadDocumentUseCase {
     downloadTokenRepository: DownloadTokenRepository,
     private readonly fileStorage: FileStorage
   ) {
-    this.downloadTokenService = new DownloadTokenService(downloadTokenRepository);
+    this.downloadTokenService = new DownloadTokenService(
+      downloadTokenRepository,
+      env.DOWNLOAD_TOKEN_CLOCK_SKEW_TOLERANCE_MS
+    );
   }
 
   async execute(

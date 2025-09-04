@@ -304,6 +304,32 @@ describe("DrizzleDownloadTokenRepository", () => {
         expect(result.value).toBe(0);
       }
     });
+
+    it("should include clock-skew tolerance when removing expired tokens", async () => {
+      // Mock the environment variable
+      const originalEnv = process.env.DOWNLOAD_TOKEN_CLOCK_SKEW_TOLERANCE_MS;
+      process.env.DOWNLOAD_TOKEN_CLOCK_SKEW_TOLERANCE_MS = "30000"; // 30 seconds
+
+      mockDb.delete.mockReturnValue(mockDb);
+      mockDb.where.mockResolvedValue({ rowCount: 2 });
+
+      const result = await repository.removeExpiredTokens();
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value).toBe(2);
+      }
+
+      // Verify that the where clause was called with a cutoff time that includes clock-skew tolerance
+      expect(mockDb.where).toHaveBeenCalled();
+      
+      // Restore original environment
+      if (originalEnv !== undefined) {
+        process.env.DOWNLOAD_TOKEN_CLOCK_SKEW_TOLERANCE_MS = originalEnv;
+      } else {
+        delete process.env.DOWNLOAD_TOKEN_CLOCK_SKEW_TOLERANCE_MS;
+      }
+    });
   });
 
   describe("removeByDocument", () => {
