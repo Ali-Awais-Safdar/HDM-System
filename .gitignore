@@ -4,3 +4,6 @@ dist
 .drizzle
 drizzle/*.sqlite
 coverage
+reset-database.sh
+QUICK-TEST-COMMANDS.md
+storage/

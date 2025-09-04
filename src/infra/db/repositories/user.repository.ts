@@ -99,11 +99,12 @@ export class DrizzleUserRepository implements UserRepository {
   }
 
   private mapToUser(row: any): User {
-    return User.create({
-      id: asUserId(row.id),
-      email: asEmailAddress(row.email),
-      passwordHash: row.passwordHash,
-      role: row.role as UserRole
-    });
+    return new User(
+      asUserId(row.id),
+      asEmailAddress(row.email),
+      row.passwordHash,
+      row.role as UserRole,
+      row.createdAt
+    );
   }
 }

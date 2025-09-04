@@ -3,11 +3,11 @@ import { CreateDocumentUseCase } from "../../../application/use-cases/create-doc
 import { UpdateDocumentMetadataUseCase } from "../../../application/use-cases/update-document-metadata.use-case";
 import { DeleteDocumentUseCase } from "../../../application/use-cases/delete-document.use-case";
 import { GetDocumentUseCase } from "../../../application/use-cases/get-document.use-case";
+import { FileUpload } from "../../../domain/value-objects/file-upload.vo";
 import { 
   createDocumentSchema, 
   updateMetadataSchema, 
-  documentParamsSchema,
-  fileUploadSchema 
+  documentParamsSchema
 } from "../schemas/document.schema";
 
 /**
@@ -42,27 +42,25 @@ export class DocumentController {
         return;
       }
 
-      // Validate file data
-      const fileValidation = fileUploadSchema.safeParse({
-        originalname: req.file.originalname,
-        mimetype: req.file.mimetype,
-        size: req.file.size,
-        buffer: req.file.buffer
-      });
-
-      if (!fileValidation.success) {
+      // Validate file data using FileUpload value object
+      let fileUpload;
+      try {
+        fileUpload = FileUpload.create(
+          req.file.originalname,
+          req.file.mimetype,
+          req.file.size,
+          req.file.buffer
+        );
+      } catch (error) {
         res.status(422).json({
           error: "Invalid file upload",
           code: "INVALID_FILE",
-          details: fileValidation.error.issues.map(issue => ({
-            field: issue.path.join('.'),
-            message: issue.message
-          }))
+          details: error instanceof Error ? error.message : "Unknown file validation error"
         });
         return;
       }
 
-      // Validate request body
+      // Validate request body (handles JSON parsing automatically via transforms)
       const bodyValidation = createDocumentSchema.safeParse(req.body);
       if (!bodyValidation.success) {
         res.status(422).json({
@@ -77,16 +75,15 @@ export class DocumentController {
       }
 
       const validatedData = bodyValidation.data;
-      const validatedFile = fileValidation.data;
 
       // Execute use case
       const result = await this.createDocumentUseCase.execute({
         title: validatedData.title,
         file: {
-          originalName: validatedFile.originalname,
-          mimeType: validatedFile.mimetype,
-          size: validatedFile.size,
-          data: validatedFile.buffer
+          originalName: fileUpload.originalName,
+          mimeType: fileUpload.mimeType,
+          size: fileUpload.size,
+          data: fileUpload.data
         },
         metadata: validatedData.metadata,
         tags: validatedData.tags,

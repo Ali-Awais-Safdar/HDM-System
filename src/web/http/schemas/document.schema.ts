@@ -13,23 +13,62 @@ export const createDocumentSchema = z.object({
     .trim(),
     
   metadata: z
-    .record(z.string(), z.unknown())
-    .default({})
+    .string()
+    .optional()
     .refine(
-      (metadata) => JSON.stringify(metadata).length <= 10000,
-      "Metadata cannot exceed 10KB when serialized"
+      (val) => {
+        if (!val) return true; // Empty is valid
+        try {
+          JSON.parse(val);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      "Invalid JSON in metadata field"
+    )
+    .transform((val) => {
+      if (!val) return {};
+      return JSON.parse(val);
+    })
+    .pipe(
+      z.record(z.string(), z.unknown())
+        .refine(
+          (metadata) => JSON.stringify(metadata).length <= 10000,
+          "Metadata cannot exceed 10KB when serialized"
+        )
     ),
     
   tags: z
-    .array(
-      z.string()
-        .min(1, "Tag cannot be empty")
-        .max(50, "Tag cannot exceed 50 characters")
-        .regex(/^[a-zA-Z0-9\-_]+$/, "Tag can only contain letters, numbers, hyphens, and underscores")
+    .string()
+    .optional()
+    .refine(
+      (val) => {
+        if (!val) return true; // Empty is valid
+        try {
+          const parsed = JSON.parse(val);
+          return Array.isArray(parsed);
+        } catch {
+          return false;
+        }
+      },
+      "Invalid JSON in tags field - must be a valid JSON array"
     )
-    .max(20, "Cannot have more than 20 tags")
-    .default([])
-    .transform(tags => [...new Set(tags)]) // Remove duplicates
+    .transform((val) => {
+      if (!val) return [];
+      const parsed = JSON.parse(val);
+      return Array.isArray(parsed) ? parsed : [];
+    })
+    .pipe(
+      z.array(
+        z.string()
+          .min(1, "Tag cannot be empty")
+          .max(50, "Tag cannot exceed 50 characters")
+          .regex(/^[a-zA-Z0-9\-_]+$/, "Tag can only contain letters, numbers, hyphens, and underscores")
+      )
+      .max(20, "Cannot have more than 20 tags")
+      .transform(tags => [...new Set(tags)]) // Remove duplicates
+    )
 });
 
 export const updateMetadataSchema = z.object({
