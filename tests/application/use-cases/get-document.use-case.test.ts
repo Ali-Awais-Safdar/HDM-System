@@ -26,14 +26,14 @@ describe("GetDocumentUseCase", () => {
     });
     vi.mocked(svc.getDocument).mockResolvedValue({ ok: true, value: doc });
 
-    const res = await uc.execute({ documentId: doc.id, userId: asUserId("owner"), userRole: "user" });
+    const res = await uc.execute({ documentId: doc.id, userId: asUserId("owner"), userRole: "user", userPermissions: [] });
     expect(res.ok).toBe(true);
     if (res.ok) expect(res.value.id).toBe(doc.id);
   });
 
   it("propagates domain error", async () => {
     vi.mocked(svc.getDocument).mockResolvedValue({ ok: false, error: new Error("Document not found") } as any);
-    const res = await uc.execute({ documentId: "x", userId: asUserId("u"), userRole: "user" });
+    const res = await uc.execute({ documentId: "x", userId: asUserId("u"), userRole: "user", userPermissions: [] });
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error.message).toBe("Document not found");
   });

@@ -18,7 +18,8 @@ describe("DeleteDocumentUseCase", () => {
     const res = await uc.execute({
       documentId: "id-1",
       userId: asUserId("u"),
-      userRole: "user"
+      userRole: "user",
+      userPermissions: []
     });
     expect(res.ok).toBe(true);
     if (res.ok) expect(res.value.success).toBe(true);
@@ -26,7 +27,7 @@ describe("DeleteDocumentUseCase", () => {
 
   it("propagates domain error", async () => {
     vi.mocked(svc.deleteDocument).mockResolvedValue({ ok: false, error: new Error("Document not found") } as any);
-    const res = await uc.execute({ documentId: "nope", userId: asUserId("u"), userRole: "user" });
+    const res = await uc.execute({ documentId: "nope", userId: asUserId("u"), userRole: "user", userPermissions: [] });
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error.message).toBe("Document not found");
   });

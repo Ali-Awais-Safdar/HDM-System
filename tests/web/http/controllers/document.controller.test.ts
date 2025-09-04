@@ -4,6 +4,7 @@ import { CreateDocumentUseCase } from "../../../../src/application/use-cases/cre
 import { UpdateDocumentMetadataUseCase } from "../../../../src/application/use-cases/update-document-metadata.use-case";
 import { DeleteDocumentUseCase } from "../../../../src/application/use-cases/delete-document.use-case";
 import { GetDocumentUseCase } from "../../../../src/application/use-cases/get-document.use-case";
+import { PermissionRepository } from "../../../../src/domain/services/permission.service";
 import { asUserId } from "../../../../src/shared/types/brand";
 
 function mkRes() {
@@ -18,7 +19,8 @@ describe("DocumentController", () => {
   const updateUC = { execute: vi.fn() } as unknown as UpdateDocumentMetadataUseCase;
   const deleteUC = { execute: vi.fn() } as unknown as DeleteDocumentUseCase;
   const getUC = { execute: vi.fn() } as unknown as GetDocumentUseCase;
-  const ctrl = new DocumentController(createUC, updateUC, deleteUC, getUC);
+  const permissionRepo = { findByDocumentAndUser: vi.fn() } as unknown as PermissionRepository;
+  const ctrl = new DocumentController(createUC, updateUC, deleteUC, getUC, permissionRepo);
 
   it("createDocument -> 401 when unauthenticated", async () => {
     const req: any = { 
@@ -103,6 +105,7 @@ describe("DocumentController", () => {
       correlationId: 'test-correlation-id'
     };
     const res = mkRes();
+    vi.mocked(permissionRepo.findByDocumentAndUser).mockResolvedValue({ ok: true, value: null } as any);
     vi.mocked(getUC.execute).mockResolvedValue({ ok: true, value: { id: req.params.id } } as any);
     await ctrl.getDocument(req, res);
     expect(res.status).toHaveBeenCalledWith(200);
@@ -131,6 +134,7 @@ describe("DocumentController", () => {
       correlationId: 'test-correlation-id'
     };
     const res = mkRes();
+    vi.mocked(permissionRepo.findByDocumentAndUser).mockResolvedValue({ ok: true, value: null } as any);
     vi.mocked(deleteUC.execute).mockResolvedValue({ ok: true, value: { success: true, message: "Document deleted successfully" } } as any);
     await ctrl.deleteDocument(req, res);
     expect(res.status).toHaveBeenCalledWith(200);

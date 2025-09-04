@@ -127,7 +127,8 @@ describe("DocumentService", () => {
       doc.id,
       asUserId("cccccccc-cccc-7ccc-8ccc-cccccccccccc"),
       "user",
-      { status: "final" }
+      { status: "final" },
+      []
     );
     expect(res.ok).toBe(true);
     if (res.ok) expect(res.value.metadata).toMatchObject({ a: 1, status: "final" });
@@ -137,7 +138,8 @@ describe("DocumentService", () => {
       doc.id,
       asUserId("dddddddd-dddd-7ddd-8ddd-dddddddddddd"),
       "user",
-      { status: "x" }
+      { status: "x" },
+      []
     );
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error.message).toMatch(/Insufficient permissions/);
@@ -147,7 +149,8 @@ describe("DocumentService", () => {
       doc.id,
       asUserId("eeeeeeee-eeee-7eee-8eee-eeeeeeeeeeee"),
       "admin",
-      { adminSet: true }
+      { adminSet: true },
+      []
     );
     expect(res.ok).toBe(true);
   });
@@ -166,7 +169,7 @@ describe("DocumentService", () => {
       return { ok: true, value: undefined as void };
     });
 
-    const res = await svc.deleteDocument(doc.id, doc.ownerId, "user");
+    const res = await svc.deleteDocument(doc.id, doc.ownerId, "user", []);
     expect(res.ok).toBe(true);
     expect(calls).toEqual(["storage.delete", "repo.delete"]);
   });
@@ -176,16 +179,16 @@ describe("DocumentService", () => {
     repo.findById.mockResolvedValue({ ok: true, value: doc });
 
     // Owner can read
-    let res = await svc.getDocument(doc.id, asUserId("ffffffff-ffff-7fff-8fff-ffffffffffff"), "user");
+    let res = await svc.getDocument(doc.id, asUserId("ffffffff-ffff-7fff-8fff-ffffffffffff"), "user", []);
     expect(res.ok).toBe(true);
 
     // Non-owner without permission denied
-    res = await svc.getDocument(doc.id, asUserId("11111111-2222-7333-8444-555555555555"), "user");
+    res = await svc.getDocument(doc.id, asUserId("11111111-2222-7333-8444-555555555555"), "user", []);
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error.message).toMatch(/Insufficient permissions/);
 
     // Admin can read
-    res = await svc.getDocument(doc.id, asUserId("66666666-6666-7666-8666-666666666666"), "admin");
+    res = await svc.getDocument(doc.id, asUserId("66666666-6666-7666-8666-666666666666"), "admin", []);
     expect(res.ok).toBe(true);
   });
 

@@ -8,6 +8,7 @@ import { UpdateDocumentMetadataUseCase } from "../../src/application/use-cases/u
 import { DeleteDocumentUseCase } from "../../src/application/use-cases/delete-document.use-case";
 import { GetDocumentUseCase } from "../../src/application/use-cases/get-document.use-case";
 import { DocumentService, type DocumentRepository, type FileStorage } from "../../src/domain/services/document.service";
+import { PermissionRepository } from "../../src/domain/services/permission.service";
 import { LocalFileStorage } from "../../src/infra/storage/local-file-storage";
 import { mkdtempSync, rmSync } from "fs";
 import { join } from "path";
@@ -43,11 +44,26 @@ describe("Integration: /documents CRUD flow (with in-memory repo + real local st
   const repo = makeInMemoryRepo();
   const svc = new DocumentService(repo, storage);
 
+  // Mock permission repository for integration tests
+  const permissionRepo: PermissionRepository = {
+    findByDocumentAndUser: async () => ({ ok: true, value: null }),
+    save: async () => ({ ok: true, value: {} as any }),
+    findByDocument: async () => ({ ok: true, value: [] }),
+    findByUser: async () => ({ ok: true, value: [] }),
+    removeByDocumentAndUser: async () => ({ ok: true, value: true }),
+    removeByDocument: async () => ({ ok: true, value: 0 }),
+    updatePermissionLevel: async () => ({ ok: true, value: {} as any }),
+    saveInTransaction: async () => ({ ok: true, value: {} as any }),
+    removeInTransaction: async () => ({ ok: true, value: true }),
+    updatePermissionLevelInTransaction: async () => ({ ok: true, value: {} as any }),
+    executeInTransaction: async (operation: any) => operation({} as any)
+  } as any;
+
   const createUC = new CreateDocumentUseCase(svc);
   const updateUC = new UpdateDocumentMetadataUseCase(svc);
   const deleteUC = new DeleteDocumentUseCase(svc);
   const getUC = new GetDocumentUseCase(svc);
-  const controller = new DocumentController(createUC, updateUC, deleteUC, getUC);
+  const controller = new DocumentController(createUC, updateUC, deleteUC, getUC, permissionRepo);
 
   let app: express.Express;
   beforeAll(async () => {

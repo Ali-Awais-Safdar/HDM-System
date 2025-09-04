@@ -1,7 +1,6 @@
 import { Document } from "../entities/document.entity";
-import { DocumentPolicy, DocumentPermissionCheck } from "../policies/document.policy";
 import { DocumentAccessPolicy, DocumentAccessContext } from "../policies/document-access.policy";
-import { PermissionRepository } from "./permission.service";
+import { Permission } from "../entities/permission.entity";
 import { DocumentId, UserId, MimeType, FileSize, newDocumentId } from "../../shared/types/brand";
 import { UserRole } from "../entities/user.entity";
 import { Result, ok, err } from "../../shared/result/result";
@@ -16,8 +15,7 @@ export class DocumentService {
 
   constructor(
     private readonly documentRepository: DocumentRepository,
-    private readonly fileStorage: FileStorage,
-    private readonly permissionRepository?: PermissionRepository
+    private readonly fileStorage: FileStorage
   ) {}
 
   async createDocument(
@@ -157,7 +155,7 @@ export class DocumentService {
     userId: UserId,
     userRole: UserRole,
     metadata: Record<string, unknown>,
-    directPermission?: import("../policies/document.policy").Permission
+    userPermissions: Permission[]
   ): Promise<Result<Document, DocumentError>> {
     // Get existing document
     const documentResult = await this.documentRepository.findById(documentId);
@@ -172,13 +170,13 @@ export class DocumentService {
     const document = documentResult.value;
 
     // Check permissions using new system
-    const canWrite = await this.checkDocumentAccess(
+    const canWrite = this.checkDocumentAccess(
       documentId,
       document.ownerId,
       userId,
       userRole,
       "write",
-      directPermission
+      userPermissions
     );
 
     if (!canWrite) {
@@ -201,7 +199,7 @@ export class DocumentService {
     documentId: DocumentId,
     userId: UserId,
     userRole: UserRole,
-    directPermission?: import("../policies/document.policy").Permission
+    userPermissions: Permission[]
   ): Promise<Result<void, DocumentError>> {
     // Get existing document
     const documentResult = await this.documentRepository.findById(documentId);
@@ -216,13 +214,13 @@ export class DocumentService {
     const document = documentResult.value;
 
     // Check permissions using new system
-    const canDelete = await this.checkDocumentAccess(
+    const canDelete = this.checkDocumentAccess(
       documentId,
       document.ownerId,
       userId,
       userRole,
       "admin", // Delete requires admin level access
-      directPermission
+      userPermissions
     );
 
     if (!canDelete) {
@@ -248,7 +246,7 @@ export class DocumentService {
     documentId: DocumentId,
     userId: UserId,
     userRole: UserRole,
-    directPermission?: import("../policies/document.policy").Permission
+    userPermissions: Permission[]
   ): Promise<Result<Document, DocumentError>> {
     // Get document
     const documentResult = await this.documentRepository.findById(documentId);
@@ -263,13 +261,13 @@ export class DocumentService {
     const document = documentResult.value;
 
     // Check permissions using new system
-    const canRead = await this.checkDocumentAccess(
+    const canRead = this.checkDocumentAccess(
       documentId,
       document.ownerId,
       userId,
       userRole,
       "read",
-      directPermission
+      userPermissions
     );
 
     if (!canRead) {
@@ -301,62 +299,25 @@ export class DocumentService {
 
   /**
    * Helper method to check document access using the new permission system.
-   * Falls back to the old system if permission repository is not available.
    */
-  private async checkDocumentAccess(
+  private checkDocumentAccess(
     documentId: DocumentId,
     documentOwnerId: UserId,
     userId: UserId,
     userRole: UserRole,
     requiredLevel: "read" | "write" | "admin",
-    directPermission?: import("../policies/document.policy").Permission
-  ): Promise<boolean> {
-    // If permission repository is available, use the new system
-    if (this.permissionRepository) {
-      try {
-        const permissionsResult = await this.permissionRepository.findByDocumentAndUser(
-          documentId,
-          userId
-        );
-
-        const userPermissions = permissionsResult.ok && permissionsResult.value 
-          ? [permissionsResult.value] 
-          : [];
-
-        const context: DocumentAccessContext = {
-          userId,
-          userRole,
-          documentId,
-          documentOwnerId,
-          userPermissions,
-        };
-
-        const accessResult = DocumentAccessPolicy.canAccess(context, requiredLevel);
-        return accessResult.granted;
-      } catch {
-        // Fall back to old system on error
-      }
-    }
-
-    // Fallback to old permission system
-    const permissionCheck: DocumentPermissionCheck = {
+    userPermissions: Permission[]
+  ): boolean {
+    const context: DocumentAccessContext = {
       userId,
       userRole,
       documentId,
-      ownerId: documentOwnerId,
-      directPermission
+      documentOwnerId,
+      userPermissions,
     };
 
-    switch (requiredLevel) {
-      case "read":
-        return DocumentPolicy.canRead(permissionCheck);
-      case "write":
-        return DocumentPolicy.canWrite(permissionCheck);
-      case "admin":
-        return DocumentPolicy.canShare(permissionCheck); // Using canShare for admin level
-      default:
-        return false;
-    }
+    const accessResult = DocumentAccessPolicy.canAccess(context, requiredLevel);
+    return accessResult.granted;
   }
 }
 

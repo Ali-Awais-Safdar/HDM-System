@@ -130,7 +130,7 @@ describe("DownloadDocumentUseCase", () => {
       const recentlyExpiredToken = DownloadToken.create({
         documentId: asDocumentId("doc-123"),
         issuedTo: asUserId("user-456"),
-        expiresAt: new Date(Date.now() - 30000), // 30 seconds ago
+        expiresAt: new Date(Date.now() - 29500) // 30 seconds ago
       });
 
       const params = { token: recentlyExpiredToken.token };

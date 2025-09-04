@@ -50,8 +50,7 @@ describe("Transaction Reliability Integration Tests", () => {
     // Services
     documentService = new DocumentService(
       mockDocumentRepository,
-      mockFileStorage,
-      mockPermissionRepository
+      mockFileStorage
     );
 
     permissionService = new PermissionService(mockPermissionRepository);

@@ -65,7 +65,7 @@ export function createDocumentRoutes(): Router {
   const downloadTokenRepository = new DrizzleDownloadTokenRepository(db);
 
   // Domain services
-  const documentService = new DocumentService(documentRepository, fileStorage, permissionRepository);
+  const documentService = new DocumentService(documentRepository, fileStorage);
 
   // Application use cases
   const createDocumentUseCase = new CreateDocumentUseCase(documentService);
@@ -86,7 +86,8 @@ export function createDocumentRoutes(): Router {
     createDocumentUseCase,
     updateDocumentMetadataUseCase,
     deleteDocumentUseCase,
-    getDocumentUseCase
+    getDocumentUseCase,
+    permissionRepository
   );
 
   const permissionController = new PermissionController(

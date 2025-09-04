@@ -2,14 +2,14 @@ import { Result, ok, err } from "../../shared/result/result";
 import { DocumentService } from "../../domain/services/document.service";
 import { UserId, asDocumentId } from "../../shared/types/brand";
 import { UserRole } from "../../domain/entities/user.entity";
-import type { Permission } from "../../domain/policies/document.policy";
+import { Permission } from "../../domain/entities/permission.entity";
 import { createServiceLogger, logPerformance } from "../../shared/logging/logger";
 
 export interface GetDocumentRequest {
   documentId: string;
   userId: UserId;
   userRole: UserRole;
-  directPermission?: Permission;
+  userPermissions: Permission[];
 }
 
 export interface GetDocumentResponse {
@@ -45,7 +45,7 @@ export class GetDocumentUseCase {
         documentId,
         request.userId,
         request.userRole,
-        request.directPermission
+        request.userPermissions
       );
 
       if (!result.ok) {

@@ -30,7 +30,8 @@ describe("UpdateDocumentMetadataUseCase", () => {
       documentId: doc.id,
       userId: asUserId("owner"),
       userRole: "user",
-      metadata: { a: 2 }
+      metadata: { a: 2 },
+      userPermissions: []
     });
     expect(res.ok).toBe(true);
     if (res.ok) expect(res.value.id).toBe(doc.id);
@@ -42,7 +43,8 @@ describe("UpdateDocumentMetadataUseCase", () => {
       documentId: "x",
       userId: asUserId("u"),
       userRole: "user",
-      metadata: {}
+      metadata: {},
+      userPermissions: []
     });
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error.message).toMatch(/Insufficient permissions/);

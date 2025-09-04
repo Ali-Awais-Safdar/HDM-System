@@ -32,7 +32,7 @@ export class DrizzleDocumentRepository implements DocumentRepository {
       }
 
       const documentRow = result[0];
-      const document = this.mapToDocument(documentRow);
+      const document = await this.mapToDocument(documentRow);
       return ok(document);
     } catch {
       return err(new Error("Failed to find document by ID"));
@@ -47,7 +47,7 @@ export class DrizzleDocumentRepository implements DocumentRepository {
         .where(eq(documents.ownerId, ownerId))
         .orderBy(documents.createdAt);
 
-      const documentList = result.map((row: any) => this.mapToDocument(row));
+      const documentList = await this.mapToDocumentsWithTags(result);
       return ok(documentList);
     } catch {
       return err(new Error("Failed to find documents by owner"));
@@ -125,7 +125,7 @@ export class DrizzleDocumentRepository implements DocumentRepository {
       }
 
       const result = await query;
-      const documentList = result.map((row: any) => this.mapToDocument(row));
+      const documentList = await this.mapToDocumentsWithTags(result);
       return ok(documentList);
     } catch {
       return err(new Error("Failed to search documents"));
@@ -241,7 +241,63 @@ export class DrizzleDocumentRepository implements DocumentRepository {
     }
   }
 
-  private mapToDocument(row: any): Document {
+  /**
+   * Loads tags for a specific document from the documentTags and tags tables.
+   */
+  private async loadDocumentTags(documentId: DocumentId): Promise<string[]> {
+    try {
+      const result = await this.db
+        .select({ name: tags.name })
+        .from(documentTags)
+        .innerJoin(tags, eq(documentTags.tagId, tags.id))
+        .where(eq(documentTags.documentId, documentId));
+
+      return result.map(row => row.name);
+    } catch {
+      // Return empty array if tag loading fails
+      return [];
+    }
+  }
+
+  /**
+   * Loads tags for multiple documents efficiently using a single query.
+   */
+  private async loadDocumentTagsBatch(documentIds: DocumentId[]): Promise<Map<DocumentId, string[]>> {
+    const tagMap = new Map<DocumentId, string[]>();
+    
+    if (documentIds.length === 0) {
+      return tagMap;
+    }
+
+    try {
+      const result = await this.db
+        .select({ 
+          documentId: documentTags.documentId,
+          tagName: tags.name 
+        })
+        .from(documentTags)
+        .innerJoin(tags, eq(documentTags.tagId, tags.id))
+        .where(inArray(documentTags.documentId, documentIds));
+
+      // Group tags by document ID
+      for (const row of result) {
+        const docId = asDocumentId(row.documentId);
+        if (!tagMap.has(docId)) {
+          tagMap.set(docId, []);
+        }
+        tagMap.get(docId)!.push(row.tagName);
+      }
+    } catch {
+      // Return empty map if tag loading fails
+    }
+
+    return tagMap;
+  }
+
+  private async mapToDocument(row: any): Promise<Document> {
+    // Load tags for this document
+    const tags = await this.loadDocumentTags(asDocumentId(row.id));
+    
     return Document.create({
       id: asDocumentId(row.id),
       ownerId: asUserId(row.ownerId),
@@ -250,7 +306,39 @@ export class DrizzleDocumentRepository implements DocumentRepository {
       size: asFileSize(row.size),
       storageKey: row.storageKey,
       metadata: row.metadata || {},
-      tags: [] // Tags would need to be loaded separately in a complete implementation
+      tags
+    });
+  }
+
+  /**
+   * Maps database rows to Document entities with batch tag loading for efficiency.
+   */
+  private async mapToDocumentsWithTags(rows: any[]): Promise<Document[]> {
+    if (rows.length === 0) {
+      return [];
+    }
+
+    // Extract document IDs
+    const documentIds = rows.map(row => asDocumentId(row.id));
+    
+    // Load all tags in batch
+    const tagMap = await this.loadDocumentTagsBatch(documentIds);
+
+    // Map rows to documents with their tags
+    return rows.map(row => {
+      const documentId = asDocumentId(row.id);
+      const documentTags = tagMap.get(documentId) || [];
+      
+      return Document.create({
+        id: documentId,
+        ownerId: asUserId(row.ownerId),
+        title: row.title,
+        mimeType: asMimeType(row.mimeType),
+        size: asFileSize(row.size),
+        storageKey: row.storageKey,
+        metadata: row.metadata || {},
+        tags: documentTags
+      });
     });
   }
 
@@ -279,6 +367,7 @@ export class DrizzleDocumentRepository implements DocumentRepository {
       await this.saveTags(document.tags, tx);
       await this.linkDocumentTags(document.id, document.tags, tx);
 
+      // Return the document with tags loaded (they're already in the document parameter)
       return ok(document);
     } catch (error) {
       return err(new Error(`Failed to save document in transaction: ${error instanceof Error ? error.message : 'Unknown error'}`));

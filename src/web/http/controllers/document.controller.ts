@@ -4,6 +4,7 @@ import { UpdateDocumentMetadataUseCase } from "../../../application/use-cases/up
 import { DeleteDocumentUseCase } from "../../../application/use-cases/delete-document.use-case";
 import { GetDocumentUseCase } from "../../../application/use-cases/get-document.use-case";
 import { FileUpload } from "../../../domain/value-objects/file-upload.vo";
+import { PermissionRepository } from "../../../domain/services/permission.service";
 import { 
   createDocumentSchema, 
   updateMetadataSchema, 
@@ -11,6 +12,7 @@ import {
 } from "../schemas/document.schema";
 import { handleValidationError, sendErr, sendOk } from "../errors";
 import { logger } from "../../../shared/logging/logger";
+import { asDocumentId } from "../../../shared/types/brand";
 
 /**
  * Document controller handling CRUD operations.
@@ -21,8 +23,30 @@ export class DocumentController {
     private readonly createDocumentUseCase: CreateDocumentUseCase,
     private readonly updateDocumentMetadataUseCase: UpdateDocumentMetadataUseCase,
     private readonly deleteDocumentUseCase: DeleteDocumentUseCase,
-    private readonly getDocumentUseCase: GetDocumentUseCase
+    private readonly getDocumentUseCase: GetDocumentUseCase,
+    private readonly permissionRepository: PermissionRepository
   ) {}
+
+  /**
+   * Helper method to fetch user permissions for a document.
+   * Returns empty array if no permissions found or on error.
+   */
+  private async getUserPermissions(documentId: string, userId: string) {
+    try {
+      const result = await this.permissionRepository.findByDocumentAndUser(
+        asDocumentId(documentId),
+        userId as any
+      );
+      return result.ok && result.value ? [result.value] : [];
+    } catch (error) {
+      logger.warn({
+        documentId,
+        userId,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }, "Failed to fetch user permissions, defaulting to empty array");
+      return [];
+    }
+  }
 
   async createDocument(req: Request, res: Response): Promise<void> {
     try {
@@ -181,12 +205,15 @@ export class DocumentController {
         correlationId: req.correlationId
       }, "Starting document retrieval");
 
+      // Fetch user permissions for the document
+      const userPermissions = await this.getUserPermissions(id, req.user.id);
+
       // Execute use case
       const result = await this.getDocumentUseCase.execute({
         documentId: id,
         userId: req.user.id,
-        userRole: req.user.role
-        // TODO: Add directPermission from permission service
+        userRole: req.user.role,
+        userPermissions
       });
 
       if (!result.ok) {
@@ -285,13 +312,16 @@ export class DocumentController {
         correlationId: req.correlationId
       }, "Starting document metadata update");
 
+      // Fetch user permissions for the document
+      const userPermissions = await this.getUserPermissions(id, req.user.id);
+
       // Execute use case
       const result = await this.updateDocumentMetadataUseCase.execute({
         documentId: id,
         userId: req.user.id,
         userRole: req.user.role,
-        metadata
-        // TODO: Add directPermission from permission service
+        metadata,
+        userPermissions
       });
 
       if (!result.ok) {
@@ -369,12 +399,15 @@ export class DocumentController {
         correlationId: req.correlationId
       }, "Starting document deletion");
 
+      // Fetch user permissions for the document
+      const userPermissions = await this.getUserPermissions(id, req.user.id);
+
       // Execute use case
       const result = await this.deleteDocumentUseCase.execute({
         documentId: id,
         userId: req.user.id,
-        userRole: req.user.role
-        // TODO: Add directPermission from permission service
+        userRole: req.user.role,
+        userPermissions
       });
 
       if (!result.ok) {
