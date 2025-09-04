@@ -1,6 +1,7 @@
 import { Handler } from "./chain";
 import { Request, Response, NextFunction } from "express";
 import { UserRole } from "../../domain/entities/user.entity";
+import { logSecurityEvent } from "../../shared/logging/logger";
 
 /**
  * RBAC middleware for role-based access control.
@@ -15,20 +16,52 @@ export class RequireRoles extends Handler {
     const user = req.user;
     
     if (!user) {
+      logSecurityEvent("authorization_no_user", undefined, {
+        method: req.method,
+        url: req.url,
+        ip: req.ip,
+        userAgent: req.headers['user-agent'],
+        correlationId: req.correlationId,
+        requiredRoles: this.allowedRoles
+      });
+      
       res.status(401).json({ 
         error: "Authentication required",
-        code: "UNAUTHORIZED" 
+        code: "UNAUTHORIZED",
+        correlationId: req.correlationId
       });
       return;
     }
     
     if (!this.allowedRoles.includes(user.role)) {
+      logSecurityEvent("authorization_insufficient_permissions", user.id, {
+        method: req.method,
+        url: req.url,
+        ip: req.ip,
+        userAgent: req.headers['user-agent'],
+        correlationId: req.correlationId,
+        userRole: user.role,
+        requiredRoles: this.allowedRoles
+      });
+      
       res.status(403).json({ 
         error: "Insufficient permissions",
         code: "FORBIDDEN",
-        requiredRoles: this.allowedRoles 
+        requiredRoles: this.allowedRoles,
+        correlationId: req.correlationId
       });
       return;
+    }
+    
+    // Log successful authorization
+    if (req.logger) {
+      req.logger.debug({
+        userId: user.id,
+        userRole: user.role,
+        requiredRoles: this.allowedRoles,
+        method: req.method,
+        url: req.url
+      }, "Authorization successful");
     }
     
     return super.handle(req, res, next);

@@ -2,18 +2,28 @@ import { promises as fs } from 'fs';
 import { join, dirname } from 'path';
 import { Result, ok, err } from "../../shared/result/result";
 import { FileStorage } from "../../domain/services/document.service";
+import { env } from "../../env/env";
+import { createServiceLogger } from "../../shared/logging/logger";
 
 /**
  * Local file system implementation of file storage.
  * Stores files on the local disk with proper directory structure.
  */
 export class LocalFileStorage implements FileStorage {
-  constructor(private readonly baseDirectory: string = './storage') {}
+  private readonly logger = createServiceLogger('LocalFileStorage');
+  
+  constructor(private readonly baseDirectory: string = env.STORAGE_PATH) {}
 
   async store(key: string, data: Buffer): Promise<Result<string, Error>> {
     try {
       const fullPath = join(this.baseDirectory, key);
       const directory = dirname(fullPath);
+
+      this.logger.debug({ 
+        key, 
+        fullPath, 
+        size: data.length 
+      }, "Storing file");
 
       // Ensure directory exists
       await fs.mkdir(directory, { recursive: true });
@@ -21,8 +31,19 @@ export class LocalFileStorage implements FileStorage {
       // Write file
       await fs.writeFile(fullPath, data);
 
+      this.logger.info({ 
+        key, 
+        fullPath, 
+        size: data.length 
+      }, "File stored successfully");
+
       return ok(fullPath);
     } catch (error) {
+      this.logger.error({ 
+        key, 
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }, "Failed to store file");
+      
       return err(new Error(`Failed to store file: ${error instanceof Error ? error.message : 'Unknown error'}`));
     }
   }

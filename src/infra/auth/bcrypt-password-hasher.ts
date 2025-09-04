@@ -1,15 +1,16 @@
 import bcrypt from "bcrypt";
 import { Result, ok, err } from "../../shared/result/result";
 import { PasswordHasher } from "../../domain/services/auth.service";
+import { env } from "../../env/env";
 
 /**
  * Bcrypt implementation of the password hasher.
- * Uses strong salt rounds for security.
+ * Uses configurable salt rounds for security.
  */
 export class BcryptPasswordHasher implements PasswordHasher {
   private readonly saltRounds: number;
 
-  constructor(saltRounds: number = 12) {
+  constructor(saltRounds: number = env.BCRYPT_SALT_ROUNDS) {
     this.saltRounds = saltRounds;
   }
 

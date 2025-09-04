@@ -2,6 +2,7 @@ import { Handler } from "./chain";
 import { Request, Response, NextFunction } from "express";
 import { JwtService } from "../../application/ports/jwt.service";
 import { asUserId } from "../../shared/types/brand";
+import { logSecurityEvent } from "../../shared/logging/logger";
 
 /**
  * Chain of Responsibility handlers for authentication flow:
@@ -78,11 +79,30 @@ export class AttachUser extends Handler {
 export class RequireAuth extends Handler {
   override handle(req: Request, res: Response, next: NextFunction): void {
     if (!req.user) {
+      logSecurityEvent("authentication_required", undefined, {
+        method: req.method,
+        url: req.url,
+        ip: req.ip,
+        userAgent: req.headers['user-agent'],
+        correlationId: req.correlationId
+      });
+      
       res.status(401).json({ 
         error: "Authentication required",
-        code: "UNAUTHORIZED" 
+        code: "UNAUTHORIZED",
+        correlationId: req.correlationId
       });
       return;
+    }
+    
+    // Log successful authentication
+    if (req.logger) {
+      req.logger.debug({
+        userId: req.user.id,
+        userRole: req.user.role,
+        method: req.method,
+        url: req.url
+      }, "User authenticated successfully");
     }
     
     return super.handle(req, res, next);

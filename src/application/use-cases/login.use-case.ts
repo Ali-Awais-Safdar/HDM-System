@@ -4,6 +4,7 @@ import { Email } from "../../domain/value-objects/email.vo";
 import { Password } from "../../domain/value-objects/password.vo";
 import { UserRole } from "../../domain/entities/user.entity";
 import { JwtService } from "../ports/jwt.service";
+import { createServiceLogger, logPerformance, logSecurityEvent } from "../../shared/logging/logger";
 
 export interface LoginRequest {
   email: string;
@@ -21,24 +22,39 @@ export interface LoginResponse {
 }
 
 export class LoginUseCase {
+  private readonly logger = createServiceLogger('LoginUseCase');
+  
   constructor(
     private readonly authService: AuthService,
     private readonly jwtService: JwtService
   ) {}
 
   async execute(request: LoginRequest): Promise<Result<LoginResponse, LoginError>> {
+    const startTime = Date.now();
+    const email = request.email;
+    
     try {
+      this.logger.info({ email }, "Starting login attempt");
+      
       // Create value objects
-      const email = Email.create(request.email);
+      const emailVO = Email.create(request.email);
       const password = Password.create(request.password);
 
       // Execute login
-      const loginResult = await this.authService.login(email, password);
+      const loginResult = await this.authService.login(emailVO, password);
       if (!loginResult.ok) {
+        logSecurityEvent("login_failed", undefined, {
+          email,
+          reason: "invalid_credentials",
+          duration: Date.now() - startTime
+        });
+        
+        this.logger.warn({ email }, "Login failed: invalid credentials");
         return err(new LoginError("Invalid credentials"));
       }
 
       const user = loginResult.value;
+      this.logger.info({ userId: user.id, email }, "User authenticated successfully");
 
       // Generate JWT token
       const tokenResult = await this.jwtService.generateToken({
@@ -48,8 +64,22 @@ export class LoginUseCase {
       });
 
       if (!tokenResult.ok) {
+        this.logger.error({ userId: user.id, email }, "Failed to generate JWT token");
         return err(new LoginError("Failed to generate access token"));
       }
+
+      // Log successful login
+      logPerformance(this.logger, 'user_login', startTime, {
+        userId: user.id,
+        email,
+        role: user.role
+      });
+
+      logSecurityEvent("login_successful", user.id, {
+        email,
+        role: user.role,
+        duration: Date.now() - startTime
+      });
 
       return ok({
         accessToken: tokenResult.value,
@@ -62,6 +92,14 @@ export class LoginUseCase {
       });
 
     } catch (error) {
+      this.logger.error({ email, error }, "Unexpected error during login");
+      
+      logSecurityEvent("login_error", undefined, {
+        email,
+        error: error instanceof Error ? error.message : 'unknown_error',
+        duration: Date.now() - startTime
+      });
+      
       if (error instanceof Error) {
         return err(new LoginError("Invalid credentials"));
       }
