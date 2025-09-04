@@ -21,14 +21,28 @@ describe("DocumentController", () => {
   const ctrl = new DocumentController(createUC, updateUC, deleteUC, getUC);
 
   it("createDocument -> 401 when unauthenticated", async () => {
-    const req: any = { user: undefined, file: undefined, body: {} };
+    const req: any = { 
+      user: undefined, 
+      file: undefined, 
+      body: {},
+      ip: '127.0.0.1',
+      get: vi.fn().mockReturnValue('test-agent'),
+      correlationId: 'test-correlation-id'
+    };
     const res = mkRes();
     await ctrl.createDocument(req, res);
     expect(res.status).toHaveBeenCalledWith(401);
   });
 
   it("createDocument -> 400 when file missing", async () => {
-    const req: any = { user: { id: asUserId("u") }, file: undefined, body: {} };
+    const req: any = { 
+      user: { id: asUserId("u") }, 
+      file: undefined, 
+      body: {},
+      ip: '127.0.0.1',
+      get: vi.fn().mockReturnValue('test-agent'),
+      correlationId: 'test-correlation-id'
+    };
     const res = mkRes();
     await ctrl.createDocument(req, res);
     expect(res.status).toHaveBeenCalledWith(400);
@@ -38,7 +52,10 @@ describe("DocumentController", () => {
     const req: any = {
       user: { id: asUserId("u") },
       file: { originalname: "a.pdf", mimetype: "application/pdf", size: 1, buffer: Buffer.alloc(1) },
-      body: { title: "" } // invalid
+      body: { title: "" }, // invalid
+      ip: '127.0.0.1',
+      get: vi.fn().mockReturnValue('test-agent'),
+      correlationId: 'test-correlation-id'
     };
     const res = mkRes();
     await ctrl.createDocument(req, res);
@@ -49,7 +66,10 @@ describe("DocumentController", () => {
     const req: any = {
       user: { id: asUserId("u"), role: "user" },
       file: { originalname: "a.pdf", mimetype: "application/pdf", size: 1, buffer: Buffer.alloc(1) },
-      body: { title: "T" }
+      body: { title: "T" },
+      ip: '127.0.0.1',
+      get: vi.fn().mockReturnValue('test-agent'),
+      correlationId: 'test-correlation-id'
     };
     const res = mkRes();
     vi.mocked(createUC.execute).mockResolvedValue({
@@ -62,14 +82,26 @@ describe("DocumentController", () => {
   });
 
   it("getDocument -> 422 for invalid id", async () => {
-    const req: any = { user: { id: asUserId("u"), role: "user" }, params: { id: "not-a-uuid" } };
+    const req: any = { 
+      user: { id: asUserId("u"), role: "user" }, 
+      params: { id: "not-a-uuid" },
+      ip: '127.0.0.1',
+      get: vi.fn().mockReturnValue('test-agent'),
+      correlationId: 'test-correlation-id'
+    };
     const res = mkRes();
     await ctrl.getDocument(req, res);
     expect(res.status).toHaveBeenCalledWith(422);
   });
 
   it("getDocument -> 200 when found", async () => {
-    const req: any = { user: { id: asUserId("u"), role: "user" }, params: { id: "550e8400-e29b-41d4-a716-446655440000" } };
+    const req: any = { 
+      user: { id: asUserId("u"), role: "user" }, 
+      params: { id: "550e8400-e29b-41d4-a716-446655440000" },
+      ip: '127.0.0.1',
+      get: vi.fn().mockReturnValue('test-agent'),
+      correlationId: 'test-correlation-id'
+    };
     const res = mkRes();
     vi.mocked(getUC.execute).mockResolvedValue({ ok: true, value: { id: req.params.id } } as any);
     await ctrl.getDocument(req, res);
@@ -77,14 +109,27 @@ describe("DocumentController", () => {
   });
 
   it("updateMetadata -> 422 invalid body", async () => {
-    const req: any = { user: { id: asUserId("u"), role: "user" }, params: { id: "01234567-89ab-cdef-0123-456789abcdef" }, body: { metadata: "not-json" } };
+    const req: any = { 
+      user: { id: asUserId("u"), role: "user" }, 
+      params: { id: "01234567-89ab-cdef-0123-456789abcdef" }, 
+      body: { metadata: "not-json" },
+      ip: '127.0.0.1',
+      get: vi.fn().mockReturnValue('test-agent'),
+      correlationId: 'test-correlation-id'
+    };
     const res = mkRes();
     await ctrl.updateMetadata(req, res);
     expect(res.status).toHaveBeenCalledWith(422);
   });
 
   it("deleteDocument -> 200 on success", async () => {
-    const req: any = { user: { id: asUserId("u"), role: "user" }, params: { id: "550e8400-e29b-41d4-a716-446655440000" } };
+    const req: any = { 
+      user: { id: asUserId("u"), role: "user" }, 
+      params: { id: "550e8400-e29b-41d4-a716-446655440000" },
+      ip: '127.0.0.1',
+      get: vi.fn().mockReturnValue('test-agent'),
+      correlationId: 'test-correlation-id'
+    };
     const res = mkRes();
     vi.mocked(deleteUC.execute).mockResolvedValue({ ok: true, value: { success: true, message: "Document deleted successfully" } } as any);
     await ctrl.deleteDocument(req, res);

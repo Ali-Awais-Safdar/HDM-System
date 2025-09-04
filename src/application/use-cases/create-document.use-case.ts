@@ -2,6 +2,7 @@ import { Result, ok, err } from "../../shared/result/result";
 import { DocumentService } from "../../domain/services/document.service";
 import { FileUpload } from "../../domain/value-objects/file-upload.vo";
 import { UserId } from "../../shared/types/brand";
+import { createServiceLogger, logPerformance } from "../../shared/logging/logger";
 
 export interface CreateDocumentRequest {
   title: string;
@@ -29,10 +30,22 @@ export interface CreateDocumentResponse {
 }
 
 export class CreateDocumentUseCase {
+  private readonly logger = createServiceLogger('CreateDocumentUseCase');
+  
   constructor(private readonly documentService: DocumentService) {}
 
   async execute(request: CreateDocumentRequest): Promise<Result<CreateDocumentResponse, CreateDocumentError>> {
+    const startTime = Date.now();
+    
     try {
+      this.logger.info({
+        ownerId: request.ownerId,
+        title: request.title,
+        fileSize: request.file.size,
+        mimeType: request.file.mimeType,
+        tagCount: request.tags?.length || 0
+      }, "Starting document creation");
+
       // Validate and create file upload value object
       const fileUpload = FileUpload.create(
         request.file.originalName,
@@ -52,10 +65,30 @@ export class CreateDocumentUseCase {
       );
 
       if (!result.ok) {
+        this.logger.warn({
+          ownerId: request.ownerId,
+          title: request.title,
+          error: result.error.message
+        }, "Document creation failed");
         return err(new CreateDocumentError(result.error.message));
       }
 
       const document = result.value;
+
+      // Log successful creation
+      logPerformance(this.logger, 'create_document', startTime, {
+        documentId: document.id,
+        ownerId: request.ownerId,
+        fileSize: request.file.size,
+        tagCount: request.tags?.length || 0
+      });
+
+      this.logger.info({
+        documentId: document.id,
+        ownerId: request.ownerId,
+        title: document.title,
+        fileSize: document.size
+      }, "Document created successfully");
 
       return ok({
         id: document.id,
@@ -70,6 +103,13 @@ export class CreateDocumentUseCase {
       });
 
     } catch (error) {
+      this.logger.error({
+        ownerId: request.ownerId,
+        title: request.title,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        duration: Date.now() - startTime
+      }, "Unexpected error during document creation");
+      
       if (error instanceof Error) {
         return err(new CreateDocumentError(error.message));
       }

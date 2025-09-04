@@ -3,6 +3,7 @@ import { DocumentService } from "../../domain/services/document.service";
 import { UserId, asDocumentId } from "../../shared/types/brand";
 import { UserRole } from "../../domain/entities/user.entity";
 import type { Permission } from "../../domain/policies/document.policy";
+import { createServiceLogger, logPerformance } from "../../shared/logging/logger";
 
 export interface UpdateDocumentMetadataRequest {
   documentId: string;
@@ -25,11 +26,22 @@ export interface UpdateDocumentMetadataResponse {
 }
 
 export class UpdateDocumentMetadataUseCase {
+  private readonly logger = createServiceLogger('UpdateDocumentMetadataUseCase');
+  
   constructor(private readonly documentService: DocumentService) {}
 
   async execute(request: UpdateDocumentMetadataRequest): Promise<Result<UpdateDocumentMetadataResponse, UpdateDocumentMetadataError>> {
+    const startTime = Date.now();
+    
     try {
       const documentId = asDocumentId(request.documentId);
+
+      this.logger.info({
+        documentId: request.documentId,
+        userId: request.userId,
+        userRole: request.userRole,
+        metadataKeys: Object.keys(request.metadata)
+      }, "Starting document metadata update");
 
       const result = await this.documentService.updateMetadata(
         documentId,
@@ -40,10 +52,28 @@ export class UpdateDocumentMetadataUseCase {
       );
 
       if (!result.ok) {
+        this.logger.warn({
+          documentId: request.documentId,
+          userId: request.userId,
+          error: result.error.message
+        }, "Document metadata update failed");
         return err(new UpdateDocumentMetadataError(result.error.message));
       }
 
       const document = result.value;
+
+      // Log successful update
+      logPerformance(this.logger, 'update_document_metadata', startTime, {
+        documentId: request.documentId,
+        userId: request.userId
+      });
+
+      this.logger.info({
+        documentId: document.id,
+        userId: request.userId,
+        title: document.title,
+        metadataKeys: Object.keys(document.metadata)
+      }, "Document metadata updated successfully");
 
       return ok({
         id: document.id,
@@ -58,6 +88,13 @@ export class UpdateDocumentMetadataUseCase {
       });
 
     } catch (error) {
+      this.logger.error({
+        documentId: request.documentId,
+        userId: request.userId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        duration: Date.now() - startTime
+      }, "Unexpected error during document metadata update");
+      
       if (error instanceof Error) {
         return err(new UpdateDocumentMetadataError(error.message));
       }

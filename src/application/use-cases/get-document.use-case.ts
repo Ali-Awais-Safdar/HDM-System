@@ -3,6 +3,7 @@ import { DocumentService } from "../../domain/services/document.service";
 import { UserId, asDocumentId } from "../../shared/types/brand";
 import { UserRole } from "../../domain/entities/user.entity";
 import type { Permission } from "../../domain/policies/document.policy";
+import { createServiceLogger, logPerformance } from "../../shared/logging/logger";
 
 export interface GetDocumentRequest {
   documentId: string;
@@ -24,11 +25,21 @@ export interface GetDocumentResponse {
 }
 
 export class GetDocumentUseCase {
+  private readonly logger = createServiceLogger('GetDocumentUseCase');
+  
   constructor(private readonly documentService: DocumentService) {}
 
   async execute(request: GetDocumentRequest): Promise<Result<GetDocumentResponse, GetDocumentError>> {
+    const startTime = Date.now();
+    
     try {
       const documentId = asDocumentId(request.documentId);
+
+      this.logger.info({
+        documentId: request.documentId,
+        userId: request.userId,
+        userRole: request.userRole
+      }, "Starting document retrieval");
 
       const result = await this.documentService.getDocument(
         documentId,
@@ -38,10 +49,27 @@ export class GetDocumentUseCase {
       );
 
       if (!result.ok) {
+        this.logger.warn({
+          documentId: request.documentId,
+          userId: request.userId,
+          error: result.error.message
+        }, "Document retrieval failed");
         return err(new GetDocumentError(result.error.message));
       }
 
       const document = result.value;
+
+      // Log successful retrieval
+      logPerformance(this.logger, 'get_document', startTime, {
+        documentId: request.documentId,
+        userId: request.userId
+      });
+
+      this.logger.info({
+        documentId: document.id,
+        userId: request.userId,
+        title: document.title
+      }, "Document retrieved successfully");
 
       return ok({
         id: document.id,
@@ -56,6 +84,13 @@ export class GetDocumentUseCase {
       });
 
     } catch (error) {
+      this.logger.error({
+        documentId: request.documentId,
+        userId: request.userId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        duration: Date.now() - startTime
+      }, "Unexpected error during document retrieval");
+      
       if (error instanceof Error) {
         return err(new GetDocumentError(error.message));
       }

@@ -4,6 +4,7 @@ import { Email } from "../../domain/value-objects/email.vo";
 import { Password } from "../../domain/value-objects/password.vo";
 import { UserRole } from "../../domain/entities/user.entity";
 import { JwtService } from "../ports/jwt.service";
+import { createServiceLogger, logPerformance, logSecurityEvent } from "../../shared/logging/logger";
 
 export interface SignupRequest {
   email: string;
@@ -22,15 +23,22 @@ export interface SignupResponse {
 }
 
 export class SignupUseCase {
+  private readonly logger = createServiceLogger('SignupUseCase');
+  
   constructor(
     private readonly authService: AuthService,
     private readonly jwtService: JwtService
   ) {}
 
   async execute(request: SignupRequest): Promise<Result<SignupResponse, SignupError>> {
+    const startTime = Date.now();
+    const email = request.email;
+    
     try {
+      this.logger.info({ email, role: request.role }, "Starting user signup");
+      
       // Create value objects
-      const email = Email.create(request.email);
+      const emailVO = Email.create(request.email);
       const password = Password.create(request.password);
       const role = request.role || "user";
 
@@ -39,15 +47,24 @@ export class SignupUseCase {
         // In a real application, this would check if the current user is an admin
         // For now, we'll allow it for initial admin seeding
         // TODO: Add current user context and permission check
+        this.logger.warn({ email, role }, "Admin user creation attempted");
       }
 
       // Execute signup
-      const signupResult = await this.authService.signup(email, password, role);
+      const signupResult = await this.authService.signup(emailVO, password, role);
       if (!signupResult.ok) {
+        logSecurityEvent("signup_failed", undefined, {
+          email,
+          reason: "user_creation_failed",
+          duration: Date.now() - startTime
+        });
+        
+        this.logger.warn({ email, error: signupResult.error.message }, "Signup failed: user creation failed");
         return err(new SignupError(signupResult.error.message));
       }
 
       const user = signupResult.value;
+      this.logger.info({ userId: user.id, email, role }, "User created successfully");
 
       // Generate JWT token
       const tokenResult = await this.jwtService.generateToken({
@@ -57,8 +74,22 @@ export class SignupUseCase {
       });
 
       if (!tokenResult.ok) {
+        this.logger.error({ userId: user.id, email }, "Failed to generate JWT token during signup");
         return err(new SignupError("Failed to generate access token"));
       }
+
+      // Log successful signup
+      logPerformance(this.logger, 'user_signup', startTime, {
+        userId: user.id,
+        email,
+        role: user.role
+      });
+
+      logSecurityEvent("signup_successful", user.id, {
+        email,
+        role: user.role,
+        duration: Date.now() - startTime
+      });
 
       return ok({
         accessToken: tokenResult.value,
@@ -71,6 +102,14 @@ export class SignupUseCase {
       });
 
     } catch (error) {
+      this.logger.error({ email, error }, "Unexpected error during signup");
+      
+      logSecurityEvent("signup_error", undefined, {
+        email,
+        error: error instanceof Error ? error.message : 'unknown_error',
+        duration: Date.now() - startTime
+      });
+      
       if (error instanceof Error) {
         return err(new SignupError(error.message));
       }

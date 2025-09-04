@@ -3,6 +3,7 @@ import { DocumentService } from "../../domain/services/document.service";
 import { UserId, asDocumentId } from "../../shared/types/brand";
 import { UserRole } from "../../domain/entities/user.entity";
 import type { Permission } from "../../domain/policies/document.policy";
+import { createServiceLogger, logPerformance } from "../../shared/logging/logger";
 
 export interface DeleteDocumentRequest {
   documentId: string;
@@ -17,11 +18,21 @@ export interface DeleteDocumentResponse {
 }
 
 export class DeleteDocumentUseCase {
+  private readonly logger = createServiceLogger('DeleteDocumentUseCase');
+  
   constructor(private readonly documentService: DocumentService) {}
 
   async execute(request: DeleteDocumentRequest): Promise<Result<DeleteDocumentResponse, DeleteDocumentError>> {
+    const startTime = Date.now();
+    
     try {
       const documentId = asDocumentId(request.documentId);
+
+      this.logger.info({
+        documentId: request.documentId,
+        userId: request.userId,
+        userRole: request.userRole
+      }, "Starting document deletion");
 
       const result = await this.documentService.deleteDocument(
         documentId,
@@ -31,8 +42,24 @@ export class DeleteDocumentUseCase {
       );
 
       if (!result.ok) {
+        this.logger.warn({
+          documentId: request.documentId,
+          userId: request.userId,
+          error: result.error.message
+        }, "Document deletion failed");
         return err(new DeleteDocumentError(result.error.message));
       }
+
+      // Log successful deletion
+      logPerformance(this.logger, 'delete_document', startTime, {
+        documentId: request.documentId,
+        userId: request.userId
+      });
+
+      this.logger.info({
+        documentId: request.documentId,
+        userId: request.userId
+      }, "Document deleted successfully");
 
       return ok({
         success: true,
@@ -40,6 +67,13 @@ export class DeleteDocumentUseCase {
       });
 
     } catch (error) {
+      this.logger.error({
+        documentId: request.documentId,
+        userId: request.userId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        duration: Date.now() - startTime
+      }, "Unexpected error during document deletion");
+      
       if (error instanceof Error) {
         return err(new DeleteDocumentError(error.message));
       }
