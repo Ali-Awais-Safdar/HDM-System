@@ -44,6 +44,9 @@ describe("DocumentService", () => {
       search: vi.fn(),
       save: vi.fn(),
       delete: vi.fn(),
+      saveInTransaction: vi.fn(),
+      deleteInTransaction: vi.fn(),
+      executeInTransaction: vi.fn(),
     } as unknown as Mocked<DocumentRepository>;
 
     storage = {
@@ -61,7 +64,16 @@ describe("DocumentService", () => {
     const data = Buffer.from("pdf");
 
     storage.store.mockResolvedValue({ ok: true, value: "storage/documents/xyz.pdf" });
-    repo.save.mockImplementation(async (d) => ({ ok: true, value: d }));
+    storage.delete.mockResolvedValue({ ok: true, value: undefined });
+    
+    // Mock the transaction execution to simulate successful save
+    repo.executeInTransaction.mockImplementation(async (callback) => {
+      const mockTx = {};
+      return await callback(mockTx);
+    });
+    
+    // Mock the saveInTransaction method
+    repo.saveInTransaction.mockImplementation(async (doc, _tx) => ({ ok: true, value: doc }));
 
     const res = await svc.createDocument(
       ownerId,
@@ -80,12 +92,20 @@ describe("DocumentService", () => {
       expect(doc.mimeType).toBe("application/pdf");
       expect(doc.size).toBe(data.length);
       expect(doc.storageKey).toMatch(/^documents\/.*\.pdf$/);
-      expect(repo.save).toHaveBeenCalledOnce();
+      expect(repo.executeInTransaction).toHaveBeenCalledOnce();
+      expect(repo.saveInTransaction).toHaveBeenCalledOnce();
     }
   });
 
   it("createDocument fails if storage.store fails", async () => {
     storage.store.mockResolvedValue({ ok: false, error: new Error("disk full") } as any);
+    
+    // Mock the transaction execution (should not be called since storage fails first)
+    repo.executeInTransaction.mockImplementation(async (callback) => {
+      const mockTx = {};
+      return await callback(mockTx);
+    });
+    
     const res = await svc.createDocument(
       asUserId("bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb"),
       "t",
@@ -173,7 +193,16 @@ describe("DocumentService", () => {
     const data = Buffer.alloc(3);
 
     storage.store.mockResolvedValue({ ok: true, value: "ok" });
-    repo.save.mockImplementation(async (d) => ({ ok: true, value: d }));
+    storage.delete.mockResolvedValue({ ok: true, value: undefined });
+    
+    // Mock the transaction execution to simulate successful save
+    repo.executeInTransaction.mockImplementation(async (callback) => {
+      const mockTx = {};
+      return await callback(mockTx);
+    });
+    
+    // Mock the saveInTransaction method
+    repo.saveInTransaction.mockImplementation(async (doc, _tx) => ({ ok: true, value: doc }));
 
     const types: Array<[string, string]> = [
       ["application/pdf", ".pdf"],

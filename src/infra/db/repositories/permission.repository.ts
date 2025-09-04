@@ -1,5 +1,4 @@
 import { eq, and } from "drizzle-orm";
-import { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { 
   PermissionRepository, 
   PermissionRepositoryError 
@@ -8,13 +7,19 @@ import { Permission, PermissionLevel } from "../../../domain/entities/permission
 import { Result, ok, err } from "../../../shared/result/result";
 import { UserId, DocumentId, asPermissionId } from "../../../shared/types/brand";
 import { permissions } from "../../../lib/db/schema";
+import { Database, DatabaseTransaction } from "../../../lib/db/connection";
+import { TransactionManager } from "../../../lib/db/transaction";
 
 /**
  * Drizzle ORM implementation of the PermissionRepository.
- * Handles all database operations for permissions.
+ * Handles all database operations for permissions with transaction support.
  */
 export class DrizzlePermissionRepository implements PermissionRepository {
-  constructor(private readonly db: NodePgDatabase<any>) {}
+  private readonly transactionManager: TransactionManager;
+
+  constructor(private readonly db: Database) {
+    this.transactionManager = new TransactionManager(db);
+  }
 
   async save(permission: Permission): Promise<Result<Permission, PermissionRepositoryError>> {
     try {
@@ -225,6 +230,128 @@ export class DrizzlePermissionRepository implements PermissionRepository {
     } catch (error) {
       return err(new PermissionRepositoryError(
         "Failed to update permission level",
+        "DATABASE_ERROR",
+        error instanceof Error ? error : new Error(String(error))
+      ));
+    }
+  }
+
+  // Transaction support methods
+
+  /**
+   * Saves a permission within an existing transaction.
+   */
+  async saveInTransaction(permission: Permission, tx: DatabaseTransaction): Promise<Result<Permission, PermissionRepositoryError>> {
+    try {
+      const permissionData = {
+        id: permission.id,
+        documentId: permission.documentId,
+        userId: permission.userId,
+        permission: permission.level,
+        createdAt: permission.createdAt,
+      };
+
+      await tx.insert(permissions).values(permissionData);
+      return ok(permission);
+    } catch (error) {
+      return err(new PermissionRepositoryError(
+        "Failed to save permission in transaction",
+        "DATABASE_ERROR",
+        error instanceof Error ? error : new Error(String(error))
+      ));
+    }
+  }
+
+  /**
+   * Removes a permission within an existing transaction.
+   */
+  async removeInTransaction(documentId: DocumentId, userId: UserId, tx: DatabaseTransaction): Promise<Result<boolean, PermissionRepositoryError>> {
+    try {
+      await tx
+        .delete(permissions)
+        .where(
+          and(
+            eq(permissions.documentId, documentId),
+            eq(permissions.userId, userId)
+          )
+        );
+
+      return ok(true);
+    } catch (error) {
+      return err(new PermissionRepositoryError(
+        "Failed to remove permission in transaction",
+        "DATABASE_ERROR",
+        error instanceof Error ? error : new Error(String(error))
+      ));
+    }
+  }
+
+  /**
+   * Updates a permission level within an existing transaction.
+   */
+  async updatePermissionLevelInTransaction(
+    documentId: DocumentId,
+    userId: UserId,
+    newLevel: PermissionLevel,
+    tx: DatabaseTransaction
+  ): Promise<Result<Permission, PermissionRepositoryError>> {
+    try {
+      const result = await tx
+        .update(permissions)
+        .set({ permission: newLevel })
+        .where(
+          and(
+            eq(permissions.documentId, documentId),
+            eq(permissions.userId, userId)
+          )
+        )
+        .returning();
+
+      if (result.length === 0) {
+        return err(new PermissionRepositoryError(
+          "Permission not found for update",
+          "PERMISSION_NOT_FOUND"
+        ));
+      }
+
+      const updatedRow = result[0]!;
+      const permission = Permission.fromPersistence({
+        id: asPermissionId(updatedRow.id),
+        documentId: updatedRow.documentId as DocumentId,
+        userId: updatedRow.userId as UserId,
+        level: updatedRow.permission as PermissionLevel,
+        createdAt: updatedRow.createdAt,
+      });
+
+      return ok(permission);
+    } catch (error) {
+      return err(new PermissionRepositoryError(
+        "Failed to update permission level in transaction",
+        "DATABASE_ERROR",
+        error instanceof Error ? error : new Error(String(error))
+      ));
+    }
+  }
+
+  /**
+   * Executes an operation within a database transaction.
+   */
+  async executeInTransaction<T>(operation: (tx: DatabaseTransaction) => Promise<Result<T, Error>>): Promise<Result<T, PermissionRepositoryError>> {
+    try {
+      const result = await this.transactionManager.executeInTransaction(operation);
+      
+      if (!result.ok) {
+        return err(new PermissionRepositoryError(
+          "Transaction execution failed",
+          "DATABASE_ERROR",
+          result.error
+        ));
+      }
+      
+      return result;
+    } catch (error) {
+      return err(new PermissionRepositoryError(
+        "Transaction execution failed",
         "DATABASE_ERROR",
         error instanceof Error ? error : new Error(String(error))
       ));

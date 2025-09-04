@@ -57,6 +57,19 @@ export interface PermissionRepository {
     userId: UserId,
     newLevel: PermissionLevel
   ): Promise<Result<Permission, PermissionRepositoryError>>;
+
+  /**
+   * Transaction support methods
+   */
+  saveInTransaction(permission: Permission, tx: any): Promise<Result<Permission, PermissionRepositoryError>>;
+  removeInTransaction(documentId: DocumentId, userId: UserId, tx: any): Promise<Result<boolean, PermissionRepositoryError>>;
+  updatePermissionLevelInTransaction(
+    documentId: DocumentId,
+    userId: UserId,
+    newLevel: PermissionLevel,
+    tx: any
+  ): Promise<Result<Permission, PermissionRepositoryError>>;
+  executeInTransaction<T>(operation: (tx: any) => Promise<Result<T, Error>>): Promise<Result<T, PermissionRepositoryError>>;
 }
 
 /**
@@ -89,6 +102,7 @@ export class PermissionService {
   /**
    * Grants or updates a permission for a user on a document.
    * If the permission already exists, it updates the level.
+   * Uses transactions to ensure consistency.
    */
   async grantPermission(
     documentId: DocumentId,
@@ -96,57 +110,70 @@ export class PermissionService {
     level: PermissionLevel
   ): Promise<Result<Permission, PermissionServiceError>> {
     try {
-      // Check if permission already exists
-      const existingResult = await this.permissionRepository.findByDocumentAndUser(
-        documentId,
-        userId
-      );
+      const transactionResult = await this.permissionRepository.executeInTransaction(async (tx) => {
+        // Check if permission already exists
+        const existingResult = await this.permissionRepository.findByDocumentAndUser(
+          documentId,
+          userId
+        );
 
-      if (!existingResult.ok) {
+        if (!existingResult.ok) {
+          return err(new PermissionServiceError(
+            "Failed to check existing permission",
+            "REPOSITORY_ERROR",
+            existingResult.error
+          ));
+        }
+
+        if (existingResult.value) {
+          // Update existing permission within transaction
+          const updateResult = await this.permissionRepository.updatePermissionLevelInTransaction(
+            documentId,
+            userId,
+            level,
+            tx
+          );
+
+          if (!updateResult.ok) {
+            return err(new PermissionServiceError(
+              "Failed to update permission",
+              "REPOSITORY_ERROR",
+              updateResult.error
+            ));
+          }
+
+          return ok(updateResult.value);
+        } else {
+          // Create new permission within transaction
+          const permission = Permission.create({
+            documentId,
+            userId,
+            level
+          });
+
+          const saveResult = await this.permissionRepository.saveInTransaction(permission, tx);
+
+          if (!saveResult.ok) {
+            return err(new PermissionServiceError(
+              "Failed to save permission",
+              "REPOSITORY_ERROR",
+              saveResult.error
+            ));
+          }
+
+          return ok(saveResult.value);
+        }
+      });
+
+      if (!transactionResult.ok) {
         return err(new PermissionServiceError(
-          "Failed to check existing permission",
-          "REPOSITORY_ERROR",
-          existingResult.error
+          "Transaction failed",
+          "TRANSACTION_ERROR",
+          transactionResult.error
         ));
       }
 
-      if (existingResult.value) {
-        // Update existing permission
-        const updateResult = await this.permissionRepository.updatePermissionLevel(
-          documentId,
-          userId,
-          level
-        );
-
-        if (!updateResult.ok) {
-          return err(new PermissionServiceError(
-            "Failed to update permission",
-            "REPOSITORY_ERROR",
-            updateResult.error
-          ));
-        }
-
-        return ok(updateResult.value);
-      } else {
-        // Create new permission
-        const permission = Permission.create({
-          documentId,
-          userId,
-          level
-        });
-
-        const saveResult = await this.permissionRepository.save(permission);
-
-        if (!saveResult.ok) {
-          return err(new PermissionServiceError(
-            "Failed to save permission",
-            "REPOSITORY_ERROR",
-            saveResult.error
-          ));
-        }
-
-        return ok(saveResult.value);
-      }
+      return transactionResult;
     } catch (error) {
       return err(new PermissionServiceError(
         "Unexpected error while granting permission",
@@ -158,26 +185,40 @@ export class PermissionService {
 
   /**
    * Revokes a permission for a user on a document.
+   * Uses transactions to ensure consistency.
    */
   async revokePermission(
     documentId: DocumentId,
     userId: UserId
   ): Promise<Result<boolean, PermissionServiceError>> {
     try {
-      const result = await this.permissionRepository.removeByDocumentAndUser(
-        documentId,
-        userId
-      );
+      const transactionResult = await this.permissionRepository.executeInTransaction(async (tx) => {
+        const result = await this.permissionRepository.removeInTransaction(
+          documentId,
+          userId,
+          tx
+        );
 
-      if (!result.ok) {
+        if (!result.ok) {
+          return err(new PermissionServiceError(
+            "Failed to revoke permission",
+            "REPOSITORY_ERROR",
+            result.error
+          ));
+        }
+
+        return ok(result.value);
+      });
+
+      if (!transactionResult.ok) {
         return err(new PermissionServiceError(
-          "Failed to revoke permission",
-          "REPOSITORY_ERROR",
-          result.error
+          "Transaction failed",
+          "TRANSACTION_ERROR",
+          transactionResult.error
         ));
       }
 
-      return ok(result.value);
+      return transactionResult;
     } catch (error) {
       return err(new PermissionServiceError(
         "Unexpected error while revoking permission",
@@ -206,6 +247,7 @@ export type PermissionServiceErrorCode =
   | "REPOSITORY_ERROR"
   | "PERMISSION_NOT_FOUND"
   | "INVALID_PERMISSION_LEVEL"
+  | "TRANSACTION_ERROR"
   | "UNKNOWN_ERROR";
 
 // Result helper functions imported at the top

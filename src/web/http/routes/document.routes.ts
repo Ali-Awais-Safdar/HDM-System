@@ -59,7 +59,7 @@ export function createDocumentRoutes(): Router {
   });
 
   // Infrastructure dependencies
-  const fileStorage = new LocalFileStorage('./storage');
+  const fileStorage = new LocalFileStorage();
   const documentRepository = new DrizzleDocumentRepository(db);
   const permissionRepository = new DrizzlePermissionRepository(db);
   const downloadTokenRepository = new DrizzleDownloadTokenRepository(db);

@@ -16,7 +16,7 @@ const downloadRouter = Router();
 const documentRepository = new DrizzleDocumentRepository(db);
 const permissionRepository = new DrizzlePermissionRepository(db);
 const downloadTokenRepository = new DrizzleDownloadTokenRepository(db);
-const fileStorage = new LocalFileStorage('./storage');
+const fileStorage = new LocalFileStorage();
 
 // Use cases
 const generateDownloadLinkUseCase = new GenerateDownloadLinkUseCase(

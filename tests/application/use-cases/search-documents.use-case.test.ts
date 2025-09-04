@@ -16,6 +16,9 @@ describe("SearchDocumentsUseCase", () => {
       search: vi.fn(),
       save: vi.fn(),
       delete: vi.fn(),
+      saveInTransaction: vi.fn(),
+      deleteInTransaction: vi.fn(),
+      executeInTransaction: vi.fn(),
     };
     useCase = new SearchDocumentsUseCase(mockRepository);
   });

@@ -22,7 +22,18 @@ function makeInMemoryRepo(): DocumentRepository {
     findByOwner: async (ownerId) => ({ ok: true, value: [...map.values()].filter(d => d.ownerId === ownerId) }),
     search: async (_filters) => ({ ok: true, value: [...map.values()] }),
     save: async (doc) => { map.set(doc.id, doc); return { ok: true, value: doc }; },
-    delete: async (id) => { map.delete(id as string); return { ok: true, value: undefined as void }; }
+    delete: async (id) => { map.delete(id as string); return { ok: true, value: undefined as void }; },
+    // Transaction support methods (simplified for in-memory testing)
+    saveInTransaction: async (doc, _tx) => { map.set(doc.id, doc); return { ok: true, value: doc }; },
+    deleteInTransaction: async (id, _tx) => { map.delete(id as string); return { ok: true, value: undefined as void }; },
+    executeInTransaction: async (operation) => {
+      try {
+        // For in-memory testing, we don't have real transactions, just call the operation
+        return await operation({} as any);
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error : new Error(String(error)) };
+      }
+    }
   };
 }
 

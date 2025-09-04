@@ -29,8 +29,14 @@ export class ShareDocumentUseCase {
     params: ShareDocumentParams
   ): Promise<Result<ShareDocumentResponse, ShareDocumentError>> {
     try {
+      // Parallel operation: Fetch document and requester permissions simultaneously
+      // This optimizes I/O operations as suggested in async best practices
+      const [documentResult, requesterPermissionsResult] = await Promise.all([
+        this.documentRepository.findById(params.documentId),
+        this.permissionRepository.findByDocumentAndUser(params.documentId, requesterId)
+      ]);
+
       // 1. Verify document exists and get owner
-      const documentResult = await this.documentRepository.findById(params.documentId);
       if (!documentResult.ok) {
         return err(new ShareDocumentError(
           "Failed to find document",
@@ -47,11 +53,7 @@ export class ShareDocumentUseCase {
 
       const document = documentResult.value;
 
-      // 2. Get requester's existing permissions for the document
-      const requesterPermissionsResult = await this.permissionRepository.findByDocumentAndUser(
-        params.documentId,
-        requesterId
-      );
+      // 2. Handle requester permissions check result
 
       if (!requesterPermissionsResult.ok) {
         return err(new ShareDocumentError(

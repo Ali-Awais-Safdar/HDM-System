@@ -1,5 +1,4 @@
 import { eq, lt } from "drizzle-orm";
-import { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { 
   DownloadTokenRepository, 
   DownloadTokenRepositoryError 
@@ -8,13 +7,14 @@ import { DownloadToken } from "../../../domain/entities/download-token.entity";
 import { Result, ok, err } from "../../../shared/result/result";
 import { UserId, DocumentId, asDownloadTokenId } from "../../../shared/types/brand";
 import { downloadTokens } from "../../../lib/db/schema";
+import { Database } from "../../../lib/db/connection";
 
 /**
  * Drizzle ORM implementation of the DownloadTokenRepository.
  * Handles all database operations for download tokens.
  */
 export class DrizzleDownloadTokenRepository implements DownloadTokenRepository {
-  constructor(private readonly db: NodePgDatabase<any>) {}
+  constructor(private readonly db: Database) {}
 
   async save(token: DownloadToken): Promise<Result<DownloadToken, DownloadTokenRepositoryError>> {
     try {

@@ -5,12 +5,15 @@ import { PermissionRepository } from "./permission.service";
 import { DocumentId, UserId, MimeType, FileSize, newDocumentId } from "../../shared/types/brand";
 import { UserRole } from "../entities/user.entity";
 import { Result, ok, err } from "../../shared/result/result";
+import { createServiceLogger, logPerformance } from "../../shared/logging/logger";
 
 /**
  * Domain service for document business logic.
- * Handles document creation, updates, and business rule enforcement.
+ * Handles document creation, updates, and business rule enforcement with transaction support.
  */
 export class DocumentService {
+  private readonly logger = createServiceLogger('DocumentService');
+
   constructor(
     private readonly documentRepository: DocumentRepository,
     private readonly fileStorage: FileStorage,
@@ -25,17 +28,21 @@ export class DocumentService {
     metadata: Record<string, unknown> = {},
     tags: string[] = []
   ): Promise<Result<Document, DocumentError>> {
+    const startTime = Date.now();
+    
     try {
+      this.logger.info({
+        ownerId,
+        title,
+        mimeType,
+        fileSize: fileData.length,
+        tagCount: tags.length
+      }, "Starting document creation");
+
       // Generate document ID and storage key
       const documentId = newDocumentId();
       const storageKey = this.generateStorageKey(documentId, mimeType);
       
-      // Store file
-      const storeResult = await this.fileStorage.store(storageKey, fileData);
-      if (!storeResult.ok) {
-        return err(new DocumentError("Failed to store file"));
-      }
-
       // Create document entity
       const document = Document.create({
         id: documentId,
@@ -48,17 +55,100 @@ export class DocumentService {
         tags
       });
 
-      // Save to repository
-      const saveResult = await this.documentRepository.save(document);
-      if (!saveResult.ok) {
-        // Cleanup stored file on database failure
-        await this.fileStorage.delete(storageKey);
-        return err(new DocumentError("Failed to save document"));
+      // Execute file storage and database write in a transaction-like manner
+      // Since file storage is external, we handle it with proper cleanup
+      let fileStored = false;
+      let cleanupRequired = false;
+
+      const result = await this.documentRepository.executeInTransaction(async (tx) => {
+        try {
+          this.logger.debug({ documentId, storageKey }, "Storing file");
+          
+          // First, store the file
+          const storeResult = await this.fileStorage.store(storageKey, fileData);
+          if (!storeResult.ok) {
+            this.logger.error({ 
+              documentId, 
+              storageKey, 
+              error: storeResult.error.message 
+            }, "Failed to store file");
+            return err(new DocumentError("Failed to store file"));
+          }
+          
+          fileStored = true;
+          cleanupRequired = true;
+          this.logger.debug({ documentId, storageKey }, "File stored successfully");
+
+          // Then save to database within transaction
+          this.logger.debug({ documentId }, "Saving document to database");
+          const saveResult = await this.documentRepository.saveInTransaction(document, tx);
+          if (!saveResult.ok) {
+            this.logger.error({ 
+              documentId, 
+              error: saveResult.error.message 
+            }, "Failed to save document to database");
+            return err(new DocumentError("Failed to save document to database"));
+          }
+
+          // If we reach here, both operations succeeded
+          cleanupRequired = false;
+          this.logger.debug({ documentId }, "Document saved successfully");
+          return ok(saveResult.value);
+          
+        } catch (error) {
+          this.logger.error({ 
+            documentId, 
+            error: error instanceof Error ? error.message : 'Unknown error' 
+          }, "Error during document creation transaction");
+          // Any error here will trigger transaction rollback
+          throw error;
+        } finally {
+          // Cleanup file if transaction failed but file was stored
+          if (cleanupRequired && fileStored) {
+            this.logger.warn({ documentId, storageKey }, "Cleaning up file after transaction failure");
+            try {
+              await this.fileStorage.delete(storageKey);
+              this.logger.info({ documentId, storageKey }, "File cleanup successful");
+            } catch (cleanupError) {
+              this.logger.error({ 
+                documentId, 
+                storageKey, 
+                cleanupError: cleanupError instanceof Error ? cleanupError.message : 'Unknown error'
+              }, "Failed to cleanup file after transaction failure");
+            }
+          }
+        }
+      });
+
+      // Log performance and result
+      if (result.ok) {
+        logPerformance(this.logger, 'create_document', startTime, {
+          documentId: result.value.id,
+          ownerId,
+          fileSize: fileData.length,
+          tagCount: tags.length
+        });
+        
+        this.logger.info({ 
+          documentId: result.value.id, 
+          title,
+          fileSize: fileData.length 
+        }, "Document created successfully");
       }
 
-      return ok(saveResult.value);
-    } catch {
-      return err(new DocumentError("Failed to create document"));
+      return result;
+
+    } catch (error) {
+      this.logger.error({ 
+        ownerId,
+        title,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        duration: Date.now() - startTime
+      }, "Unexpected error during document creation");
+      
+      return err(new DocumentError(
+        `Failed to create document: ${error instanceof Error ? error.message : 'Unknown error'}`
+      ));
     }
   }
 
@@ -277,6 +367,11 @@ export interface DocumentRepository {
   search(filters: DocumentSearchFilters): Promise<Result<Document[], Error>>;
   save(document: Document): Promise<Result<Document, Error>>;
   delete(id: DocumentId): Promise<Result<void, Error>>;
+  
+  // Transaction support
+  saveInTransaction(document: Document, tx: any): Promise<Result<Document, Error>>;
+  deleteInTransaction(id: DocumentId, tx: any): Promise<Result<void, Error>>;
+  executeInTransaction<T>(operation: (tx: any) => Promise<Result<T, Error>>): Promise<Result<T, Error>>;
 }
 
 export interface DocumentSearchFilters {

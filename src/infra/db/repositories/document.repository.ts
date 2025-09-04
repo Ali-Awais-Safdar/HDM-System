@@ -5,13 +5,19 @@ import { DocumentRepository, DocumentSearchFilters } from "../../../domain/servi
 import { DocumentId, UserId, asDocumentId, asUserId, asMimeType, asFileSize } from "../../../shared/types/brand";
 import { documents, tags, documentTags } from "../../../lib/db/schema";
 import { newId } from "../../../shared/uuid";
+import { Database, DatabaseTransaction } from "../../../lib/db/connection";
+import { TransactionManager } from "../../../lib/db/transaction";
 
 /**
  * Drizzle ORM implementation of the Document Repository.
- * Handles database operations for documents with advanced search capabilities.
+ * Handles database operations for documents with advanced search capabilities and transaction support.
  */
 export class DrizzleDocumentRepository implements DocumentRepository {
-  constructor(private readonly db: any) {} // TODO: Type this properly with Drizzle DB type
+  private readonly transactionManager: TransactionManager;
+
+  constructor(private readonly db: Database) {
+    this.transactionManager = new TransactionManager(db);
+  }
 
   async findById(id: DocumentId): Promise<Result<Document | null, Error>> {
     try {
@@ -97,29 +103,25 @@ export class DrizzleDocumentRepository implements DocumentRepository {
 
       // Apply all conditions
       if (conditions.length > 0) {
-        query = query.where(and(...conditions));
+        query = query.where(and(...conditions)) as typeof query;
       }
 
       // Apply pagination
       if (filters.offset) {
-        query = query.offset(filters.offset);
+        query = query.offset(filters.offset) as typeof query;
       }
 
-      if (filters.limit) {
-        query = query.limit(filters.limit);
-      } else {
-        query = query.limit(50); // Default limit
-      }
+      const limit = filters.limit || 50; // Default limit
+      query = query.limit(limit) as typeof query;
 
       // Order by relevance when searching, otherwise by creation date
       if (filters.query) {
         // Order by similarity score (descending), then by creation date
-        query = query.orderBy(
-          sql`similarity(${documents.title}, ${filters.query.trim()}) DESC, ${documents.createdAt} DESC`
-        );
+        const orderClause = sql`similarity(${documents.title}, ${filters.query.trim()}) DESC, ${documents.createdAt} DESC`;
+        query = query.orderBy(orderClause) as typeof query;
       } else {
         // Order by creation date (newest first)
-        query = query.orderBy(sql`${documents.createdAt} DESC`);
+        query = query.orderBy(sql`${documents.createdAt} DESC`) as typeof query;
       }
 
       const result = await query;
@@ -215,7 +217,7 @@ export class DrizzleDocumentRepository implements DocumentRepository {
 
       let tagId: string;
       if (existingTags.length > 0) {
-        tagId = existingTags[0].id;
+        tagId = existingTags[0]!.id;
       } else {
         // Create new tag
         const newTagId = newId(); // Use our UUID v7 generation
@@ -250,5 +252,101 @@ export class DrizzleDocumentRepository implements DocumentRepository {
       metadata: row.metadata || {},
       tags: [] // Tags would need to be loaded separately in a complete implementation
     });
+  }
+
+  // Transaction support methods
+
+  /**
+   * Saves a document within an existing transaction.
+   */
+  async saveInTransaction(document: Document, tx: DatabaseTransaction): Promise<Result<Document, Error>> {
+    try {
+      const documentData = {
+        id: document.id,
+        ownerId: document.ownerId,
+        title: document.title,
+        mimeType: document.mimeType,
+        size: document.size,
+        storageKey: document.storageKey,
+        metadata: document.metadata,
+        createdAt: document.createdAt,
+        updatedAt: document.updatedAt
+      };
+
+      await tx.insert(documents).values(documentData);
+
+      // Handle tags within transaction
+      await this.saveTags(document.tags, tx);
+      await this.linkDocumentTags(document.id, document.tags, tx);
+
+      return ok(document);
+    } catch (error) {
+      return err(new Error(`Failed to save document in transaction: ${error instanceof Error ? error.message : 'Unknown error'}`));
+    }
+  }
+
+  /**
+   * Deletes a document within an existing transaction.
+   */
+  async deleteInTransaction(id: DocumentId, tx: DatabaseTransaction): Promise<Result<void, Error>> {
+    try {
+      // Delete document tags first (foreign key constraint)
+      await tx.delete(documentTags).where(eq(documentTags.documentId, id));
+      
+      // Delete the document
+      await tx.delete(documents).where(eq(documents.id, id));
+
+      return ok(undefined);
+    } catch (error) {
+      return err(new Error(`Failed to delete document in transaction: ${error instanceof Error ? error.message : 'Unknown error'}`));
+    }
+  }
+
+  /**
+   * Executes an operation within a database transaction.
+   */
+  async executeInTransaction<T>(operation: (tx: DatabaseTransaction) => Promise<Result<T, Error>>): Promise<Result<T, Error>> {
+    return this.transactionManager.executeInTransaction(operation);
+  }
+
+  /**
+   * Private helper to save tags within a transaction.
+   */
+  private async saveTags(tagNames: string[], tx: DatabaseTransaction): Promise<void> {
+    if (tagNames.length === 0) return;
+
+    // Get existing tags
+    const existingTags = await tx.select().from(tags).where(inArray(tags.name, tagNames));
+    const existingTagNames = new Set(existingTags.map(tag => tag.name));
+
+    // Insert new tags
+    const newTagNames = tagNames.filter(name => !existingTagNames.has(name));
+    const newTagRows = newTagNames.map(name => ({
+      id: newId(),
+      name
+    }));
+
+    if (newTagRows.length > 0) {
+      await tx.insert(tags).values(newTagRows);
+    }
+  }
+
+  /**
+   * Private helper to link document tags within a transaction.
+   */
+  private async linkDocumentTags(documentId: DocumentId, tagNames: string[], tx: DatabaseTransaction): Promise<void> {
+    if (tagNames.length === 0) return;
+
+    // Get tag IDs
+    const tagRows = await tx.select().from(tags).where(inArray(tags.name, tagNames));
+    
+    const documentTagRows = tagRows.map(tag => ({
+      documentId,
+      tagId: tag.id
+    }));
+
+    if (documentTagRows.length > 0) {
+      await tx.insert(documentTags).values(documentTagRows);
+    }
   }
 }
