@@ -369,9 +369,9 @@ export interface DocumentRepository {
   delete(id: DocumentId): Promise<Result<void, Error>>;
   
   // Transaction support
-  saveInTransaction(document: Document, tx: any): Promise<Result<Document, Error>>;
-  deleteInTransaction(id: DocumentId, tx: any): Promise<Result<void, Error>>;
-  executeInTransaction<T>(operation: (tx: any) => Promise<Result<T, Error>>): Promise<Result<T, Error>>;
+  saveInTransaction(document: Document, tx: import("../../lib/db/connection").DatabaseTransaction): Promise<Result<Document, Error>>;
+  deleteInTransaction(id: DocumentId, tx: import("../../lib/db/connection").DatabaseTransaction): Promise<Result<void, Error>>;
+  executeInTransaction<T>(operation: (tx: import("../../lib/db/connection").DatabaseTransaction) => Promise<Result<T, Error>>): Promise<Result<T, Error>>;
 }
 
 export interface DocumentSearchFilters {

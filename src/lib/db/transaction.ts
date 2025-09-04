@@ -1,11 +1,12 @@
 import { Result, ok, err } from "../../shared/result/result";
 import { Database, DatabaseTransaction } from "./connection";
+import { TransactionManagerInterface } from "./interfaces";
 
 /**
  * Transaction manager for handling multi-step operations.
  * Provides a clean interface for transaction management following the existing patterns.
  */
-export class TransactionManager {
+export class TransactionManager implements TransactionManagerInterface {
   constructor(private readonly db: Database) {}
 
   /**

@@ -10,8 +10,8 @@ describe("document.schema", () => {
   it("createDocumentSchema accepts valid input and dedupes tags", () => {
     const res = createDocumentSchema.safeParse({
       title: "My Doc",
-      metadata: { a: 1 },
-      tags: ["t1", "t1", "t2"]
+      metadata: JSON.stringify({ a: 1 }),
+      tags: JSON.stringify(["t1", "t1", "t2"])
     });
     expect(res.success).toBe(true);
     if (res.success) expect(res.data.tags).toEqual(["t1", "t2"]);
@@ -21,13 +21,19 @@ describe("document.schema", () => {
     const res1 = createDocumentSchema.safeParse({ title: "a".repeat(256) });
     expect(res1.success).toBe(false);
 
-    const res2 = createDocumentSchema.safeParse({ title: "ok", tags: ["bad tag with spaces"] });
+    const res2 = createDocumentSchema.safeParse({ 
+      title: "ok", 
+      tags: JSON.stringify(["bad tag with spaces"]) 
+    });
     expect(res2.success).toBe(false);
   });
 
   it("enforces metadata serialized size <= 10KB", () => {
     const big = { x: "a".repeat(10050) }; // slightly > 10KB when stringified
-    const res = createDocumentSchema.safeParse({ title: "t", metadata: big });
+    const res = createDocumentSchema.safeParse({ 
+      title: "t", 
+      metadata: JSON.stringify(big) 
+    });
     expect(res.success).toBe(false);
   });
 

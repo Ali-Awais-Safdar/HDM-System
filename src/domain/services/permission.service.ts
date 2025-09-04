@@ -61,15 +61,15 @@ export interface PermissionRepository {
   /**
    * Transaction support methods
    */
-  saveInTransaction(permission: Permission, tx: any): Promise<Result<Permission, PermissionRepositoryError>>;
-  removeInTransaction(documentId: DocumentId, userId: UserId, tx: any): Promise<Result<boolean, PermissionRepositoryError>>;
+  saveInTransaction(permission: Permission, tx: import("../../lib/db/connection").DatabaseTransaction): Promise<Result<Permission, PermissionRepositoryError>>;
+  removeInTransaction(documentId: DocumentId, userId: UserId, tx: import("../../lib/db/connection").DatabaseTransaction): Promise<Result<boolean, PermissionRepositoryError>>;
   updatePermissionLevelInTransaction(
     documentId: DocumentId,
     userId: UserId,
     newLevel: PermissionLevel,
-    tx: any
+    tx: import("../../lib/db/connection").DatabaseTransaction
   ): Promise<Result<Permission, PermissionRepositoryError>>;
-  executeInTransaction<T>(operation: (tx: any) => Promise<Result<T, Error>>): Promise<Result<T, PermissionRepositoryError>>;
+  executeInTransaction<T>(operation: (tx: import("../../lib/db/connection").DatabaseTransaction) => Promise<Result<T, Error>>): Promise<Result<T, PermissionRepositoryError>>;
 }
 
 /**

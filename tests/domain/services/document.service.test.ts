@@ -11,6 +11,7 @@ import type {
   DocumentRepository,
   FileStorage,
 } from "../../../src/domain/services/document.service";
+import type { DatabaseTransaction } from "../../../src/lib/db/connection";
 
 // Use the type of Document.create(...) props (not the constructor args!)
 type DocCreateProps = Parameters<typeof Document.create>[0];
@@ -68,7 +69,7 @@ describe("DocumentService", () => {
     
     // Mock the transaction execution to simulate successful save
     repo.executeInTransaction.mockImplementation(async (callback) => {
-      const mockTx = {};
+      const mockTx = {} as DatabaseTransaction;
       return await callback(mockTx);
     });
     
@@ -102,7 +103,7 @@ describe("DocumentService", () => {
     
     // Mock the transaction execution (should not be called since storage fails first)
     repo.executeInTransaction.mockImplementation(async (callback) => {
-      const mockTx = {};
+      const mockTx = {} as DatabaseTransaction;
       return await callback(mockTx);
     });
     
@@ -197,7 +198,7 @@ describe("DocumentService", () => {
     
     // Mock the transaction execution to simulate successful save
     repo.executeInTransaction.mockImplementation(async (callback) => {
-      const mockTx = {};
+      const mockTx = {} as DatabaseTransaction;
       return await callback(mockTx);
     });
     

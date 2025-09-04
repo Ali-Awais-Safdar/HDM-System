@@ -1,8 +1,8 @@
 import { drizzle } from "drizzle-orm/node-postgres";
-import { NodePgDatabase } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import { env } from "../../env/env";
 import * as schema from "./schema";
+import { DatabaseInterface, DatabaseTransactionInterface } from "./interfaces";
 
 const pool = new pg.Pool({ 
   connectionString: env.DATABASE_URL,
@@ -11,8 +11,9 @@ const pool = new pg.Pool({
 });
 
 // Export typed database instance
-export const db = drizzle(pool, { schema });
+export const db: DatabaseInterface = drizzle(pool, { schema });
 
-// Export database type for use in repositories
-export type Database = NodePgDatabase<typeof schema>;
-export type DatabaseTransaction = Parameters<Parameters<Database['transaction']>[0]>[0];
+// Export database types for use in repositories
+// These maintain backward compatibility while providing proper type safety
+export type Database = DatabaseInterface;
+export type DatabaseTransaction = DatabaseTransactionInterface;

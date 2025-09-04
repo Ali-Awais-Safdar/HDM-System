@@ -4,13 +4,14 @@ import { User, UserRole } from "../../../domain/entities/user.entity";
 import { UserRepository } from "../../../domain/services/auth.service";
 import { UserId, EmailAddress, asUserId, asEmailAddress } from "../../../shared/types/brand";
 import { users } from "../../../lib/db/schema";
+import { Database } from "../../../lib/db/connection";
 
 /**
  * Drizzle ORM implementation of the User Repository.
- * Handles database operations for users.
+ * Handles database operations for users with proper type safety.
  */
 export class DrizzleUserRepository implements UserRepository {
-  constructor(private readonly db: any) {} // TODO: Type this properly with Drizzle DB type
+  constructor(private readonly db: Database) {}
 
   async findById(id: UserId): Promise<Result<User | null, Error>> {
     try {
