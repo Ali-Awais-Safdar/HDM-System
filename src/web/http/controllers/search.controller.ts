@@ -2,7 +2,7 @@ import { Request, Response } from "express";
 import { SearchDocumentsUseCase, SearchDocumentsParams } from "../../../application/use-cases/search-documents.use-case";
 import { searchDocumentsSchema } from "../schemas/search.schema";
 import { logger } from "../../../shared/logging/logger";
-// AppError import removed - not used in this controller
+import { handleValidationError, sendErr, sendOk } from "../errors";
 
 /**
  * Controller for document search operations.
@@ -41,13 +41,7 @@ export class SearchController {
       });
 
       if (!validationResult.success) {
-        res.status(400).json({
-          error: "Invalid search parameters",
-          details: validationResult.error.issues.map(issue => ({
-            field: issue.path.join('.'),
-            message: issue.message,
-          }))
-        });
+        handleValidationError(res, validationResult.error);
         return;
       }
 
@@ -58,7 +52,7 @@ export class SearchController {
       const userRole = req.user?.role;
 
       if (!userId || !userRole) {
-        res.status(401).json({ error: "Authentication required" });
+        sendErr(res, new Error("Authentication required"), "Authentication required", "UNAUTHORIZED");
         return;
       }
 
@@ -76,11 +70,7 @@ export class SearchController {
           error: result.error.message
         } as any);
 
-        if (result.error.code === "INVALID_PARAMS") {
-          res.status(400).json({ error: result.error.message });
-        } else {
-          res.status(500).json({ error: "Search failed" });
-        }
+        sendErr(res, result.error, result.error.message);
         return;
       }
 
@@ -111,7 +101,7 @@ export class SearchController {
         hasMore: response.pagination.hasMore
       } as any);
 
-      res.status(200).json(response);
+      sendOk(res, response, 200);
     } catch (error) {
       logger.error("Unexpected error in search", {
         error: error instanceof Error ? error.message : String(error),
@@ -120,9 +110,9 @@ export class SearchController {
       } as any);
 
       if (error instanceof SyntaxError) {
-        res.status(400).json({ error: "Invalid JSON in metadata parameter" });
+        sendErr(res, error, "Invalid JSON in metadata parameter", "BAD_REQUEST");
       } else {
-        res.status(500).json({ error: "Internal server error" });
+        sendErr(res, error);
       }
     }
   }

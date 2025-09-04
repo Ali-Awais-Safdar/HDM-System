@@ -9,6 +9,7 @@ import {
   updateMetadataSchema, 
   documentParamsSchema
 } from "../schemas/document.schema";
+import { handleValidationError, sendErr, sendOk } from "../errors";
 
 /**
  * Document controller handling CRUD operations.
@@ -26,19 +27,13 @@ export class DocumentController {
     try {
       // Ensure user is authenticated
       if (!req.user) {
-        res.status(401).json({
-          error: "Authentication required",
-          code: "UNAUTHORIZED"
-        });
+        sendErr(res, new Error("Authentication required"), "Authentication required", "UNAUTHORIZED");
         return;
       }
 
       // Validate file upload
       if (!req.file) {
-        res.status(400).json({
-          error: "File upload is required",
-          code: "MISSING_FILE"
-        });
+        sendErr(res, new Error("File upload is required"), "File upload is required", "MISSING_FILE");
         return;
       }
 
@@ -52,25 +47,14 @@ export class DocumentController {
           req.file.buffer
         );
       } catch (error) {
-        res.status(422).json({
-          error: "Invalid file upload",
-          code: "INVALID_FILE",
-          details: error instanceof Error ? error.message : "Unknown file validation error"
-        });
+        sendErr(res, error, "Invalid file upload", "INVALID_FILE");
         return;
       }
 
       // Validate request body (handles JSON parsing automatically via transforms)
       const bodyValidation = createDocumentSchema.safeParse(req.body);
       if (!bodyValidation.success) {
-        res.status(422).json({
-          error: "Validation failed",
-          code: "VALIDATION_ERROR",
-          details: bodyValidation.error.issues.map(issue => ({
-            field: issue.path.join('.'),
-            message: issue.message
-          }))
-        });
+        handleValidationError(res, bodyValidation.error);
         return;
       }
 
@@ -91,21 +75,14 @@ export class DocumentController {
       });
 
       if (!result.ok) {
-        const statusCode = this.getErrorStatusCode(result.error.message);
-        res.status(statusCode).json({
-          error: result.error.message,
-          code: "CREATE_DOCUMENT_ERROR"
-        });
+        sendErr(res, result.error, result.error.message);
         return;
       }
 
-      res.status(201).json(result.value);
+      sendOk(res, result.value, 201);
 
-    } catch {
-      res.status(500).json({
-        error: "Internal server error",
-        code: "INTERNAL_ERROR"
-      });
+    } catch (error) {
+      sendErr(res, error);
     }
   }
 
@@ -145,21 +122,14 @@ export class DocumentController {
       });
 
       if (!result.ok) {
-        const statusCode = this.getErrorStatusCode(result.error.message);
-        res.status(statusCode).json({
-          error: result.error.message,
-          code: "GET_DOCUMENT_ERROR"
-        });
+        sendErr(res, result.error, result.error.message);
         return;
       }
 
-      res.status(200).json(result.value);
+      sendOk(res, result.value, 200);
 
-    } catch {
-      res.status(500).json({
-        error: "Internal server error",
-        code: "INTERNAL_ERROR"
-      });
+    } catch (error) {
+      sendErr(res, error);
     }
   }
 
@@ -215,21 +185,14 @@ export class DocumentController {
       });
 
       if (!result.ok) {
-        const statusCode = this.getErrorStatusCode(result.error.message);
-        res.status(statusCode).json({
-          error: result.error.message,
-          code: "UPDATE_METADATA_ERROR"
-        });
+        sendErr(res, result.error, result.error.message);
         return;
       }
 
-      res.status(200).json(result.value);
+      sendOk(res, result.value, 200);
 
-    } catch {
-      res.status(500).json({
-        error: "Internal server error",
-        code: "INTERNAL_ERROR"
-      });
+    } catch (error) {
+      sendErr(res, error);
     }
   }
 
@@ -269,34 +232,15 @@ export class DocumentController {
       });
 
       if (!result.ok) {
-        const statusCode = this.getErrorStatusCode(result.error.message);
-        res.status(statusCode).json({
-          error: result.error.message,
-          code: "DELETE_DOCUMENT_ERROR"
-        });
+        sendErr(res, result.error, result.error.message);
         return;
       }
 
-      res.status(200).json(result.value);
+      sendOk(res, result.value, 200);
 
-    } catch {
-      res.status(500).json({
-        error: "Internal server error",
-        code: "INTERNAL_ERROR"
-      });
+    } catch (error) {
+      sendErr(res, error);
     }
   }
 
-  private getErrorStatusCode(errorMessage: string): number {
-    if (errorMessage.includes("not found")) {
-      return 404; // Not Found
-    }
-    if (errorMessage.includes("Insufficient permissions") || errorMessage.includes("permissions")) {
-      return 403; // Forbidden
-    }
-    if (errorMessage.includes("Invalid") || errorMessage.includes("must")) {
-      return 400; // Bad Request
-    }
-    return 500; // Internal Server Error
-  }
 }

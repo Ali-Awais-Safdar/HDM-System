@@ -233,7 +233,7 @@ describe("Authentication Flow Integration Tests", () => {
     it("should handle missing Bearer prefix", async () => {
       const response = await request(app)
         .get("/health")
-        .set("Authorization", validToken)
+        .set("Authorization", validToken || "invalid-token")
         .expect(200); // Health is public, should still work
 
       expect(response.body).toHaveProperty("ok", true);

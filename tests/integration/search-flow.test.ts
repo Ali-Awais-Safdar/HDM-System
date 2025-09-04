@@ -39,7 +39,7 @@ describe("Search Flow Integration Tests", () => {
 
       // This should return validation errors
       // The exact status depends on whether JWT validation happens first
-      expect([400, 401, 500]).toContain(response.status);
+      expect([401, 422]).toContain(response.status);
     });
 
     it("should accept valid search parameters", async () => {
@@ -101,7 +101,7 @@ describe("Search Flow Integration Tests", () => {
         });
 
       // Should return validation error
-      expect([400, 401, 500]).toContain(response.status);
+      expect([401, 422]).toContain(response.status);
     });
 
     it("should handle empty tag list correctly", async () => {
@@ -259,7 +259,7 @@ describe("Search Flow Integration Tests", () => {
         });
 
       // Should return validation error for too long query
-      expect([400, 401, 500]).toContain(response.status);
+      expect([401, 422]).toContain(response.status);
     });
   });
 });

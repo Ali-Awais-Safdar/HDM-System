@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { SignupUseCase } from "../../../application/use-cases/signup.use-case";
 import { LoginUseCase } from "../../../application/use-cases/login.use-case";
 import { signupSchema, loginSchema } from "../schemas/auth.schema";
+import { handleValidationError, sendErr, sendOk } from "../errors";
 
 /**
  * Authentication controller handling signup and login endpoints.
@@ -18,14 +19,7 @@ export class AuthController {
       // Validate request using Zod
       const validationResult = signupSchema.safeParse(req.body);
       if (!validationResult.success) {
-        res.status(422).json({
-          error: "Validation failed",
-          code: "VALIDATION_ERROR",
-          details: validationResult.error.issues.map(issue => ({
-            field: issue.path.join('.'),
-            message: issue.message
-          }))
-        });
+        handleValidationError(res, validationResult.error);
         return;
       }
 
@@ -35,23 +29,15 @@ export class AuthController {
       const result = await this.signupUseCase.execute(request);
 
       if (!result.ok) {
-        // Determine appropriate status code based on error type
-        const statusCode = this.getErrorStatusCode(result.error.message);
-        res.status(statusCode).json({
-          error: result.error.message,
-          code: "SIGNUP_ERROR"
-        });
+        sendErr(res, result.error, result.error.message);
         return;
       }
 
       // Success response
-      res.status(201).json(result.value);
+      sendOk(res, result.value, 201);
 
-    } catch {
-      res.status(500).json({
-        error: "Internal server error",
-        code: "INTERNAL_ERROR"
-      });
+    } catch (error) {
+      sendErr(res, error);
     }
   }
 
@@ -60,14 +46,7 @@ export class AuthController {
       // Validate request using Zod
       const validationResult = loginSchema.safeParse(req.body);
       if (!validationResult.success) {
-        res.status(422).json({
-          error: "Validation failed",
-          code: "VALIDATION_ERROR",
-          details: validationResult.error.issues.map(issue => ({
-            field: issue.path.join('.'),
-            message: issue.message
-          }))
-        });
+        handleValidationError(res, validationResult.error);
         return;
       }
 
@@ -77,31 +56,16 @@ export class AuthController {
       const result = await this.loginUseCase.execute(request);
 
       if (!result.ok) {
-        res.status(401).json({
-          error: result.error.message,
-          code: "LOGIN_ERROR"
-        });
+        sendErr(res, result.error, result.error.message);
         return;
       }
 
       // Success response
-      res.status(200).json(result.value);
+      sendOk(res, result.value, 200);
 
-    } catch {
-      res.status(500).json({
-        error: "Internal server error",
-        code: "INTERNAL_ERROR"
-      });
+    } catch (error) {
+      sendErr(res, error);
     }
   }
 
-  private getErrorStatusCode(errorMessage: string): number {
-    if (errorMessage.includes("already exists")) {
-      return 409; // Conflict
-    }
-    if (errorMessage.includes("Invalid") || errorMessage.includes("must")) {
-      return 400; // Bad Request
-    }
-    return 500; // Internal Server Error
-  }
 }

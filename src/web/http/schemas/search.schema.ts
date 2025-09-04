@@ -1,25 +1,8 @@
 import { z } from "zod";
+import { searchDocumentsSchema } from "./common";
 
-/**
- * Validation schema for document search requests.
- * Supports text search, tag filtering, metadata filtering, and pagination.
- */
-export const searchDocumentsSchema = z.object({
-  /** Text query to search in document titles (optional) */
-  query: z.string().max(255).optional().transform(val => val?.trim() || undefined),
-  
-  /** Array of tag names to filter by (documents must have ALL specified tags) */
-  tags: z.array(z.string().min(1).max(100)).max(20).optional(),
-  
-  /** Metadata object to filter by (uses JSONB containment @>) */
-  metadata: z.record(z.string(), z.unknown()).optional(),
-  
-  /** Maximum number of results to return (default: 20, max: 100) */
-  limit: z.coerce.number().int().min(1).max(100).default(20),
-  
-  /** Number of results to skip for pagination (default: 0) */
-  offset: z.coerce.number().int().min(0).default(0),
-});
+// Re-export the canonical search schema from common
+export { searchDocumentsSchema } from "./common";
 
 /**
  * Type for validated search parameters

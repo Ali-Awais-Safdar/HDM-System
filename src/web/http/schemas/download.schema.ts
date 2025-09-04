@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { documentIdParamSchema } from "./common";
 
 /**
  * Schema for generating a download link.
@@ -32,13 +33,8 @@ export const downloadTokenParamSchema = z.object({
 
 export type DownloadTokenParam = z.infer<typeof downloadTokenParamSchema>;
 
-/**
- * Schema for document ID parameter validation (reused from permissions).
- */
-export const documentIdParamSchema = z.object({
-  id: z.string().min(1, "Document ID is required"),
-});
-
+// Re-export common schemas for convenience
+export { documentIdParamSchema } from "./common";
 export type DocumentIdParam = z.infer<typeof documentIdParamSchema>;
 
 /**

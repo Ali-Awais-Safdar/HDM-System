@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { errorResponseSchema } from "./common";
 
 /**
  * Zod schemas for document CRUD endpoints.
@@ -86,7 +87,9 @@ export const documentParamsSchema = z.object({
     .uuid("Document ID must be a valid UUID")
 });
 
-export const searchDocumentsSchema = z.object({
+// Note: searchDocumentsSchema moved to common.ts for consistency
+// This legacy schema is kept for backward compatibility but should be migrated
+export const legacySearchDocumentsSchema = z.object({
   q: z
     .string()
     .max(100, "Search query cannot exceed 100 characters")
@@ -149,20 +152,14 @@ export const deleteDocumentResponseSchema = z.object({
   message: z.string()
 });
 
-export const errorResponseSchema = z.object({
-  error: z.string(),
-  code: z.string().optional(),
-  details: z.array(z.object({
-    field: z.string(),
-    message: z.string()
-  })).optional()
-});
+// Re-export common schemas for convenience
+export { errorResponseSchema } from "./common";
 
 // TypeScript types derived from schemas
 export type CreateDocumentRequest = z.infer<typeof createDocumentSchema>;
 export type UpdateMetadataRequest = z.infer<typeof updateMetadataSchema>;
 export type DocumentParams = z.infer<typeof documentParamsSchema>;
-export type SearchDocumentsQuery = z.infer<typeof searchDocumentsSchema>;
+export type SearchDocumentsQuery = z.infer<typeof legacySearchDocumentsSchema>;
 export type FileUploadData = z.infer<typeof fileUploadSchema>;
 export type DocumentResponse = z.infer<typeof documentResponseSchema>;
 export type DeleteDocumentResponse = z.infer<typeof deleteDocumentResponseSchema>;

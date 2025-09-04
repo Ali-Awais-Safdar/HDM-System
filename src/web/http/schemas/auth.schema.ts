@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { errorResponseSchema } from "./common";
 
 /**
  * Zod schemas for authentication endpoints.
@@ -49,14 +50,8 @@ export const authResponseSchema = z.object({
   })
 });
 
-export const errorResponseSchema = z.object({
-  error: z.string(),
-  code: z.string().optional(),
-  details: z.array(z.object({
-    field: z.string(),
-    message: z.string()
-  })).optional()
-});
+// Re-export common schemas for convenience
+export { errorResponseSchema } from "./common";
 
 // TypeScript types derived from schemas
 export type SignupRequest = z.infer<typeof signupSchema>;

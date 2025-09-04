@@ -162,9 +162,10 @@ describe("SearchController", () => {
 
       await controller.searchDocuments(mockRequest as Request, mockResponse as Response);
 
-      expect(mockResponse.status).toHaveBeenCalledWith(400);
+      expect(mockResponse.status).toHaveBeenCalledWith(422);
       expect(mockResponse.json).toHaveBeenCalledWith({
-        error: "Invalid search parameters",
+        error: "Validation failed",
+        code: "VALIDATION_ERROR",
         details: expect.arrayContaining([
           expect.objectContaining({
             field: expect.any(String),
@@ -181,7 +182,8 @@ describe("SearchController", () => {
 
       expect(mockResponse.status).toHaveBeenCalledWith(401);
       expect(mockResponse.json).toHaveBeenCalledWith({
-        error: "Authentication required"
+        error: "Authentication required",
+        code: "UNAUTHORIZED"
       });
     });
 
@@ -196,7 +198,8 @@ describe("SearchController", () => {
 
       expect(mockResponse.status).toHaveBeenCalledWith(500);
       expect(mockResponse.json).toHaveBeenCalledWith({
-        error: "Search failed"
+        error: "Search failed",
+        code: "SEARCH_FAILED"
       });
     });
 
@@ -211,7 +214,8 @@ describe("SearchController", () => {
 
       expect(mockResponse.status).toHaveBeenCalledWith(400);
       expect(mockResponse.json).toHaveBeenCalledWith({
-        error: "Invalid parameters"
+        error: "Invalid parameters",
+        code: "INVALID_PARAMS"
       });
     });
 
@@ -222,7 +226,8 @@ describe("SearchController", () => {
 
       expect(mockResponse.status).toHaveBeenCalledWith(400);
       expect(mockResponse.json).toHaveBeenCalledWith({
-        error: "Invalid JSON in metadata parameter"
+        error: "Invalid JSON in metadata parameter",
+        code: "BAD_REQUEST"
       });
     });
 
@@ -235,7 +240,8 @@ describe("SearchController", () => {
 
       expect(mockResponse.status).toHaveBeenCalledWith(500);
       expect(mockResponse.json).toHaveBeenCalledWith({
-        error: "Internal server error"
+        error: "Unexpected error",
+        code: "INTERNAL_ERROR"
       });
     });
 
