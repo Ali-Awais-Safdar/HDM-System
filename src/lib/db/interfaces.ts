@@ -10,10 +10,6 @@ import * as schema from "./schema";
 /**
  * Main database interface - provides type-safe access to all database operations.
  * This is the primary interface that repositories should depend on.
- * 
- * Note: This interface is intentionally empty as it serves as a type alias
- * for NodePgDatabase with schema typing. It's defined as an interface
- * to allow future extensibility and maintain consistent API patterns.
  */
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface DatabaseInterface extends NodePgDatabase<typeof schema> {
@@ -25,10 +21,6 @@ export interface DatabaseInterface extends NodePgDatabase<typeof schema> {
 /**
  * Transaction interface - provides type-safe access to transaction operations.
  * This is used for operations that need to be executed within a database transaction.
- * 
- * Note: This interface is intentionally empty as it serves as a type alias
- * for NodePgDatabase with schema typing. It's defined as an interface
- * to allow future extensibility and maintain consistent API patterns.
  */
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface DatabaseTransactionInterface extends NodePgDatabase<typeof schema> {

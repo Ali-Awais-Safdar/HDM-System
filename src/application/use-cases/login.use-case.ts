@@ -37,11 +37,20 @@ export class LoginUseCase {
       this.logger.info({ email }, "Starting login attempt");
       
       // Create value objects
-      const emailVO = Email.create(request.email);
-      const password = Password.create(request.password);
+      const emailResult = Email.create(request.email);
+      if (!emailResult.ok) {
+        this.logger.warn({ email, error: emailResult.error.message }, "Invalid email format");
+        return err(new LoginError("Invalid credentials"));
+      }
+
+      const passwordResult = Password.create(request.password);
+      if (!passwordResult.ok) {
+        this.logger.warn({ email, error: passwordResult.error.message }, "Invalid password format");
+        return err(new LoginError("Invalid credentials"));
+      }
 
       // Execute login
-      const loginResult = await this.authService.login(emailVO, password);
+      const loginResult = await this.authService.login(emailResult.value, passwordResult.value);
       if (!loginResult.ok) {
         logSecurityEvent("login_failed", undefined, {
           email,

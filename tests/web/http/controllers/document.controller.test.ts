@@ -36,7 +36,7 @@ describe("DocumentController", () => {
     expect(res.status).toHaveBeenCalledWith(401);
   });
 
-  it("createDocument -> 400 when file missing", async () => {
+  it("createDocument -> 422 when file missing", async () => {
     const req: any = { 
       user: { id: asUserId("u") }, 
       file: undefined, 
@@ -47,7 +47,7 @@ describe("DocumentController", () => {
     };
     const res = mkRes();
     await ctrl.createDocument(req, res);
-    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.status).toHaveBeenCalledWith(422);
   });
 
   it("createDocument -> 422 when body invalid", async () => {

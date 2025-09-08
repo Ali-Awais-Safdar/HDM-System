@@ -61,6 +61,18 @@ export class DocumentController {
         return;
       }
 
+      // Validate request body
+      const bodyValidation = createDocumentSchema.safeParse(req.body);
+      if (!bodyValidation.success) {
+        logger.warn({
+          userId: req.user.id,
+          errors: bodyValidation.error.issues,
+          correlationId: req.correlationId
+        }, "Document creation validation failed");
+        handleValidationError(res, bodyValidation.error);
+        return;
+      }
+
       // Validate file upload
       if (!req.file) {
         logger.warn({
@@ -73,39 +85,27 @@ export class DocumentController {
       }
 
       // Validate file data using FileUpload value object
-      let fileUpload;
-      try {
-        fileUpload = FileUpload.create(
-          req.file.originalname,
-          req.file.mimetype,
-          req.file.size,
-          req.file.buffer
-        );
-      } catch (error) {
+      const fileUploadResult = FileUpload.create(
+        req.file.originalname,
+        req.file.mimetype,
+        req.file.size,
+        req.file.buffer
+      );
+
+      if (!fileUploadResult.ok) {
         logger.warn({
           userId: req.user.id,
           fileName: req.file.originalname,
           fileSize: req.file.size,
           mimeType: req.file.mimetype,
-          error: error instanceof Error ? error.message : 'Unknown error',
+          error: fileUploadResult.error.message,
           correlationId: req.correlationId
         }, "Invalid file upload in document creation");
-        sendErr(res, error, "Invalid file upload", "INVALID_FILE");
+        sendErr(res, fileUploadResult.error, "Invalid file upload", "INVALID_FILE");
         return;
       }
 
-      // Validate request body (handles JSON parsing automatically via transforms)
-      const bodyValidation = createDocumentSchema.safeParse(req.body);
-      if (!bodyValidation.success) {
-        logger.warn({
-          userId: req.user.id,
-          errors: bodyValidation.error.issues,
-          correlationId: req.correlationId
-        }, "Document creation validation failed");
-        handleValidationError(res, bodyValidation.error);
-        return;
-      }
-
+      const fileUpload = fileUploadResult.value;
       const validatedData = bodyValidation.data;
 
       logger.info({
@@ -171,10 +171,7 @@ export class DocumentController {
           userAgent: req.get('User-Agent'),
           correlationId: req.correlationId
         }, "Document retrieval attempted without authentication");
-        res.status(401).json({
-          error: "Authentication required",
-          code: "UNAUTHORIZED"
-        });
+        sendErr(res, new Error("Authentication required"), "Authentication required", "UNAUTHORIZED");
         return;
       }
 
@@ -186,14 +183,7 @@ export class DocumentController {
           errors: paramsValidation.error.issues,
           correlationId: req.correlationId
         }, "Invalid document ID parameter in getDocument");
-        res.status(422).json({
-          error: "Invalid document ID",
-          code: "INVALID_PARAMS",
-          details: paramsValidation.error.issues.map(issue => ({
-            field: issue.path.join('.'),
-            message: issue.message
-          }))
-        });
+        handleValidationError(res, paramsValidation.error);
         return;
       }
 
@@ -256,10 +246,7 @@ export class DocumentController {
           userAgent: req.get('User-Agent'),
           correlationId: req.correlationId
         }, "Document metadata update attempted without authentication");
-        res.status(401).json({
-          error: "Authentication required",
-          code: "UNAUTHORIZED"
-        });
+        sendErr(res, new Error("Authentication required"), "Authentication required", "UNAUTHORIZED");
         return;
       }
 
@@ -271,14 +258,7 @@ export class DocumentController {
           errors: paramsValidation.error.issues,
           correlationId: req.correlationId
         }, "Invalid document ID parameter in updateMetadata");
-        res.status(422).json({
-          error: "Invalid document ID",
-          code: "INVALID_PARAMS",
-          details: paramsValidation.error.issues.map(issue => ({
-            field: issue.path.join('.'),
-            message: issue.message
-          }))
-        });
+        handleValidationError(res, paramsValidation.error);
         return;
       }
 
@@ -291,14 +271,7 @@ export class DocumentController {
           errors: bodyValidation.error.issues,
           correlationId: req.correlationId
         }, "Document metadata update validation failed");
-        res.status(422).json({
-          error: "Validation failed",
-          code: "VALIDATION_ERROR",
-          details: bodyValidation.error.issues.map(issue => ({
-            field: issue.path.join('.'),
-            message: issue.message
-          }))
-        });
+        handleValidationError(res, bodyValidation.error);
         return;
       }
 
@@ -365,10 +338,7 @@ export class DocumentController {
           userAgent: req.get('User-Agent'),
           correlationId: req.correlationId
         }, "Document deletion attempted without authentication");
-        res.status(401).json({
-          error: "Authentication required",
-          code: "UNAUTHORIZED"
-        });
+        sendErr(res, new Error("Authentication required"), "Authentication required", "UNAUTHORIZED");
         return;
       }
 
@@ -380,14 +350,7 @@ export class DocumentController {
           errors: paramsValidation.error.issues,
           correlationId: req.correlationId
         }, "Invalid document ID parameter in deleteDocument");
-        res.status(422).json({
-          error: "Invalid document ID",
-          code: "INVALID_PARAMS",
-          details: paramsValidation.error.issues.map(issue => ({
-            field: issue.path.join('.'),
-            message: issue.message
-          }))
-        });
+        handleValidationError(res, paramsValidation.error);
         return;
       }
 

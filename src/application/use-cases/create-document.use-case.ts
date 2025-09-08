@@ -47,12 +47,23 @@ export class CreateDocumentUseCase {
       }, "Starting document creation");
 
       // Validate and create file upload value object
-      const fileUpload = FileUpload.create(
+      const fileUploadResult = FileUpload.create(
         request.file.originalName,
         request.file.mimeType,
         request.file.size,
         request.file.data
       );
+
+      if (!fileUploadResult.ok) {
+        this.logger.warn({
+          ownerId: request.ownerId,
+          title: request.title,
+          error: fileUploadResult.error.message
+        }, "File upload validation failed");
+        return err(new CreateDocumentError(fileUploadResult.error.message));
+      }
+
+      const fileUpload = fileUploadResult.value;
 
       // Create document through domain service
       const result = await this.documentService.createDocument(

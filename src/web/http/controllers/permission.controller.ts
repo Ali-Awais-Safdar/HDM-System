@@ -7,6 +7,7 @@ import {
   revokeDocumentAccessSchema,
   documentIdParamSchema 
 } from "../schemas/permission.schema";
+import { handleValidationError, sendErr, sendOk } from "../errors";
 import { asUserId, asDocumentId } from "../../../shared/types/brand";
 import { logger } from "../../../shared/logging/logger";
 
@@ -29,7 +30,8 @@ export class PermissionController {
     const userRole = req.user?.role;
 
     if (!userId || !userRole) {
-      return res.status(401).json({ error: "Unauthorized" });
+      sendErr(res, new Error("Authentication required"), "Authentication required", "UNAUTHORIZED");
+      return;
     }
 
     // Validate document ID parameter
@@ -39,10 +41,8 @@ export class PermissionController {
         userId: userId,
         errors: paramValidation.error.issues,
       } as any);
-      return res.status(400).json({
-        error: "Invalid document ID",
-        details: paramValidation.error.issues,
-      });
+      handleValidationError(res, paramValidation.error);
+      return;
     }
 
     // Validate request body
@@ -53,10 +53,8 @@ export class PermissionController {
         documentId: req.params.id,
         errors: bodyValidation.error.issues,
       } as any);
-      return res.status(400).json({
-        error: "Invalid request body",
-        details: bodyValidation.error.issues,
-      });
+      handleValidationError(res, bodyValidation.error);
+      return;
     }
 
     const documentId = asDocumentId(paramValidation.data.id);
@@ -82,17 +80,8 @@ export class PermissionController {
           code: result.error.code,
         } as any);
 
-        switch (result.error.code) {
-          case "DOCUMENT_NOT_FOUND":
-            return res.status(404).json({ error: result.error.message });
-          case "ACCESS_DENIED":
-            return res.status(403).json({ error: result.error.message });
-          case "PERMISSION_CHECK_FAILED":
-          case "PERMISSION_GRANT_FAILED":
-            return res.status(500).json({ error: "Failed to share document" });
-          default:
-            return res.status(500).json({ error: "Internal server error" });
-        }
+        sendErr(res, result.error, result.error.message);
+        return;
       }
 
       logger.info("Document shared successfully", {
@@ -112,7 +101,7 @@ export class PermissionController {
         message: result.value.message,
       };
 
-      return res.status(200).json(response);
+      sendOk(res, response, 200);
 
     } catch (error) {
       logger.error("Unexpected error in share document", {
@@ -122,7 +111,7 @@ export class PermissionController {
         targetUserId: targetUserId,
       } as any);
 
-      return res.status(500).json({ error: "Internal server error" });
+      sendErr(res, error);
     }
   };
 
@@ -135,7 +124,8 @@ export class PermissionController {
     const userRole = req.user?.role;
 
     if (!userId || !userRole) {
-      return res.status(401).json({ error: "Unauthorized" });
+      sendErr(res, new Error("Authentication required"), "Authentication required", "UNAUTHORIZED");
+      return;
     }
 
     // Validate document ID parameter
@@ -145,10 +135,8 @@ export class PermissionController {
         userId: userId,
         errors: paramValidation.error.issues,
       } as any);
-      return res.status(400).json({
-        error: "Invalid document ID",
-        details: paramValidation.error.issues,
-      });
+      handleValidationError(res, paramValidation.error);
+      return;
     }
 
     // Validate request body
@@ -159,10 +147,8 @@ export class PermissionController {
         documentId: req.params.id,
         errors: bodyValidation.error.issues,
       } as any);
-      return res.status(400).json({
-        error: "Invalid request body",
-        details: bodyValidation.error.issues,
-      });
+      handleValidationError(res, bodyValidation.error);
+      return;
     }
 
     const documentId = asDocumentId(paramValidation.data.id);
@@ -187,21 +173,8 @@ export class PermissionController {
           code: result.error.code,
         } as any);
 
-        switch (result.error.code) {
-          case "DOCUMENT_NOT_FOUND":
-            return res.status(404).json({ error: result.error.message });
-          case "ACCESS_DENIED":
-            return res.status(403).json({ error: result.error.message });
-          case "PERMISSION_NOT_FOUND":
-            return res.status(404).json({ error: result.error.message });
-          case "CANNOT_REVOKE_OWNER_ACCESS":
-            return res.status(400).json({ error: result.error.message });
-          case "PERMISSION_CHECK_FAILED":
-          case "PERMISSION_REVOKE_FAILED":
-            return res.status(500).json({ error: "Failed to revoke document access" });
-          default:
-            return res.status(500).json({ error: "Internal server error" });
-        }
+        sendErr(res, result.error, result.error.message);
+        return;
       }
 
       logger.info("Document access revoked successfully", {
@@ -218,7 +191,7 @@ export class PermissionController {
         message: result.value.message,
       };
 
-      return res.status(200).json(response);
+      sendOk(res, response, 200);
 
     } catch (error) {
       logger.error("Unexpected error in revoke document access", {
@@ -228,7 +201,7 @@ export class PermissionController {
         targetUserId: targetUserId,
       } as any);
 
-      return res.status(500).json({ error: "Internal server error" });
+      sendErr(res, error);
     }
   };
 
@@ -241,7 +214,8 @@ export class PermissionController {
     const userRole = req.user?.role;
 
     if (!userId || !userRole) {
-      return res.status(401).json({ error: "Unauthorized" });
+      sendErr(res, new Error("Authentication required"), "Authentication required", "UNAUTHORIZED");
+      return;
     }
 
     // Validate document ID parameter
@@ -251,10 +225,8 @@ export class PermissionController {
         userId: userId,
         errors: paramValidation.error.issues,
       } as any);
-      return res.status(400).json({
-        error: "Invalid document ID",
-        details: paramValidation.error.issues,
-      });
+      handleValidationError(res, paramValidation.error);
+      return;
     }
 
     const documentId = asDocumentId(paramValidation.data.id);
@@ -274,17 +246,8 @@ export class PermissionController {
           code: result.error.code,
         } as any);
 
-        switch (result.error.code) {
-          case "DOCUMENT_NOT_FOUND":
-            return res.status(404).json({ error: result.error.message });
-          case "ACCESS_DENIED":
-            return res.status(403).json({ error: result.error.message });
-          case "PERMISSION_CHECK_FAILED":
-          case "PERMISSION_RETRIEVAL_FAILED":
-            return res.status(500).json({ error: "Failed to retrieve document permissions" });
-          default:
-            return res.status(500).json({ error: "Internal server error" });
-        }
+        sendErr(res, result.error, result.error.message);
+        return;
       }
 
       logger.info("Document permissions retrieved successfully", {
@@ -305,7 +268,7 @@ export class PermissionController {
         totalCount: result.value.totalCount,
       };
 
-      return res.status(200).json(response);
+      sendOk(res, response, 200);
 
     } catch (error) {
       logger.error("Unexpected error in get document permissions", {
@@ -314,7 +277,7 @@ export class PermissionController {
         documentId: documentId,
       } as any);
 
-      return res.status(500).json({ error: "Internal server error" });
+      sendErr(res, error);
     }
   };
 }

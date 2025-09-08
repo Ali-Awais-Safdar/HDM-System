@@ -1,38 +1,39 @@
+import { z } from "zod";
 import { EmailAddress, asEmailAddress } from "../../shared/types/brand";
+import { Result, ok, err } from "../../shared/result/result";
+
+/**
+ * Email validation schema using Zod for consistent validation.
+ */
+const emailSchema = z
+  .string()
+  .min(1, "Email cannot be empty")
+  .email("Invalid email format")
+  .max(254, "Email cannot exceed 254 characters");
 
 /**
  * Email value object with validation rules.
- * Ensures valid email format and normalization.
+ * Ensures valid email format and normalization using Zod schemas.
  */
 export class Email {
   private constructor(private readonly _value: EmailAddress) {}
 
-  static create(value: string): Email {
-    const normalized = Email.normalize(value);
-    Email.validate(normalized);
-    return new Email(asEmailAddress(normalized));
-  }
-
-  private static normalize(value: string): string {
-    return value.toLowerCase().trim();
-  }
-
-  private static validate(value: string): void {
-    if (!value) {
-      throw new Error("Email cannot be empty");
-    }
-
-    // RFC 5322 compliant email regex (simplified version)
-    const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
-    
-    if (!emailRegex.test(value)) {
-      throw new Error("Invalid email format");
-    }
-
-    if (value.length > 254) {
-      throw new Error("Email cannot exceed 254 characters");
+  static create(value: string): Result<Email, Error> {
+    try {
+      // Normalize the email first
+      const normalized = value.toLowerCase().trim();
+      
+      // Validate the normalized email
+      const validated = emailSchema.parse(normalized);
+      return ok(new Email(asEmailAddress(validated)));
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return err(new Error(error.issues[0]?.message || "Validation error"));
+      }
+      return err(error as Error);
     }
   }
+
 
   get value(): EmailAddress {
     return this._value;

@@ -38,8 +38,18 @@ export class SignupUseCase {
       this.logger.info({ email, role: request.role }, "Starting user signup");
       
       // Create value objects
-      const emailVO = Email.create(request.email);
-      const password = Password.create(request.password);
+      const emailResult = Email.create(request.email);
+      if (!emailResult.ok) {
+        this.logger.warn({ email, error: emailResult.error.message }, "Invalid email format");
+        return err(new SignupError("Invalid email format"));
+      }
+
+      const passwordResult = Password.create(request.password);
+      if (!passwordResult.ok) {
+        this.logger.warn({ email, error: passwordResult.error.message }, "Invalid password format");
+        return err(new SignupError(passwordResult.error.message));
+      }
+
       const role = request.role || "user";
 
       // Validate role permissions (only admins can create admin users)
@@ -51,7 +61,7 @@ export class SignupUseCase {
       }
 
       // Execute signup
-      const signupResult = await this.authService.signup(emailVO, password, role);
+      const signupResult = await this.authService.signup(emailResult.value, passwordResult.value, role);
       if (!signupResult.ok) {
         logSecurityEvent("signup_failed", undefined, {
           email,

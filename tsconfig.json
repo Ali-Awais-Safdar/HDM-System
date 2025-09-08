@@ -30,7 +30,8 @@
   },
   "include": [
     "src/**/*",
-    "tests/**/*"
+    "tests/**/*",
+    "src/lib/db/interfaces.ts"
   ],
   "exclude": [
     "node_modules",

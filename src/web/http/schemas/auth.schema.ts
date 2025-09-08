@@ -3,7 +3,6 @@ import { errorResponseSchema } from "./common";
 
 /**
  * Zod schemas for authentication endpoints.
- * Validates every aspect of input as per company guidelines.
  */
 
 export const signupSchema = z.object({

@@ -154,6 +154,7 @@ describe("DownloadController", () => {
 
       expect(response.body).toEqual({
         error: "Document not found",
+        code: "DOCUMENT_NOT_FOUND",
       });
     });
 
@@ -169,6 +170,7 @@ describe("DownloadController", () => {
 
       expect(response.body).toEqual({
         error: "Access denied",
+        code: "ACCESS_DENIED",
       });
     });
 
@@ -176,9 +178,10 @@ describe("DownloadController", () => {
       const response = await request(app)
         .post("/documents/doc-123/download-link")
         .send({ expiresInMinutes: "invalid" }) // Invalid type
-        .expect(400);
+        .expect(422);
 
-      expect(response.body.error).toBe("Invalid request body");
+      expect(response.body.error).toBe("Validation failed");
+      expect(response.body.code).toBe("VALIDATION_ERROR");
       expect(response.body.details).toBeDefined();
     });
 
@@ -186,9 +189,10 @@ describe("DownloadController", () => {
       const response = await request(app)
         .post("/documents/doc-123/download-link")
         .send({ expiresInMinutes: 120 }) // Max is 60
-        .expect(400);
+        .expect(422);
 
-      expect(response.body.error).toBe("Invalid request body");
+      expect(response.body.error).toBe("Validation failed");
+      expect(response.body.code).toBe("VALIDATION_ERROR");
       expect(response.body.details).toBeDefined();
     });
 
@@ -196,9 +200,10 @@ describe("DownloadController", () => {
       const response = await request(app)
         .post("/documents/doc-123/download-link")
         .send({ expiresInMinutes: 0 }) // Min is 1
-        .expect(400);
+        .expect(422);
 
-      expect(response.body.error).toBe("Invalid request body");
+      expect(response.body.error).toBe("Validation failed");
+      expect(response.body.code).toBe("VALIDATION_ERROR");
       expect(response.body.details).toBeDefined();
     });
 
@@ -213,7 +218,8 @@ describe("DownloadController", () => {
         .expect(500);
 
       expect(response.body).toEqual({
-        error: "Failed to generate download link",
+        error: "Failed to generate token",
+        code: "TOKEN_GENERATION_FAILED",
       });
     });
 
@@ -228,7 +234,8 @@ describe("DownloadController", () => {
         .expect(500);
 
       expect(response.body).toEqual({
-        error: "Failed to generate download link",
+        error: "Permission check failed",
+        code: "PERMISSION_CHECK_FAILED",
       });
     });
 
@@ -243,7 +250,8 @@ describe("DownloadController", () => {
         .expect(500);
 
       expect(response.body).toEqual({
-        error: "Internal server error",
+        error: "Unexpected error",
+        code: "UNKNOWN_ERROR",
       });
     });
 
@@ -259,7 +267,8 @@ describe("DownloadController", () => {
         .expect(401);
 
       expect(response.body).toEqual({
-        error: "Unauthorized",
+        error: "Authentication required",
+        code: "UNAUTHORIZED",
       });
     });
 
@@ -312,7 +321,8 @@ describe("DownloadController", () => {
         .expect(404);
 
       expect(response.body).toEqual({
-        error: "Invalid or expired download token",
+        error: "Download token not found",
+        code: "INVALID_TOKEN",
       });
     });
 
@@ -327,6 +337,7 @@ describe("DownloadController", () => {
 
       expect(response.body).toEqual({
         error: "Download token has expired",
+        code: "TOKEN_EXPIRED",
       });
     });
 
@@ -341,6 +352,7 @@ describe("DownloadController", () => {
 
       expect(response.body).toEqual({
         error: "Download token has already been used",
+        code: "TOKEN_ALREADY_USED",
       });
     });
 
@@ -355,6 +367,7 @@ describe("DownloadController", () => {
 
       expect(response.body).toEqual({
         error: "Document not found",
+        code: "DOCUMENT_NOT_FOUND",
       });
     });
 
@@ -368,7 +381,8 @@ describe("DownloadController", () => {
         .expect(500);
 
       expect(response.body).toEqual({
-        error: "Failed to retrieve document file",
+        error: "Failed to retrieve file",
+        code: "FILE_RETRIEVAL_FAILED",
       });
     });
 
@@ -379,10 +393,11 @@ describe("DownloadController", () => {
 
       const response = await request(app)
         .get(`/downloads/${mockToken.token}`)
-        .expect(400);
+        .expect(500);
 
       expect(response.body).toEqual({
         error: "Token validation failed",
+        code: "TOKEN_VALIDATION_FAILED",
       });
     });
 
@@ -396,7 +411,8 @@ describe("DownloadController", () => {
         .expect(500);
 
       expect(response.body).toEqual({
-        error: "Internal server error",
+        error: "Unexpected error",
+        code: "UNKNOWN_ERROR",
       });
     });
 
@@ -426,7 +442,8 @@ describe("DownloadController", () => {
         .expect(404);
 
       expect(response.body).toEqual({
-        error: "Invalid or expired download token",
+        error: "Token not found",
+        code: "INVALID_TOKEN",
       });
     });
 
@@ -442,7 +459,8 @@ describe("DownloadController", () => {
         .expect(404);
 
       expect(response.body).toEqual({
-        error: "Invalid or expired download token",
+        error: "Token not found",
+        code: "INVALID_TOKEN",
       });
     });
   });
@@ -550,7 +568,8 @@ describe("DownloadController", () => {
         .expect(500);
 
       expect(response.body).toEqual({
-        error: "Internal server error",
+        error: "Unexpected database error",
+        code: "INTERNAL_ERROR",
       });
     });
 
@@ -565,7 +584,8 @@ describe("DownloadController", () => {
         .expect(500);
 
       expect(response.body).toEqual({
-        error: "Internal server error",
+        error: "Database connection failed",
+        code: "INTERNAL_ERROR",
       });
     });
 
@@ -576,7 +596,7 @@ describe("DownloadController", () => {
         .send('{"invalid": json}') // Malformed JSON
         .expect(400);
 
-      // Express will handle the JSON parsing error
+      // Express will handle the JSON parsing error at middleware level
     });
 
     it("should handle large file downloads", async () => {

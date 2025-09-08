@@ -1,5 +1,7 @@
+import { z } from "zod";
 import { UserId } from "../../shared/types/brand";
 import { UserRole } from "../entities/user.entity";
+import { Result, ok, err } from "../../shared/result/result";
 
 /**
  * JWT payload value object.
@@ -13,36 +15,48 @@ export interface JwtPayload {
   readonly exp: number;      // Expires at
 }
 
+/**
+ * JWT payload validation schema using Zod for consistent validation.
+ */
+const jwtPayloadSchema = z.object({
+  sub: z.string({
+    message: "JWT payload must contain subject (sub)"
+  }).min(1, "JWT payload must contain subject (sub)"),
+  email: z.string({
+    message: "JWT payload must contain email"
+  }).email("JWT payload must contain valid email"),
+  role: z.enum(["admin", "user"], {
+    message: "JWT payload must contain valid role"
+  }),
+  iat: z.number({
+    message: "JWT payload must contain valid issued at time"
+  }).positive("JWT payload must contain valid issued at time"),
+  exp: z.number({
+    message: "JWT payload must contain valid expiration time"
+  }).positive("JWT payload must contain valid expiration time")
+}).refine(
+  (data) => data.exp > data.iat,
+  {
+    message: "JWT payload must contain valid expiration time",
+    path: ["exp"]
+  }
+);
+
 export class Jwt {
   private constructor(
     private readonly _payload: JwtPayload,
     private readonly _token: string
   ) {}
 
-  static create(payload: JwtPayload, token: string): Jwt {
-    Jwt.validate(payload);
-    return new Jwt(payload, token);
-  }
-
-  private static validate(payload: JwtPayload): void {
-    if (!payload.sub) {
-      throw new Error("JWT payload must contain subject (sub)");
-    }
-    
-    if (!payload.email) {
-      throw new Error("JWT payload must contain email");
-    }
-    
-    if (!payload.role || !["admin", "user"].includes(payload.role)) {
-      throw new Error("JWT payload must contain valid role");
-    }
-    
-    if (!payload.iat || payload.iat <= 0) {
-      throw new Error("JWT payload must contain valid issued at time");
-    }
-    
-    if (!payload.exp || payload.exp <= payload.iat) {
-      throw new Error("JWT payload must contain valid expiration time");
+  static create(payload: JwtPayload, token: string): Result<Jwt, Error> {
+    try {
+      const validatedPayload = jwtPayloadSchema.parse(payload);
+      return ok(new Jwt(validatedPayload as JwtPayload, token));
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return err(new Error(error.issues[0]?.message || "Validation error"));
+      }
+      return err(error as Error);
     }
   }
 

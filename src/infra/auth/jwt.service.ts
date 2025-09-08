@@ -53,8 +53,11 @@ export class JwtServiceImpl implements JwtService {
         return err(new Error("Invalid JWT payload structure"));
       }
 
-      const jwtValue = Jwt.create(decoded, token);
-      return ok(jwtValue);
+      const jwtResult = Jwt.create(decoded, token);
+      if (!jwtResult.ok) {
+        return err(new Error(jwtResult.error.message));
+      }
+      return ok(jwtResult.value);
     } catch (error) {
       if (error instanceof jwt.TokenExpiredError) {
         return err(new Error("JWT token has expired"));

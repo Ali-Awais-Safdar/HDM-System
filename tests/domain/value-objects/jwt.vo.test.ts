@@ -15,70 +15,76 @@ describe("JWT Value Object", () => {
 
   describe("creation", () => {
     it("should create JWT with valid payload and token", () => {
-      const jwt = Jwt.create(validPayload, validToken);
+      const result = Jwt.create(validPayload, validToken);
       
-      expect(jwt.payload).toEqual(validPayload);
-      expect(jwt.token).toBe(validToken);
-      expect(jwt.userId).toBe(validPayload.sub);
-      expect(jwt.email).toBe(validPayload.email);
-      expect(jwt.role).toBe(validPayload.role);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.payload).toEqual(validPayload);
+        expect(result.value.token).toBe(validToken);
+        expect(result.value.userId).toBe(validPayload.sub);
+        expect(result.value.email).toBe(validPayload.email);
+        expect(result.value.role).toBe(validPayload.role);
+      }
     });
   });
 
   describe("validation", () => {
-    it("should throw error for missing subject", () => {
+    it("should return error for missing subject", () => {
       const invalidPayload = { ...validPayload, sub: undefined as any };
-      expect(() => Jwt.create(invalidPayload, validToken))
-        .toThrow("JWT payload must contain subject (sub)");
+      const result = Jwt.create(invalidPayload, validToken);
+      expect(result.ok).toBe(false);
     });
 
-    it("should throw error for missing email", () => {
+    it("should return error for missing email", () => {
       const invalidPayload = { ...validPayload, email: undefined as any };
-      expect(() => Jwt.create(invalidPayload, validToken))
-        .toThrow("JWT payload must contain email");
+      const result = Jwt.create(invalidPayload, validToken);
+      expect(result.ok).toBe(false);
     });
 
-    it("should throw error for invalid role", () => {
+    it("should return error for invalid role", () => {
       const invalidPayload = { ...validPayload, role: "invalid" as any };
-      expect(() => Jwt.create(invalidPayload, validToken))
-        .toThrow("JWT payload must contain valid role");
+      const result = Jwt.create(invalidPayload, validToken);
+      expect(result.ok).toBe(false);
     });
 
-    it("should throw error for missing role", () => {
+    it("should return error for missing role", () => {
       const invalidPayload = { ...validPayload, role: undefined as any };
-      expect(() => Jwt.create(invalidPayload, validToken))
-        .toThrow("JWT payload must contain valid role");
+      const result = Jwt.create(invalidPayload, validToken);
+      expect(result.ok).toBe(false);
     });
 
-    it("should throw error for invalid issued at time", () => {
+    it("should return error for invalid issued at time", () => {
       const invalidPayload = { ...validPayload, iat: 0 };
-      expect(() => Jwt.create(invalidPayload, validToken))
-        .toThrow("JWT payload must contain valid issued at time");
+      const result = Jwt.create(invalidPayload, validToken);
+      expect(result.ok).toBe(false);
     });
 
-    it("should throw error for missing issued at time", () => {
+    it("should return error for missing issued at time", () => {
       const invalidPayload = { ...validPayload, iat: undefined as any };
-      expect(() => Jwt.create(invalidPayload, validToken))
-        .toThrow("JWT payload must contain valid issued at time");
+      const result = Jwt.create(invalidPayload, validToken);
+      expect(result.ok).toBe(false);
     });
 
-    it("should throw error for invalid expiration time", () => {
+    it("should return error for invalid expiration time", () => {
       const invalidPayload = { ...validPayload, exp: validPayload.iat - 1 };
-      expect(() => Jwt.create(invalidPayload, validToken))
-        .toThrow("JWT payload must contain valid expiration time");
+      const result = Jwt.create(invalidPayload, validToken);
+      expect(result.ok).toBe(false);
     });
 
-    it("should throw error for missing expiration time", () => {
+    it("should return error for missing expiration time", () => {
       const invalidPayload = { ...validPayload, exp: undefined as any };
-      expect(() => Jwt.create(invalidPayload, validToken))
-        .toThrow("JWT payload must contain valid expiration time");
+      const result = Jwt.create(invalidPayload, validToken);
+      expect(result.ok).toBe(false);
     });
   });
 
   describe("expiration checks", () => {
     it("should correctly identify non-expired token", () => {
-      const jwt = Jwt.create(validPayload, validToken);
-      expect(jwt.isExpired()).toBe(false);
+      const result = Jwt.create(validPayload, validToken);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.isExpired()).toBe(false);
+      }
     });
 
     it("should correctly identify expired token", () => {
@@ -88,16 +94,21 @@ describe("JWT Value Object", () => {
         iat: now - 7200, // 2 hours ago
         exp: now - 3600  // 1 hour ago  
       };
-      const jwt = Jwt.create(expiredPayload, validToken);
-      expect(jwt.isExpired()).toBe(true);
+      const result = Jwt.create(expiredPayload, validToken);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.isExpired()).toBe(true);
+      }
     });
 
     it("should calculate expiration time correctly", () => {
-      const jwt = Jwt.create(validPayload, validToken);
-      const expiresIn = jwt.expiresIn();
-      
-      expect(expiresIn).toBeGreaterThan(0);
-      expect(expiresIn).toBeLessThanOrEqual(3600 * 1000); // Should be less than or equal to 1 hour in ms
+      const result = Jwt.create(validPayload, validToken);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const expiresIn = result.value.expiresIn();
+        expect(expiresIn).toBeGreaterThan(0);
+        expect(expiresIn).toBeLessThanOrEqual(3600 * 1000); // Should be less than or equal to 1 hour in ms
+      }
     });
 
     it("should return 0 for expired token expiration time", () => {
@@ -107,20 +118,25 @@ describe("JWT Value Object", () => {
         iat: now - 7200, // 2 hours ago
         exp: now - 3600  // 1 hour ago
       };
-      const jwt = Jwt.create(expiredPayload, validToken);
-      expect(jwt.expiresIn()).toBe(0);
+      const result = Jwt.create(expiredPayload, validToken);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.expiresIn()).toBe(0);
+      }
     });
   });
 
   describe("role validation", () => {
     it("should accept admin role", () => {
       const adminPayload = { ...validPayload, role: "admin" as const };
-      expect(() => Jwt.create(adminPayload, validToken)).not.toThrow();
+      const result = Jwt.create(adminPayload, validToken);
+      expect(result.ok).toBe(true);
     });
 
     it("should accept user role", () => {
       const userPayload = { ...validPayload, role: "user" as const };
-      expect(() => Jwt.create(userPayload, validToken)).not.toThrow();
+      const result = Jwt.create(userPayload, validToken);
+      expect(result.ok).toBe(true);
     });
   });
 });

@@ -1,6 +1,5 @@
 /**
  * Branded types to prevent mixing different ID types at compile time.
- * This follows the company's best practices for type safety.
  */
 export type Brand<T, B extends string> = T & { readonly __brand: B };
 

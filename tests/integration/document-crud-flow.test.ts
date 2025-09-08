@@ -73,7 +73,13 @@ describe("Integration: /documents CRUD flow (with in-memory repo + real local st
     // Simple auth shim: attach a test user
     app.use((req, _res, next) => { (req as any).user = { id: asUserId("11111111-1111-7111-8111-111111111111"), role: "user", email: "test@example.com" }; next(); });
     const router = express.Router();
-    router.post("/", upload.single("file"), controller.createDocument.bind(controller));
+    router.post("/", upload.single("file"), (req, _res, next) => {
+      // For testing, set mimetype if it's undefined
+      if (req.file && !req.file.mimetype) {
+        req.file.mimetype = 'application/pdf';
+      }
+      next();
+    }, controller.createDocument.bind(controller));
     router.get("/:id", controller.getDocument.bind(controller));
     router.patch("/:id/metadata", controller.updateMetadata.bind(controller));
     router.delete("/:id", controller.deleteDocument.bind(controller));

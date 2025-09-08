@@ -6,6 +6,7 @@ import {
   documentIdParamSchema,
   downloadTokenParamSchema 
 } from "../schemas/download.schema";
+import { handleValidationError, sendErr, sendOk } from "../errors";
 import { asDocumentId } from "../../../shared/types/brand";
 import { logger } from "../../../shared/logging/logger";
 
@@ -27,7 +28,8 @@ export class DownloadController {
     const userRole = req.user?.role;
 
     if (!userId || !userRole) {
-      return res.status(401).json({ error: "Unauthorized" });
+      sendErr(res, new Error("Authentication required"), "Authentication required", "UNAUTHORIZED");
+      return;
     }
 
     // Validate document ID parameter
@@ -37,10 +39,8 @@ export class DownloadController {
         userId: userId,
         errors: paramValidation.error.issues,
       } as any);
-      return res.status(400).json({
-        error: "Invalid document ID",
-        details: paramValidation.error.issues,
-      });
+      handleValidationError(res, paramValidation.error);
+      return;
     }
 
     // Validate request body (optional expiration time)
@@ -51,10 +51,8 @@ export class DownloadController {
         documentId: req.params.id,
         errors: bodyValidation.error.issues,
       } as any);
-      return res.status(400).json({
-        error: "Invalid request body",
-        details: bodyValidation.error.issues,
-      });
+      handleValidationError(res, bodyValidation.error);
+      return;
     }
 
     const documentId = asDocumentId(paramValidation.data.id);
@@ -83,17 +81,8 @@ export class DownloadController {
           code: result.error.code,
         } as any);
 
-        switch (result.error.code) {
-          case "DOCUMENT_NOT_FOUND":
-            return res.status(404).json({ error: result.error.message });
-          case "ACCESS_DENIED":
-            return res.status(403).json({ error: result.error.message });
-          case "PERMISSION_CHECK_FAILED":
-          case "TOKEN_GENERATION_FAILED":
-            return res.status(500).json({ error: "Failed to generate download link" });
-          default:
-            return res.status(500).json({ error: "Internal server error" });
-        }
+        sendErr(res, result.error, result.error.message);
+        return;
       }
 
       logger.info("Download link generated successfully", {
@@ -111,7 +100,7 @@ export class DownloadController {
         message: result.value.message,
       };
 
-      return res.status(200).json(response);
+      sendOk(res, response, 200);
 
     } catch (error) {
       logger.error("Unexpected error in generate download link", {
@@ -120,7 +109,7 @@ export class DownloadController {
         documentId: documentId,
       } as any);
 
-      return res.status(500).json({ error: "Internal server error" });
+      sendErr(res, error);
     }
   };
 
@@ -138,10 +127,8 @@ export class DownloadController {
         ip: req.ip,
         userAgent: req.get('User-Agent'),
       } as any);
-      return res.status(400).json({
-        error: "Invalid download token",
-        details: paramValidation.error.issues,
-      });
+      handleValidationError(res, paramValidation.error);
+      return;
     }
 
     const { token } = paramValidation.data;
@@ -158,22 +145,8 @@ export class DownloadController {
           userAgent: req.get('User-Agent'),
         } as any);
 
-        switch (result.error.code) {
-          case "INVALID_TOKEN":
-            return res.status(404).json({ error: "Invalid or expired download token" });
-          case "TOKEN_EXPIRED":
-            return res.status(410).json({ error: "Download token has expired" });
-          case "TOKEN_ALREADY_USED":
-            return res.status(410).json({ error: "Download token has already been used" });
-          case "TOKEN_VALIDATION_FAILED":
-            return res.status(400).json({ error: "Token validation failed" });
-          case "DOCUMENT_NOT_FOUND":
-            return res.status(404).json({ error: "Document not found" });
-          case "FILE_RETRIEVAL_FAILED":
-            return res.status(500).json({ error: "Failed to retrieve document file" });
-          default:
-            return res.status(500).json({ error: "Internal server error" });
-        }
+        sendErr(res, result.error, result.error.message);
+        return;
       }
 
       const { document, fileData } = result.value;
@@ -207,7 +180,7 @@ export class DownloadController {
         userAgent: req.get('User-Agent'),
       } as any);
 
-      return res.status(500).json({ error: "Internal server error" });
+      sendErr(res, error);
     }
   };
 }
