@@ -1,5 +1,6 @@
 import { DownloadTokenId, UserId, DocumentId, newDownloadTokenId } from "../../shared/types/brand";
 import { randomBytes } from "crypto";
+import { Option } from "effect";
 
 /**
  * DownloadToken domain entity representing secure, short-lived access tokens for document downloads.
@@ -18,7 +19,7 @@ export class DownloadToken {
     public readonly documentId: DocumentId,
     public readonly issuedTo: UserId,
     public readonly expiresAt: Date,
-    public readonly usedAt: Date | null,
+    public readonly usedAt: Option.Option<Date>,
     public readonly createdAt: Date
   ) {}
 
@@ -38,7 +39,7 @@ export class DownloadToken {
       props.documentId,
       props.issuedTo,
       props.expiresAt,
-      null, // Not used yet
+      Option.none(), // Not used yet
       new Date()
     );
   }
@@ -67,7 +68,7 @@ export class DownloadToken {
     documentId: DocumentId;
     issuedTo: UserId;
     expiresAt: Date;
-    usedAt: Date | null;
+    usedAt: Option.Option<Date>;
     createdAt: Date;
   }): DownloadToken {
     return new DownloadToken(
@@ -103,7 +104,7 @@ export class DownloadToken {
    * Checks if the token has been used.
    */
   isUsed(): boolean {
-    return this.usedAt !== null;
+    return Option.isSome(this.usedAt);
   }
 
   /**
@@ -121,7 +122,7 @@ export class DownloadToken {
       this.documentId,
       this.issuedTo,
       this.expiresAt,
-      new Date(), // Mark as used now
+      Option.some(new Date()), // Mark as used now
       this.createdAt
     );
   }
@@ -155,7 +156,7 @@ export class DownloadToken {
       documentId: this.documentId,
       issuedTo: this.issuedTo,
       expiresAt: this.expiresAt,
-      usedAt: this.usedAt,
+      usedAt: Option.getOrNull(this.usedAt),
       createdAt: this.createdAt,
       isValid: this.isValid(clockSkewToleranceMs),
       isExpired: this.isExpired(clockSkewToleranceMs),

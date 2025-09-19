@@ -84,7 +84,10 @@ describe("DownloadDocumentUseCase", () => {
           token: mockToken.token,
           documentId: mockToken.documentId,
           issuedTo: mockToken.issuedTo,
-          usedAt: expect.any(Date),
+          usedAt: expect.objectContaining({
+            _tag: "Some",
+            value: expect.any(Date)
+          }),
         })
       );
     });

@@ -9,6 +9,7 @@ import { UserId, DocumentId, asDownloadTokenId } from "../../../shared/types/bra
 import { downloadTokens } from "../../../lib/db/schema";
 import { Database } from "../../../lib/db/connection";
 import { env } from "../../../env/env";
+import { dateFromNullable, dateToNullable } from "../../../domain/serialization/option.mapping";
 
 /**
  * Drizzle ORM implementation of the DownloadTokenRepository.
@@ -24,7 +25,7 @@ export class DrizzleDownloadTokenRepository implements DownloadTokenRepository {
         documentId: token.documentId,
         issuedTo: token.issuedTo,
         expiresAt: token.expiresAt,
-        usedAt: token.usedAt,
+        usedAt: dateToNullable(token.usedAt),
         createdAt: token.createdAt,
       };
 
@@ -67,7 +68,7 @@ export class DrizzleDownloadTokenRepository implements DownloadTokenRepository {
         documentId: tokenRow.documentId as DocumentId,
         issuedTo: tokenRow.issuedTo as UserId,
         expiresAt: tokenRow.expiresAt,
-        usedAt: tokenRow.usedAt,
+        usedAt: dateFromNullable(tokenRow.usedAt),
         createdAt: tokenRow.createdAt,
       });
 
@@ -95,7 +96,7 @@ export class DrizzleDownloadTokenRepository implements DownloadTokenRepository {
           documentId: row.documentId as DocumentId,
           issuedTo: row.issuedTo as UserId,
           expiresAt: row.expiresAt,
-          usedAt: row.usedAt,
+          usedAt: dateFromNullable(row.usedAt),
           createdAt: row.createdAt,
         })
       );
@@ -124,7 +125,7 @@ export class DrizzleDownloadTokenRepository implements DownloadTokenRepository {
           documentId: row.documentId as DocumentId,
           issuedTo: row.issuedTo as UserId,
           expiresAt: row.expiresAt,
-          usedAt: row.usedAt,
+          usedAt: dateFromNullable(row.usedAt),
           createdAt: row.createdAt,
         })
       );
@@ -144,7 +145,7 @@ export class DrizzleDownloadTokenRepository implements DownloadTokenRepository {
       const result = await this.db
         .update(downloadTokens)
         .set({ 
-          usedAt: token.usedAt,
+          usedAt: dateToNullable(token.usedAt),
         })
         .where(eq(downloadTokens.token, token.token))
         .returning();
@@ -163,7 +164,7 @@ export class DrizzleDownloadTokenRepository implements DownloadTokenRepository {
         documentId: updatedRow.documentId as DocumentId,
         issuedTo: updatedRow.issuedTo as UserId,
         expiresAt: updatedRow.expiresAt,
-        usedAt: updatedRow.usedAt,
+        usedAt: dateFromNullable(updatedRow.usedAt),
         createdAt: updatedRow.createdAt,
       });
 

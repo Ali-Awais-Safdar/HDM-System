@@ -30,12 +30,24 @@ export class SearchDocumentsUseCase {
       
       // Build search filters
       const filters: DocumentSearchFilters = {
-        query: searchParams.query?.trim() || undefined,
-        tags: searchParams.tags?.filter(tag => tag.trim().length > 0) || undefined,
-        metadata: searchParams.metadata || undefined,
         limit: Math.min(searchParams.limit || 20, 100), // Cap at 100
         offset: Math.max(searchParams.offset || 0, 0)
       };
+      
+      // Only add optional properties if they have values
+      const trimmedQuery = searchParams.query?.trim();
+      if (trimmedQuery) {
+        filters.query = trimmedQuery;
+      }
+      
+      const validTags = searchParams.tags?.filter(tag => tag.trim().length > 0);
+      if (validTags && validTags.length > 0) {
+        filters.tags = validTags;
+      }
+      
+      if (searchParams.metadata) {
+        filters.metadata = searchParams.metadata;
+      }
 
       // For regular users, restrict to their own documents
       // Admins can search all documents
@@ -60,10 +72,10 @@ export class SearchDocumentsUseCase {
           hasMore: searchResult.value.length === filters.limit
         },
         appliedFilters: {
-          query: filters.query,
-          tags: filters.tags,
-          metadata: filters.metadata,
-          ownerId: filters.ownerId
+          ...(filters.query !== undefined && { query: filters.query }),
+          ...(filters.tags !== undefined && { tags: filters.tags }),
+          ...(filters.metadata !== undefined && { metadata: filters.metadata }),
+          ...(filters.ownerId !== undefined && { ownerId: filters.ownerId })
         }
       };
 

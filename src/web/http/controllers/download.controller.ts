@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { GenerateDownloadLinkUseCase } from "../../../application/use-cases/generate-download-link.use-case";
+import { GenerateDownloadLinkUseCase, GenerateDownloadLinkParams } from "../../../application/use-cases/generate-download-link.use-case";
 import { DownloadDocumentUseCase } from "../../../application/use-cases/download-document.use-case";
 import { 
   generateDownloadLinkSchema,
@@ -64,13 +64,15 @@ export class DownloadController {
       : undefined; // Use default 5 minutes
 
     try {
+      const params: GenerateDownloadLinkParams = { documentId };
+      if (expiresAt) {
+        params.expiresAt = expiresAt;
+      }
+      
       const result = await this.generateDownloadLinkUseCase.execute(
         userId,
         userRole,
-        {
-          documentId,
-          expiresAt,
-        }
+        params
       );
 
       if (!result.ok) {

@@ -5,6 +5,7 @@ import { SearchDocumentsUseCase, SearchDocumentsError } from "../../../../src/ap
 import { Document } from "../../../../src/domain/entities/document.entity";
 import { asDocumentId, asUserId, asMimeType, asFileSize } from "../../../../src/shared/types/brand";
 import { ok, err } from "../../../../src/shared/result/result";
+import { Option } from "effect";
 
 describe("SearchController", () => {
   let mockUseCase: SearchDocumentsUseCase;
@@ -34,17 +35,19 @@ describe("SearchController", () => {
     };
   });
 
-  const createMockDocument = (id: string, title: string) => {
-    return Document.create({
-      id: asDocumentId(id),
-      ownerId: asUserId("user1"),
+  const createMockDocument = (id: string, title: string, updatedAt: Option.Option<Date> = Option.none()) => {
+    return new Document(
+      asDocumentId(id),
+      asUserId("user1"),
       title,
-      mimeType: asMimeType("application/pdf"),
-      size: asFileSize(1024),
-      storageKey: `documents/${id}.pdf`,
-      metadata: { department: "finance" },
-      tags: ["urgent", "report"]
-    });
+      asMimeType("application/pdf"),
+      asFileSize(1024),
+      `documents/${id}.pdf`,
+      { department: "finance" },
+      ["urgent", "report"],
+      new Date("2023-01-01T10:00:00Z"), // Fixed createdAt for consistent tests
+      updatedAt
+    );
   };
 
   describe("searchDocuments", () => {
@@ -77,8 +80,8 @@ describe("SearchController", () => {
           size: 1024,
           metadata: { department: "finance" },
           tags: ["urgent", "report"],
-          createdAt: mockDocuments[0]!.createdAt.toISOString(),
-          updatedAt: undefined,
+          createdAt: "2023-01-01T10:00:00.000Z",
+          updatedAt: null,
           ownerId: "user1",
         }],
         pagination: { limit: 20, offset: 0, total: 1, hasMore: false },
@@ -176,7 +179,7 @@ describe("SearchController", () => {
     });
 
     it("should handle missing authentication", async () => {
-      mockRequest.user = undefined;
+      delete mockRequest.user;
 
       await controller.searchDocuments(mockRequest as Request, mockResponse as Response);
 
@@ -288,12 +291,8 @@ describe("SearchController", () => {
     });
 
     it("should handle document with updatedAt timestamp", async () => {
-      const mockDoc = createMockDocument("doc1", "Updated Report");
       const updatedDate = new Date("2023-12-01T10:00:00Z");
-      // Simulate updated document - manually set updatedAt after creation
-      const updatedDoc = mockDoc;
-      // @ts-expect-error - Setting private property for test
-      updatedDoc.updatedAt = updatedDate;
+      const updatedDoc = createMockDocument("doc1", "Updated Report", Option.some(updatedDate));
 
       const mockUseCaseResponse = {
         documents: [updatedDoc],
@@ -315,7 +314,7 @@ describe("SearchController", () => {
           size: 1024,
           metadata: { department: "finance" },
           tags: ["urgent", "report"],
-          createdAt: updatedDoc.createdAt.toISOString(),
+          createdAt: "2023-01-01T10:00:00.000Z",
           updatedAt: updatedDate.toISOString(),
           ownerId: "user1",
         }],

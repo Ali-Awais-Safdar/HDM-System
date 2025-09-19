@@ -13,18 +13,10 @@ const NODE_ENV = process.env.NODE_ENV || "development";
 const IS_DEVELOPMENT = NODE_ENV === "development";
 
 // Create base logger instance
-const baseLogger = pino({
+const baseLoggerConfig: any = {
   level: LOG_LEVEL,
-  transport: IS_DEVELOPMENT && LOG_FORMAT === "pretty" ? { 
-    target: "pino-pretty",
-    options: {
-      colorize: true,
-      translateTime: 'HH:MM:ss Z',
-      ignore: 'pid,hostname',
-    }
-  } : undefined,
   formatters: {
-    level: (label) => {
+    level: (label: string) => {
       return { level: label.toUpperCase() };
     },
   },
@@ -33,9 +25,22 @@ const baseLogger = pino({
     pid: process.pid,
     hostname: process.env.HOSTNAME || 'localhost',
     service: 'dms-headless',
-    version: process.env.npm_package_version || '0.1.0',
-  },
-});
+    version: '0.1.0'
+  }
+};
+
+if (IS_DEVELOPMENT && LOG_FORMAT === "pretty") {
+  baseLoggerConfig.transport = { 
+    target: "pino-pretty",
+    options: {
+      colorize: true,
+      translateTime: 'HH:MM:ss Z',
+      ignore: 'pid,hostname',
+    }
+  };
+}
+
+const baseLogger = pino(baseLoggerConfig);
 
 export const logger = baseLogger;
 

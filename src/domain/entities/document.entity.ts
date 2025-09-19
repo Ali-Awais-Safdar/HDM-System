@@ -1,4 +1,5 @@
 import { DocumentId, UserId, MimeType, FileSize } from "../../shared/types/brand";
+import { Option } from "effect";
 
 export interface DocumentEntity {
   readonly id: DocumentId;
@@ -10,7 +11,7 @@ export interface DocumentEntity {
   readonly metadata: Record<string, unknown>;
   readonly tags: string[];
   readonly createdAt: Date;
-  readonly updatedAt: Date | null;
+  readonly updatedAt: Option.Option<Date>;
 }
 
 export class Document implements DocumentEntity {
@@ -24,7 +25,7 @@ export class Document implements DocumentEntity {
     public readonly metadata: Record<string, unknown> = {},
     public readonly tags: string[] = [],
     public readonly createdAt: Date = new Date(),
-    public readonly updatedAt: Date | null = null
+    public readonly updatedAt: Option.Option<Date> = Option.none()
   ) {
     this.validateTitle(title);
     this.validateSize(size);
@@ -56,7 +57,7 @@ export class Document implements DocumentEntity {
       { ...this.metadata, ...metadata },
       this.tags,
       this.createdAt,
-      new Date()
+      Option.some(new Date())
     );
   }
 
@@ -72,7 +73,7 @@ export class Document implements DocumentEntity {
       this.metadata,
       uniqueTags,
       this.createdAt,
-      new Date()
+      Option.some(new Date())
     );
   }
 
@@ -88,7 +89,7 @@ export class Document implements DocumentEntity {
       this.metadata,
       filteredTags,
       this.createdAt,
-      new Date()
+      Option.some(new Date())
     );
   }
 
@@ -109,8 +110,10 @@ export class Document implements DocumentEntity {
       props.mimeType,
       props.size,
       props.storageKey,
-      props.metadata,
-      props.tags
+      props.metadata || {},
+      props.tags || [],
+      new Date(),
+      Option.none()
     );
   }
 }

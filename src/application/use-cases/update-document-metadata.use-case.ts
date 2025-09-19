@@ -4,6 +4,7 @@ import { UserId, asDocumentId } from "../../shared/types/brand";
 import { UserRole } from "../../domain/entities/user.entity";
 import { Permission } from "../../domain/entities/permission.entity";
 import { createServiceLogger, logPerformance } from "../../shared/logging/logger";
+import { dateToNullable } from "../../domain/serialization/option.mapping";
 
 export interface UpdateDocumentMetadataRequest {
   documentId: string;
@@ -84,7 +85,7 @@ export class UpdateDocumentMetadataUseCase {
         tags: document.tags,
         ownerId: document.ownerId,
         createdAt: document.createdAt,
-        updatedAt: document.updatedAt
+        updatedAt: dateToNullable(document.updatedAt)
       });
 
     } catch (error) {

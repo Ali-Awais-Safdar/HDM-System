@@ -47,7 +47,7 @@ describe("DrizzleDownloadTokenRepository", () => {
         documentId: mockToken.documentId,
         issuedTo: mockToken.issuedTo,
         expiresAt: mockToken.expiresAt,
-        usedAt: mockToken.usedAt,
+        usedAt: null, // Should be converted to null for database
         createdAt: mockToken.createdAt,
       });
     });

@@ -4,7 +4,8 @@ import { PermissionService } from "../../src/domain/services/permission.service"
 import { ShareDocumentUseCase } from "../../src/application/use-cases/share-document.use-case";
 import { CreateDocumentUseCase } from "../../src/application/use-cases/create-document.use-case";
 import { ok, err } from "../../src/shared/result/result";
-import { asUserId, asMimeType, newDocumentId } from "../../src/shared/types/brand";
+import { asUserId, asMimeType, newDocumentId, asFileSize } from "../../src/shared/types/brand";
+import { Document } from "../../src/domain/entities/document.entity";
 
 /**
  * Integration tests for transaction reliability.
@@ -92,7 +93,7 @@ describe("Transaction Reliability Integration Tests", () => {
         file: {
           originalName: "test.txt",
           mimeType: "text/plain",
-          size: fileData.length,
+          size: asFileSize(fileData.length),
           data: fileData,
         },
         metadata: {},
@@ -123,18 +124,16 @@ describe("Transaction Reliability Integration Tests", () => {
       });
 
       // Mock successful database save
-      const mockDocument = {
+      const mockDocument = Document.create({
         id: newDocumentId(),
         ownerId: asUserId("user123"),
         title: "Test Document",
         mimeType: asMimeType("text/plain"),
-        size: fileData.length,
+        size: asFileSize(fileData.length),
         storageKey: "storage/path",
         metadata: {},
         tags: [],
-        createdAt: new Date(),
-        updatedAt: null,
-      };
+      });
 
       mockDocumentRepository.saveInTransaction.mockResolvedValue(ok(mockDocument));
 
@@ -144,7 +143,7 @@ describe("Transaction Reliability Integration Tests", () => {
         file: {
           originalName: "test.txt",
           mimeType: "text/plain",
-          size: fileData.length,
+          size: asFileSize(fileData.length),
           data: fileData,
         },
         metadata: {},
@@ -183,7 +182,7 @@ describe("Transaction Reliability Integration Tests", () => {
         file: {
           originalName: "test.txt",
           mimeType: "text/plain",
-          size: fileData.length,
+          size: asFileSize(fileData.length),
           data: fileData,
         },
         metadata: {},
@@ -274,18 +273,16 @@ describe("Transaction Reliability Integration Tests", () => {
       const requesterId = asUserId("requester123");
       const targetUserId = asUserId("target123");
 
-      const mockDocument = {
+      const mockDocument = Document.create({
         id: documentId,
         ownerId: requesterId, // Requester owns the document
         title: "Test Document",
         mimeType: asMimeType("text/plain"),
-        size: 1024,
+        size: asFileSize(1024),
         storageKey: "storage/path",
         metadata: {},
         tags: [],
-        createdAt: new Date(),
-        updatedAt: null,
-      };
+      });
 
       // Mock parallel operations
       const documentFindSpy = vi.fn().mockResolvedValue(ok(mockDocument));

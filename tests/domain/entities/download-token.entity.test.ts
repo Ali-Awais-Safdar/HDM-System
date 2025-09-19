@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { DownloadToken } from "../../../src/domain/entities/download-token.entity";
 import { asDocumentId, asUserId, asDownloadTokenId } from "../../../src/shared/types/brand";
+import { Option } from "effect";
 
 describe("DownloadToken Entity", () => {
   const mockDocumentId = asDocumentId("doc-123");
@@ -29,7 +30,7 @@ describe("DownloadToken Entity", () => {
       expect(token.documentId).toBe(mockDocumentId);
       expect(token.issuedTo).toBe(mockUserId);
       expect(token.expiresAt).toBe(expiresAt);
-      expect(token.usedAt).toBeNull();
+      expect(Option.isNone(token.usedAt)).toBe(true);
       expect(token.createdAt).toEqual(new Date('2023-01-01T10:00:00Z'));
       expect(token.token).toBeDefined();
       expect(token.token.length).toBeGreaterThan(40); // Base64 encoded 32 bytes should be longer
@@ -95,7 +96,7 @@ describe("DownloadToken Entity", () => {
         documentId: mockDocumentId,
         issuedTo: mockUserId,
         expiresAt,
-        usedAt,
+        usedAt: Option.some(usedAt),
         createdAt,
       });
 
@@ -104,7 +105,7 @@ describe("DownloadToken Entity", () => {
       expect(token.documentId).toBe(mockDocumentId);
       expect(token.issuedTo).toBe(mockUserId);
       expect(token.expiresAt).toBe(expiresAt);
-      expect(token.usedAt).toBe(usedAt);
+      expect(Option.getOrNull(token.usedAt)).toBe(usedAt);
       expect(token.createdAt).toBe(createdAt);
     });
   });
@@ -262,9 +263,9 @@ describe("DownloadToken Entity", () => {
       const usedToken = token.markAsUsed();
 
       expect(usedToken).not.toBe(token); // Different instance
-      expect(usedToken.usedAt).toEqual(new Date('2023-01-01T10:00:00Z'));
+      expect(Option.getOrNull(usedToken.usedAt)).toEqual(new Date('2023-01-01T10:00:00Z'));
       expect(usedToken.token).toBe(token.token); // Same token string
-      expect(token.usedAt).toBeNull(); // Original unchanged
+      expect(Option.isNone(token.usedAt)).toBe(true); // Original unchanged
     });
 
     it("should throw error when marking already used token", () => {

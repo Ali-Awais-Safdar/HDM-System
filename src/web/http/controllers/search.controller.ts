@@ -3,6 +3,7 @@ import { SearchDocumentsUseCase, SearchDocumentsParams } from "../../../applicat
 import { searchDocumentsSchema } from "../schemas/search.schema";
 import { logger } from "../../../shared/logging/logger";
 import { handleValidationError, sendErr, sendOk } from "../errors";
+import { Option } from "effect";
 
 /**
  * Controller for document search operations.
@@ -45,7 +46,13 @@ export class SearchController {
         return;
       }
 
-      const searchParams: SearchDocumentsParams = validationResult.data;
+      const searchParams: SearchDocumentsParams = {
+        limit: validationResult.data.limit,
+        offset: validationResult.data.offset,
+        ...(validationResult.data.query && { query: validationResult.data.query }),
+        ...(validationResult.data.tags && { tags: validationResult.data.tags }),
+        ...(validationResult.data.metadata && { metadata: validationResult.data.metadata }),
+      };
 
       // Get user context from middleware
       const userId = req.user?.id;
@@ -84,7 +91,10 @@ export class SearchController {
           metadata: doc.metadata,
           tags: doc.tags,
           createdAt: doc.createdAt.toISOString(),
-          updatedAt: doc.updatedAt?.toISOString(),
+          updatedAt: Option.match(doc.updatedAt, {
+            onNone: () => null,
+            onSome: (date) => date.toISOString()
+          }),
           ownerId: doc.ownerId,
         })),
         pagination: result.value.pagination,

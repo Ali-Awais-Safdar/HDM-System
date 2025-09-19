@@ -7,6 +7,7 @@ import { documents, tags, documentTags } from "../../../lib/db/schema";
 import { newId } from "../../../shared/uuid";
 import { Database, DatabaseTransaction } from "../../../lib/db/connection";
 import { TransactionManager } from "../../../lib/db/transaction";
+import { dateFromNullable, dateToNullable } from "../../../domain/serialization/option.mapping";
 
 /**
  * Drizzle ORM implementation of the Document Repository.
@@ -149,7 +150,7 @@ export class DrizzleDocumentRepository implements DocumentRepository {
         storageKey: document.storageKey,
         metadata: document.metadata,
         createdAt: document.createdAt,
-        updatedAt: document.updatedAt
+        updatedAt: dateToNullable(document.updatedAt)
       };
 
       if (existingResult.value === null) {
@@ -165,7 +166,7 @@ export class DrizzleDocumentRepository implements DocumentRepository {
             size: documentRow.size,
             storageKey: documentRow.storageKey,
             metadata: documentRow.metadata,
-            updatedAt: documentRow.updatedAt
+            updatedAt: dateToNullable(document.updatedAt)
           })
           .where(eq(documents.id, document.id));
       }
@@ -298,16 +299,18 @@ export class DrizzleDocumentRepository implements DocumentRepository {
     // Load tags for this document
     const tags = await this.loadDocumentTags(asDocumentId(row.id));
     
-    return Document.create({
-      id: asDocumentId(row.id),
-      ownerId: asUserId(row.ownerId),
-      title: row.title,
-      mimeType: asMimeType(row.mimeType),
-      size: asFileSize(row.size),
-      storageKey: row.storageKey,
-      metadata: row.metadata || {},
-      tags
-    });
+    return new Document(
+      asDocumentId(row.id),
+      asUserId(row.ownerId),
+      row.title,
+      asMimeType(row.mimeType),
+      asFileSize(row.size),
+      row.storageKey,
+      row.metadata || {},
+      tags,
+      row.createdAt,
+      dateFromNullable(row.updatedAt)
+    );
   }
 
   /**
@@ -329,16 +332,18 @@ export class DrizzleDocumentRepository implements DocumentRepository {
       const documentId = asDocumentId(row.id);
       const documentTags = tagMap.get(documentId) || [];
       
-      return Document.create({
-        id: documentId,
-        ownerId: asUserId(row.ownerId),
-        title: row.title,
-        mimeType: asMimeType(row.mimeType),
-        size: asFileSize(row.size),
-        storageKey: row.storageKey,
-        metadata: row.metadata || {},
-        tags: documentTags
-      });
+      return new Document(
+        documentId,
+        asUserId(row.ownerId),
+        row.title,
+        asMimeType(row.mimeType),
+        asFileSize(row.size),
+        row.storageKey,
+        row.metadata || {},
+        documentTags,
+        row.createdAt,
+        dateFromNullable(row.updatedAt)
+      );
     });
   }
 
@@ -358,7 +363,7 @@ export class DrizzleDocumentRepository implements DocumentRepository {
         storageKey: document.storageKey,
         metadata: document.metadata,
         createdAt: document.createdAt,
-        updatedAt: document.updatedAt
+        updatedAt: dateToNullable(document.updatedAt)
       };
 
       await tx.insert(documents).values(documentData);

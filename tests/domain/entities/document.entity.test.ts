@@ -6,6 +6,7 @@ import {
   asMimeType, 
   asFileSize 
 } from "../../../src/shared/types/brand";
+import { Option } from "effect";
 
 describe("Document Entity", () => {
   const validDocumentId = asDocumentId("01234567-89ab-cdef-0123-456789abcdef");
@@ -34,7 +35,7 @@ describe("Document Entity", () => {
       expect(document.metadata).toEqual({});
       expect(document.tags).toEqual([]);
       expect(document.createdAt).toBeInstanceOf(Date);
-      expect(document.updatedAt).toBeNull();
+      expect(Option.isNone(document.updatedAt)).toBe(true);
     });
 
     it("should create a document with metadata and tags", () => {
@@ -121,7 +122,8 @@ describe("Document Entity", () => {
         category: "final",
         reviewedBy: "john.doe"
       });
-      expect(updatedDocument.updatedAt).toBeInstanceOf(Date);
+      expect(Option.isSome(updatedDocument.updatedAt)).toBe(true);
+      expect(Option.getOrNull(updatedDocument.updatedAt)).toBeInstanceOf(Date);
       expect(updatedDocument.createdAt).toBe(document.createdAt);
     });
   });
@@ -141,7 +143,8 @@ describe("Document Entity", () => {
       const updatedDocument = document.addTags(["new", "another"]);
 
       expect(updatedDocument.tags).toEqual(["existing", "new", "another"]);
-      expect(updatedDocument.updatedAt).toBeInstanceOf(Date);
+      expect(Option.isSome(updatedDocument.updatedAt)).toBe(true);
+      expect(Option.getOrNull(updatedDocument.updatedAt)).toBeInstanceOf(Date);
     });
 
     it("should not duplicate tags", () => {
@@ -174,7 +177,8 @@ describe("Document Entity", () => {
       const updatedDocument = document.removeTags(["tag2"]);
 
       expect(updatedDocument.tags).toEqual(["tag1", "tag3"]);
-      expect(updatedDocument.updatedAt).toBeInstanceOf(Date);
+      expect(Option.isSome(updatedDocument.updatedAt)).toBe(true);
+      expect(Option.getOrNull(updatedDocument.updatedAt)).toBeInstanceOf(Date);
     });
   });
 });

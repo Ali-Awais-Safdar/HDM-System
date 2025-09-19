@@ -3,6 +3,7 @@ import { DocumentService } from "../../domain/services/document.service";
 import { FileUpload } from "../../domain/value-objects/file-upload.vo";
 import { UserId } from "../../shared/types/brand";
 import { createServiceLogger, logPerformance } from "../../shared/logging/logger";
+import { dateToNullable } from "../../domain/serialization/option.mapping";
 
 export interface CreateDocumentRequest {
   title: string;
@@ -110,7 +111,7 @@ export class CreateDocumentUseCase {
         tags: document.tags,
         ownerId: document.ownerId,
         createdAt: document.createdAt,
-        updatedAt: document.updatedAt
+        updatedAt: dateToNullable(document.updatedAt)
       });
 
     } catch (error) {
