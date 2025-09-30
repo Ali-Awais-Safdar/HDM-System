@@ -4,6 +4,7 @@ import { makeDownloadTokenId } from "../value-objects/id.vo"
 import { ValidationError, BusinessRuleViolationError } from "../errors/domain.errors"
 import { UserId, DocumentId } from "../value-objects/id.vo"
 import { toNullable, isSome } from "../utils/option.utils"
+import { createEntityFactory, type Entity } from "../utils/entity.utils"
 import { randomBytes } from "crypto"
 
 /**
@@ -16,25 +17,16 @@ import { randomBytes } from "crypto"
  * - Tokens are bound to a specific user and document
  * - Expired or used tokens are invalid
  */
-export class DownloadToken {
+export class DownloadToken implements Entity<S.Schema.Type<typeof DownloadTokenSchema>> {
   private constructor(readonly props: S.Schema.Type<typeof DownloadTokenSchema>) {}
 
-  // Effect-based factory for creating from unknown input
-  static create = (input: unknown): Effect.Effect<DownloadToken, ValidationError> => {
-    return Effect.gen(function* () {
-      const props = yield* Effect.try({
-        try: () => S.decodeUnknownSync(DownloadTokenSchema)(input),
-        catch: (error) => new ValidationError(
-          `Invalid download token data: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          undefined,
-          input
-        )
-      })
-      return new DownloadToken(props)
-    })
-  }
+  // Standardized factory methods using the entity utilities
+  static create = createEntityFactory(
+    DownloadTokenSchema,
+    (props) => new DownloadToken(props),
+    "DownloadToken"
+  ).create
 
-  // Effect-based factory for creating new tokens
   static createNew = (props: {
     documentId: DocumentId;
     issuedTo: UserId;
@@ -64,7 +56,6 @@ export class DownloadToken {
     })
   }
 
-  // Effect-based factory for creating with default 5-minute expiration
   static createWithDefaultExpiry = (props: {
     documentId: DocumentId;
     issuedTo: UserId;
@@ -79,15 +70,17 @@ export class DownloadToken {
     })
   }
 
-  // Effect-based factory for reconstructing from persistence
-  static fromPersistence = (input: unknown): Effect.Effect<DownloadToken, ValidationError> => {
-    return DownloadToken.create(input)
-  }
+  static fromPersistence = createEntityFactory(
+    DownloadTokenSchema,
+    (props) => new DownloadToken(props),
+    "DownloadToken"
+  ).fromPersistence
 
-  // Unsafe factory for internal use when data is already validated
-  static unsafe = (props: S.Schema.Type<typeof DownloadTokenSchema>): DownloadToken => {
-    return new DownloadToken(props)
-  }
+  static unsafe = createEntityFactory(
+    DownloadTokenSchema,
+    (props) => new DownloadToken(props),
+    "DownloadToken"
+  ).unsafe
 
   // convenience read accessors
   get id() { return this.props.id }
@@ -216,7 +209,7 @@ export class DownloadToken {
   }
 
   /**
-   * Serialization method using schema encode
+   * Standardized serialization methods
    */
   toWireFormat = (): S.Schema.Type<typeof DownloadTokenSchema> => {
     return this.props
@@ -226,7 +219,7 @@ export class DownloadToken {
    * Returns a plain object representation for serialization.
    * Note: The actual token is excluded for security reasons.
    */
-  toPlainObject(clockSkewToleranceMs: number = 0) {
+  toPlainObject = (clockSkewToleranceMs: number = 0) => {
     return {
       id: this.id,
       documentId: this.documentId,

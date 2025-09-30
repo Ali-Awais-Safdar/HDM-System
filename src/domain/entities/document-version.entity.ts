@@ -5,26 +5,18 @@ import { DocumentVersionId, DocumentId, UserId } from "../value-objects/id.vo"
 import { Sha256 } from "../value-objects/checksum.vo"
 import { FileKey, MimeType, FileSize } from "../value-objects/file-ref.vo"
 import { fromNullable, toNullable, isSome } from "../utils/option.utils"
+import { createEntityFactory, type Entity } from "../utils/entity.utils"
 
-export class DocumentVersionEntity {
+export class DocumentVersionEntity implements Entity<S.Schema.Type<typeof DocumentVersion>> {
   private constructor(readonly props: S.Schema.Type<typeof DocumentVersion>) {}
 
-  // Effect-based factory for creating from unknown input
-  static create = (input: unknown): Effect.Effect<DocumentVersionEntity, ValidationError> => {
-    return Effect.gen(function* () {
-      const props = yield* Effect.try({
-        try: () => S.decodeUnknownSync(DocumentVersion)(input),
-        catch: (error) => new ValidationError(
-          `Invalid document version data: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          undefined,
-          input
-        )
-      })
-      return new DocumentVersionEntity(props)
-    })
-  }
+  // Standardized factory methods using the entity utilities
+  static create = createEntityFactory(
+    DocumentVersion,
+    (props) => new DocumentVersionEntity(props),
+    "DocumentVersion"
+  ).create
 
-  // Effect-based factory for creating new document versions
   static createNew = (props: {
     id: DocumentVersionId;
     documentId: DocumentId;
@@ -33,13 +25,13 @@ export class DocumentVersionEntity {
     fileKey: FileKey;
     mimeType: MimeType;
     size: FileSize;
-    createdBy?: UserId;
+    createdBy?: UserId | null;
   }): Effect.Effect<DocumentVersionEntity, ValidationError> => {
     return Effect.gen(function* () {
       const versionData = {
         ...props,
         createdAt: new Date(),
-        createdBy: props.createdBy ? Option.some(props.createdBy) : Option.none()
+        createdBy: fromNullable(props.createdBy)
       }
       
       const validatedProps = yield* Effect.try({
@@ -55,15 +47,17 @@ export class DocumentVersionEntity {
     })
   }
 
-  // Effect-based factory for reconstructing from persistence
-  static fromPersistence = (input: unknown): Effect.Effect<DocumentVersionEntity, ValidationError> => {
-    return DocumentVersionEntity.create(input)
-  }
+  static fromPersistence = createEntityFactory(
+    DocumentVersion,
+    (props) => new DocumentVersionEntity(props),
+    "DocumentVersion"
+  ).fromPersistence
 
-  // Unsafe factory for internal use when data is already validated
-  static unsafe = (props: S.Schema.Type<typeof DocumentVersion>): DocumentVersionEntity => {
-    return new DocumentVersionEntity(props)
-  }
+  static unsafe = createEntityFactory(
+    DocumentVersion,
+    (props) => new DocumentVersionEntity(props),
+    "DocumentVersion"
+  ).unsafe
 
   // convenience read accessors
   get id() { return this.props.id }
@@ -101,12 +95,11 @@ export class DocumentVersionEntity {
     return this.version < other.version
   }
 
-  // Serialization method using schema encode
+  // Standardized serialization methods
   toWireFormat = (): S.Schema.Type<typeof DocumentVersion> => {
-    return S.encodeSync(DocumentVersion)(this.props)
+    return this.props
   }
 
-  // Plain object for external APIs
   toPlainObject = () => {
     return {
       id: this.id,

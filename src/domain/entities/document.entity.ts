@@ -2,38 +2,32 @@ import { Effect, Schema as S, Option } from "effect"
 import { Document } from "../schema/document.schema"
 import { ValidationError, BusinessRuleViolationError } from "../errors/domain.errors"
 import { DocumentId, UserId, DocumentVersionId } from "../value-objects/id.vo"
-import { toNullable } from "../utils/option.utils"
+import { toNullable, fromNullable } from "../utils/option.utils"
+import { createEntityFactory, type Entity } from "../utils/entity.utils"
 
-export class DocumentEntity {
+export class DocumentEntity implements Entity<S.Schema.Type<typeof Document>> {
   private constructor(readonly props: S.Schema.Type<typeof Document>) {}
 
-  // Effect-based factory for creating from unknown input
-  static create = (input: unknown): Effect.Effect<DocumentEntity, ValidationError> => {
-    return Effect.gen(function* () {
-      const props = yield* Effect.try({
-        try: () => S.decodeUnknownSync(Document)(input),
-        catch: (error) => new ValidationError(
-          `Invalid document data: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          undefined,
-          input
-        )
-      })
-      return new DocumentEntity(props)
-    })
-  }
+  // Standardized factory methods using the entity utilities
+  static create = createEntityFactory(
+    Document,
+    (props) => new DocumentEntity(props),
+    "Document"
+  ).create
 
-  // Effect-based factory for creating new documents
   static createNew = (props: {
     id: DocumentId;
     ownerId: UserId;
     title: string;
-    description?: string;
-    tags?: string[];
+    description?: string | null;
+    tags?: string[] | null;
     currentVersionId: DocumentVersionId;
   }): Effect.Effect<DocumentEntity, ValidationError> => {
     return Effect.gen(function* () {
       const documentData = {
         ...props,
+        description: fromNullable(props.description),
+        tags: fromNullable(props.tags),
         createdAt: new Date(),
         updatedAt: Option.none()
       }
@@ -51,15 +45,17 @@ export class DocumentEntity {
     })
   }
 
-  // Effect-based factory for reconstructing from persistence
-  static fromPersistence = (input: unknown): Effect.Effect<DocumentEntity, ValidationError> => {
-    return DocumentEntity.create(input)
-  }
+  static fromPersistence = createEntityFactory(
+    Document,
+    (props) => new DocumentEntity(props),
+    "Document"
+  ).fromPersistence
 
-  // Unsafe factory for internal use when data is already validated
-  static unsafe = (props: S.Schema.Type<typeof Document>): DocumentEntity => {
-    return new DocumentEntity(props)
-  }
+  static unsafe = createEntityFactory(
+    Document,
+    (props) => new DocumentEntity(props),
+    "Document"
+  ).unsafe
 
   // convenience read accessors
   get id() { return this.props.id }
@@ -94,11 +90,11 @@ export class DocumentEntity {
   }
 
   // Effect-based method for updating description
-  updateDescription = (newDescription: string | undefined): Effect.Effect<DocumentEntity, ValidationError> => {
+  updateDescription = (newDescription: string | null | undefined): Effect.Effect<DocumentEntity, ValidationError> => {
     return Effect.gen(function* (this: DocumentEntity) {
       const updatedData = {
         ...this.props,
-        description: newDescription ? Option.some(newDescription) : Option.none(),
+        description: fromNullable(newDescription),
         updatedAt: Option.some(new Date())
       }
 
@@ -230,12 +226,11 @@ export class DocumentEntity {
     return Option.getOrElse(this.tags, () => []).length
   }
 
-  // Serialization method using schema encode
+  // Standardized serialization methods
   toWireFormat = (): S.Schema.Type<typeof Document> => {
     return this.props
   }
 
-  // Plain object for external APIs
   toPlainObject = () => {
     return {
       id: this.id,

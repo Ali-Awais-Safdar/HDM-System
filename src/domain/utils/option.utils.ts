@@ -2,12 +2,14 @@ import { Option } from "effect"
 
 /**
  * Centralized utilities for Option/null mapping and manipulation.
- * These utilities maintain consistency across the domain layer.
+ * These utilities maintain consistency across the domain layer and implement
+ * the "normalize at boundaries" principle.
  */
 
 /**
  * Converts a nullable value to an Option<T>.
  * Normalizes null/undefined values to Option.none() at domain boundaries.
+ * This is the primary normalization function for incoming data.
  */
 export const fromNullable = <T>(value: T | null | undefined): Option.Option<T> => {
   return value != null ? Option.some(value) : Option.none()
@@ -16,6 +18,7 @@ export const fromNullable = <T>(value: T | null | undefined): Option.Option<T> =
 /**
  * Converts an Option<T> to a nullable value.
  * Used when converting from domain to external formats (database, API).
+ * This is the primary denormalization function for outgoing data.
  */
 export const toNullable = <T>(option: Option.Option<T>): T | null => {
   return Option.getOrNull(option)
@@ -140,4 +143,34 @@ export const fromEmpty = <T extends string | unknown[]>(value: T): Option.Option
     return Option.none()
   }
   return Option.some(value)
+}
+
+/**
+ * Normalizes a value that might be null, undefined, or empty to Option<T>.
+ * This is a comprehensive normalization function that handles all edge cases.
+ */
+export const normalizeToOption = <T>(value: T | null | undefined): Option.Option<T> => {
+  if (value === null || value === undefined) {
+    return Option.none()
+  }
+  
+  // Handle empty strings
+  if (typeof value === 'string' && value.trim() === '') {
+    return Option.none()
+  }
+  
+  // Handle empty arrays
+  if (Array.isArray(value) && value.length === 0) {
+    return Option.none()
+  }
+  
+  return Option.some(value)
+}
+
+/**
+ * Denormalizes an Option<T> to a value that can be stored in external systems.
+ * This is the counterpart to normalizeToOption for outgoing data.
+ */
+export const denormalizeFromOption = <T>(option: Option.Option<T>): T | null => {
+  return toNullable(option)
 }

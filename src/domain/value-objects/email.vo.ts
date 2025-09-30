@@ -2,6 +2,7 @@ import { Schema as S } from "effect"
 
 /**
  * Email validation schema using Effect Schema for consistent validation.
+ * This is the single source of truth for email validation rules.
  */
 export const EmailAddress = S.String.pipe(
   S.filter((s) => s.trim().length > 0, { message: () => "Email cannot be empty" }),
@@ -14,21 +15,20 @@ export const EmailAddress = S.String.pipe(
 )
 export type EmailAddress = S.Schema.Type<typeof EmailAddress>
 
-// Factory function for creating EmailAddress from unknown input
-export const makeEmailAddress = (input: unknown) => S.decodeUnknownSync(EmailAddress)(input)
-
 /**
- * Email value object with validation rules.
- * Ensures valid email format and normalization using Effect Schema.
+ * Email value object that uses the schema as single source of truth.
+ * All validation and normalization is handled by the schema.
  */
 export class Email {
   private constructor(private readonly _value: EmailAddress) {}
 
+  /**
+   * Creates an Email from a string, normalizing and validating it.
+   * Uses Effect Schema for all validation logic.
+   */
   static create(value: string): Email {
     // Normalize the email first
     const normalized = value.toLowerCase().trim();
-    
-    // Validate the normalized email using Effect Schema
     const validated = S.decodeUnknownSync(EmailAddress)(normalized);
     return new Email(validated);
   }
@@ -55,3 +55,6 @@ export class Email {
     return this._value;
   }
 }
+
+// Factory function for creating EmailAddress from unknown input
+export const makeEmailAddress = (input: unknown) => S.decodeUnknownSync(EmailAddress)(input)

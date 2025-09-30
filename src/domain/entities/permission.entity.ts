@@ -3,6 +3,7 @@ import { Permission as PermissionSchema, PermissionLevel } from "../schema/permi
 import { makePermissionId } from "../value-objects/id.vo"
 import { ValidationError, BusinessRuleViolationError } from "../errors/domain.errors"
 import { UserId, DocumentId } from "../value-objects/id.vo"
+import { createEntityFactory, type Entity } from "../utils/entity.utils"
 
 /**
  * Permission domain entity representing document-level access control.
@@ -13,25 +14,16 @@ import { UserId, DocumentId } from "../value-objects/id.vo"
  * - Document owners have implicit full access regardless of explicit permissions
  * - Admins bypass all permission checks
  */
-export class Permission {
+export class Permission implements Entity<S.Schema.Type<typeof PermissionSchema>> {
   private constructor(readonly props: S.Schema.Type<typeof PermissionSchema>) {}
 
-  // Effect-based factory for creating from unknown input
-  static create = (input: unknown): Effect.Effect<Permission, ValidationError> => {
-    return Effect.gen(function* () {
-      const props = yield* Effect.try({
-        try: () => S.decodeUnknownSync(PermissionSchema)(input),
-        catch: (error) => new ValidationError(
-          `Invalid permission data: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          undefined,
-          input
-        )
-      })
-      return new Permission(props)
-    })
-  }
+  // Standardized factory methods using the entity utilities
+  static create = createEntityFactory(
+    PermissionSchema,
+    (props) => new Permission(props),
+    "Permission"
+  ).create
 
-  // Effect-based factory for creating new permissions
   static createNew = (props: {
     documentId: DocumentId;
     userId: UserId;
@@ -57,15 +49,17 @@ export class Permission {
     })
   }
 
-  // Effect-based factory for reconstructing from persistence
-  static fromPersistence = (input: unknown): Effect.Effect<Permission, ValidationError> => {
-    return Permission.create(input)
-  }
+  static fromPersistence = createEntityFactory(
+    PermissionSchema,
+    (props) => new Permission(props),
+    "Permission"
+  ).fromPersistence
 
-  // Unsafe factory for internal use when data is already validated
-  static unsafe = (props: S.Schema.Type<typeof PermissionSchema>): Permission => {
-    return new Permission(props)
-  }
+  static unsafe = createEntityFactory(
+    PermissionSchema,
+    (props) => new Permission(props),
+    "Permission"
+  ).unsafe
 
   // convenience read accessors
   get id() { return this.props.id }
@@ -104,7 +98,7 @@ export class Permission {
   /**
    * Effect-based method for upgrading permission level.
    */
-  upgradeTo = (newLevel: PermissionLevel): Effect.Effect<Permission, BusinessRuleViolationError> => {
+  upgradeTo = (newLevel: PermissionLevel): Effect.Effect<Permission, ValidationError | BusinessRuleViolationError> => {
     return Effect.gen(function* (this: Permission) {
       if (!this.canBeUpgradedTo(newLevel)) {
         yield* Effect.fail(new BusinessRuleViolationError(
@@ -119,14 +113,23 @@ export class Permission {
         level: newLevel
       }
 
-      return new Permission(updatedData)
+      const validatedProps = yield* Effect.try({
+        try: () => S.decodeUnknownSync(PermissionSchema)(updatedData),
+        catch: (error) => new ValidationError(
+          `Invalid permission level: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          'level',
+          newLevel
+        )
+      })
+
+      return new Permission(validatedProps)
     }.bind(this))
   }
 
   /**
    * Effect-based method for downgrading permission level.
    */
-  downgradeTo = (newLevel: PermissionLevel): Effect.Effect<Permission, BusinessRuleViolationError> => {
+  downgradeTo = (newLevel: PermissionLevel): Effect.Effect<Permission, ValidationError | BusinessRuleViolationError> => {
     return Effect.gen(function* (this: Permission) {
       const hierarchy: Record<PermissionLevel, number> = {
         read: 1,
@@ -147,7 +150,16 @@ export class Permission {
         level: newLevel
       }
 
-      return new Permission(updatedData)
+      const validatedProps = yield* Effect.try({
+        try: () => S.decodeUnknownSync(PermissionSchema)(updatedData),
+        catch: (error) => new ValidationError(
+          `Invalid permission level: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          'level',
+          newLevel
+        )
+      })
+
+      return new Permission(validatedProps)
     }.bind(this))
   }
 
@@ -171,16 +183,13 @@ export class Permission {
   }
 
   /**
-   * Serialization method using schema encode
+   * Standardized serialization methods
    */
   toWireFormat = (): S.Schema.Type<typeof PermissionSchema> => {
     return this.props
   }
 
-  /**
-   * Returns a plain object representation for serialization.
-   */
-  toPlainObject() {
+  toPlainObject = () => {
     return {
       id: this.id,
       documentId: this.documentId,

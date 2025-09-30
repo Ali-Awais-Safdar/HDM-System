@@ -1,0 +1,117 @@
+import { Effect, Schema as S } from "effect"
+import { ValidationError } from "../errors/domain.errors"
+
+/**
+ * Standardized entity creation utilities that ensure consistency across all domain entities.
+ * This module implements the key lessons for domain design:
+ * - Effect-based creation with typed errors
+ * - Schema-based validation as single source of truth
+ * - Private constructors with factory methods
+ * - Proper error handling and composability
+ */
+
+/**
+ * Creates an Effect-based entity from unknown input using a schema.
+ * This is the standard pattern for all entity creation from external data.
+ */
+export const createEntityFromUnknown = <TEntity>(
+  schema: S.Schema<any>,
+  entityConstructor: (props: any) => TEntity,
+  entityName: string
+) => (input: unknown): Effect.Effect<TEntity, ValidationError> => {
+  return Effect.gen(function* () {
+    const props = yield* Effect.try({
+      try: () => S.decodeUnknownSync(schema)(input),
+      catch: (error) => new ValidationError(
+        `Invalid ${entityName.toLowerCase()} data: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        undefined,
+        input
+      )
+    })
+    return entityConstructor(props)
+  })
+}
+
+/**
+ * Creates an Effect-based entity from validated props using a schema.
+ * This is the standard pattern for creating entities from already validated data.
+ */
+export const createEntityFromProps = <TEntity>(
+  schema: S.Schema<any>,
+  entityConstructor: (props: any) => TEntity,
+  entityName: string
+) => (props: unknown): Effect.Effect<TEntity, ValidationError> => {
+  return Effect.gen(function* () {
+    const validatedProps = yield* Effect.try({
+      try: () => S.decodeUnknownSync(schema)(props),
+      catch: (error) => new ValidationError(
+        `Invalid ${entityName.toLowerCase()} props: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        undefined,
+        props
+      )
+    })
+    return entityConstructor(validatedProps)
+  })
+}
+
+/**
+ * Standard entity factory interface that all entities should implement.
+ * This ensures consistent API across all domain entities.
+ */
+export interface EntityFactory<TEntity, TProps, TCreateProps = unknown> {
+  /**
+   * Creates entity from unknown input (external data)
+   */
+  create: (input: unknown) => Effect.Effect<TEntity, ValidationError>
+  
+  /**
+   * Creates entity from validated props (internal use)
+   */
+  createFromProps: (props: TCreateProps) => Effect.Effect<TEntity, ValidationError>
+  
+  /**
+   * Creates entity from persistence data (database)
+   */
+  fromPersistence: (input: unknown) => Effect.Effect<TEntity, ValidationError>
+  
+  /**
+   * Unsafe constructor for internal use when data is already validated
+   */
+  unsafe: (props: TProps) => TEntity
+}
+
+/**
+ * Standard entity interface that all entities should implement.
+ * This ensures consistent behavior across all domain entities.
+ */
+export interface Entity<TProps> {
+  /**
+   * Returns the wire format representation (for external systems)
+   */
+  toWireFormat: () => TProps
+  
+  /**
+   * Returns a plain object representation (for APIs)
+   */
+  toPlainObject: () => Record<string, any>
+}
+
+/**
+ * Helper function to create standard entity factory methods.
+ * This reduces boilerplate and ensures consistency.
+ */
+export const createEntityFactory = <TEntity, TProps, TCreateProps = unknown>(
+  schema: S.Schema<any>,
+  entityConstructor: (props: any) => TEntity,
+  entityName: string
+): EntityFactory<TEntity, TProps, TCreateProps> => {
+  const createFromUnknown = createEntityFromUnknown(schema, entityConstructor, entityName)
+  const createFromProps = createEntityFromProps(schema, entityConstructor, entityName)
+  
+  return {
+    create: createFromUnknown,
+    createFromProps: createFromProps as (props: TCreateProps) => Effect.Effect<TEntity, ValidationError>,
+    fromPersistence: createFromUnknown,
+    unsafe: entityConstructor
+  }
+}
