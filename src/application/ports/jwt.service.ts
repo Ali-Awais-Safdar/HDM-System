@@ -1,12 +1,13 @@
 import { Result } from "../../shared/result/result";
 import { UserId } from "../../shared/types/brand";
-import { UserRole } from "../../domain/entities/user.entity";
+import { UserRole, Role } from "../../domain/entities/user.entity";
 import { Jwt } from "../../domain/value-objects/jwt.vo";
 
 export interface TokenPayload {
   userId: UserId;
   email: string;
-  role: UserRole;
+  role: UserRole; // Keep for backwards compatibility
+  roles: Role[]; // New roles array
 }
 
 export interface JwtService {

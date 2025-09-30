@@ -1,25 +1,32 @@
-import { Schema as S, Option } from "effect"
+import { Schema as S } from "effect"
 import { DocumentId, UserId, DocumentVersionId } from "../value-objects/id.vo"
 import { DateTime } from "../value-objects/datetime.vo"
+import { isValidDocumentTitle, isValidDocumentDescription, isValidTagList } from "../guards/domain.guards"
+import { fromNullable } from "../utils/option.utils"
 
-// Helper: a normalized, non-empty, deduped tag list
-const Tags = S.Array(S.String.pipe(S.filter(s => s.trim().length > 0, { message: () => "tag empty" })))
-  .pipe(S.filter(arr => new Set(arr.map(s => s.trim().toLowerCase())).size === arr.length, { message: () => "duplicate tags" }))
+// Helper: a normalized, non-empty, deduped tag list with embedded guards
+const Tags = S.Array(S.String).pipe(
+  S.filter((tags: readonly string[]) => isValidTagList(tags as string[]), { message: () => "Invalid tag list: duplicate tags or too many tags" })
+)
 
+// Domain schema with embedded guards
 export const Document = S.Struct({
   id: DocumentId,
   ownerId: UserId,
-  title: S.String.pipe(S.filter(s => s.trim().length > 0, { message: () => "title required" })),
-  description: S.optional(S.String),
-  tags: S.optional(Tags),
+  title: S.String.pipe(
+    S.filter(isValidDocumentTitle, { message: () => "Title is required and cannot exceed 255 characters" })
+  ),
+  description: S.Option(S.String.pipe(
+    S.filter(isValidDocumentDescription, { message: () => "Description cannot exceed 1000 characters" })
+  )),
+  tags: S.Option(Tags),
   currentVersionId: DocumentVersionId,
-
   createdAt: DateTime,
   updatedAt: S.Option(DateTime) // Option<Date> in domain
 })
 export type Document = S.Schema.Type<typeof Document>
 
-// Persistence row (snake_case + nullable updated_at)
+// Persistence row (snake_case + nullable updated_at) - wire format
 export const DocumentRow = S.Struct({
   id: S.String,
   owner_id: S.String,
@@ -32,24 +39,24 @@ export const DocumentRow = S.Struct({
 })
 export type DocumentRow = S.Schema.Type<typeof DocumentRow>
 
-// Transform Row <-> Domain (Option <-> null)
+// Transform Row <-> Domain (normalize at boundaries: null <-> Option)
 export const DocumentCodec = S.transform(DocumentRow, Document, {
   decode: (r) => ({
     id: r.id as any,
     ownerId: r.owner_id as any,
     title: r.title,
-    description: r.description,
-    tags: r.tags,
+    description: fromNullable(r.description),
+    tags: fromNullable(r.tags),
     currentVersionId: r.current_version_id as any,
     createdAt: r.created_at,
-    updatedAt: r.updated_at == null ? Option.none() : Option.some(r.updated_at)
+    updatedAt: fromNullable(r.updated_at)
   }),
   encode: (d) => ({
     id: d.id,
     owner_id: d.ownerId,
     title: d.title,
-    description: d.description,
-    tags: d.tags,
+    description: d.description._tag === "Some" ? d.description.value : null,
+    tags: d.tags._tag === "Some" ? d.tags.value : null,
     current_version_id: d.currentVersionId,
     created_at: d.createdAt,
     updated_at: d.updatedAt._tag === "Some" ? d.updatedAt.value : null
@@ -57,6 +64,6 @@ export const DocumentCodec = S.transform(DocumentRow, Document, {
   strict: false
 })
 
-// Factory functions for creating Document from unknown input
+// Factory functions for creating from unknown input
 export const makeDocument = (input: unknown) => S.decodeUnknownSync(Document)(input)
 export const makeDocumentRow = (input: unknown) => S.decodeUnknownSync(DocumentRow)(input)

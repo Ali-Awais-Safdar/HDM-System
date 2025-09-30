@@ -28,6 +28,7 @@ export class JwtServiceImpl implements JwtService {
         sub: payload.userId,
         email: payload.email,
         role: payload.role,
+        roles: payload.roles,
         iat: now,
         exp: now + expiresInSeconds
       };

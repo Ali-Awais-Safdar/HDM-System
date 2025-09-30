@@ -1,8 +1,10 @@
 import { UserId } from "../shared/types/brand";
-import { UserRole } from "../domain/entities/user.entity";
+import { UserRole, Role } from "../domain/entities/user.entity";
 
 export interface AuthUser {
   id: UserId;
-  role: UserRole;
+  roles: Role[];
   email: string;
+  // Backwards compatibility - computed property
+  role: UserRole;
 }

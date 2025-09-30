@@ -1,6 +1,7 @@
 import { UserId, DocumentId } from "../../shared/types/brand";
 import { UserRole } from "../entities/user.entity";
-import { Permission, PermissionLevel } from "../entities/permission.entity";
+import { Permission } from "../entities/permission.entity"
+import { PermissionLevel } from "../schema/permission.schema";
 
 /**
  * Document access context for authorization decisions.

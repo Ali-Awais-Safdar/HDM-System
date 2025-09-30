@@ -1,0 +1,191 @@
+import { Schema as S } from "effect"
+
+/**
+ * Base domain error class with structured error information.
+ * All domain errors should extend this class for consistent error handling.
+ */
+export abstract class DomainError extends Error {
+  abstract readonly _tag: string
+  abstract readonly code: string
+  
+  constructor(
+    message: string,
+    public readonly details?: Record<string, unknown>
+  ) {
+    super(message)
+    this.name = this.constructor.name
+  }
+}
+
+/**
+ * Validation error for schema validation failures.
+ */
+export class ValidationError extends DomainError {
+  readonly _tag = "ValidationError" as const
+  readonly code = "VALIDATION_ERROR"
+  
+  constructor(
+    message: string,
+    public readonly field?: string,
+    public readonly value?: unknown,
+    details?: Record<string, unknown>
+  ) {
+    super(message, { field, value, ...details })
+  }
+}
+
+/**
+ * Entity not found error.
+ */
+export class EntityNotFoundError extends DomainError {
+  readonly _tag = "EntityNotFoundError" as const
+  readonly code = "ENTITY_NOT_FOUND"
+  
+  constructor(
+    entityType: string,
+    public readonly id: string,
+    details?: Record<string, unknown>
+  ) {
+    super(`${entityType} with id '${id}' not found`, { entityType, id, ...details })
+  }
+}
+
+/**
+ * Business rule violation error.
+ */
+export class BusinessRuleViolationError extends DomainError {
+  readonly _tag = "BusinessRuleViolationError" as const
+  readonly code = "BUSINESS_RULE_VIOLATION"
+  
+  constructor(
+    rule: string,
+    message: string,
+    details?: Record<string, unknown>
+  ) {
+    super(message, { rule, ...details })
+  }
+}
+
+/**
+ * Permission denied error.
+ */
+export class PermissionDeniedError extends DomainError {
+  readonly _tag = "PermissionDeniedError" as const
+  readonly code = "PERMISSION_DENIED"
+  
+  constructor(
+    action: string,
+    resource: string,
+    details?: Record<string, unknown>
+  ) {
+    super(`Permission denied for action '${action}' on resource '${resource}'`, 
+      { action, resource, ...details })
+  }
+}
+
+/**
+ * Conflict error for when operations cannot be completed due to state conflicts.
+ */
+export class ConflictError extends DomainError {
+  readonly _tag = "ConflictError" as const
+  readonly code = "CONFLICT"
+  
+  constructor(
+    message: string,
+    public readonly conflictingField?: string,
+    details?: Record<string, unknown>
+  ) {
+    super(message, { conflictingField, ...details })
+  }
+}
+
+// Specific domain errors for different entities
+export class UserError extends DomainError {
+  readonly _tag = "UserError" as const
+  readonly code = "USER_ERROR"
+  
+  constructor(message: string, details?: Record<string, unknown>) {
+    super(message, details)
+  }
+}
+
+export class DocumentError extends DomainError {
+  readonly _tag = "DocumentError" as const
+  readonly code = "DOCUMENT_ERROR"
+  
+  constructor(message: string, details?: Record<string, unknown>) {
+    super(message, details)
+  }
+}
+
+export class AccessPolicyError extends DomainError {
+  readonly _tag = "AccessPolicyError" as const
+  readonly code = "ACCESS_POLICY_ERROR"
+  
+  constructor(message: string, details?: Record<string, unknown>) {
+    super(message, details)
+  }
+}
+
+export class DocumentAccessError extends DomainError {
+  readonly _tag = "DocumentAccessError" as const
+  readonly code = "DOCUMENT_ACCESS_ERROR"
+  
+  constructor(message: string, details?: Record<string, unknown>) {
+    super(message, details)
+  }
+}
+
+// Union type for all domain errors
+export type DomainErrorType = 
+  | ValidationError
+  | EntityNotFoundError
+  | BusinessRuleViolationError
+  | PermissionDeniedError
+  | ConflictError
+  | UserError
+  | DocumentError
+  | AccessPolicyError
+  | DocumentAccessError
+
+// Schema for domain errors (useful for serialization)
+export const DomainErrorSchema = S.Union(
+  S.Struct({
+    _tag: S.Literal("ValidationError"),
+    code: S.Literal("VALIDATION_ERROR"),
+    message: S.String,
+    field: S.optional(S.String),
+    value: S.optional(S.Unknown),
+    details: S.optional(S.Record({ key: S.String, value: S.Unknown }))
+  }),
+  S.Struct({
+    _tag: S.Literal("EntityNotFoundError"),
+    code: S.Literal("ENTITY_NOT_FOUND"),
+    message: S.String,
+    entityType: S.String,
+    id: S.String,
+    details: S.optional(S.Record({ key: S.String, value: S.Unknown }))
+  }),
+  S.Struct({
+    _tag: S.Literal("BusinessRuleViolationError"),
+    code: S.Literal("BUSINESS_RULE_VIOLATION"),
+    message: S.String,
+    rule: S.String,
+    details: S.optional(S.Record({ key: S.String, value: S.Unknown }))
+  }),
+  S.Struct({
+    _tag: S.Literal("PermissionDeniedError"),
+    code: S.Literal("PERMISSION_DENIED"),
+    message: S.String,
+    action: S.String,
+    resource: S.String,
+    details: S.optional(S.Record({ key: S.String, value: S.Unknown }))
+  }),
+  S.Struct({
+    _tag: S.Literal("ConflictError"),
+    code: S.Literal("CONFLICT"),
+    message: S.String,
+    conflictingField: S.optional(S.String),
+    details: S.optional(S.Record({ key: S.String, value: S.Unknown }))
+  })
+)

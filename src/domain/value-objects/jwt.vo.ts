@@ -1,5 +1,6 @@
 import { Schema as S } from "effect"
 import { UserId } from "./id.vo"
+import { Role } from "../schema/access-policy.schema"
 
 /**
  * User role schema using Effect Schema.
@@ -13,7 +14,8 @@ export type UserRole = S.Schema.Type<typeof UserRole>
 export const JwtPayload = S.Struct({
   sub: S.String.pipe(S.filter((s) => s.length > 0, { message: () => "JWT payload must contain subject (sub)" })),
   email: S.String.pipe(S.filter((s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s), { message: () => "JWT payload must contain valid email" })),
-  role: UserRole,
+  role: UserRole, // Keep for backwards compatibility
+  roles: S.Array(Role), // New roles array
   iat: S.Number.pipe(S.filter((n) => n > 0, { message: () => "JWT payload must contain valid issued at time" })),
   exp: S.Number.pipe(S.filter((n) => n > 0, { message: () => "JWT payload must contain valid expiration time" }))
 }).pipe(

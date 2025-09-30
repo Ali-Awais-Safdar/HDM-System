@@ -1,20 +1,24 @@
 import { Schema as S } from "effect"
 import { PermissionId, UserId, DocumentId } from "../value-objects/id.vo"
 import { DateTime } from "../value-objects/datetime.vo"
+import { isValidPermissionLevel, isValidUuid } from "../guards/domain.guards"
 
 export const PermissionLevel = S.Literal("read", "write", "admin")
 export type PermissionLevel = S.Schema.Type<typeof PermissionLevel>
 
+// Domain schema with embedded guards
 export const Permission = S.Struct({
   id: PermissionId,
   documentId: DocumentId,
   userId: UserId,
-  level: PermissionLevel,
+  level: PermissionLevel.pipe(
+    S.filter(isValidPermissionLevel, { message: () => "Invalid permission level" })
+  ),
   createdAt: DateTime
 })
 export type Permission = S.Schema.Type<typeof Permission>
 
-// Persistence row (snake_case)
+// Persistence row (snake_case) - wire format
 export const PermissionRow = S.Struct({
   id: S.String,
   document_id: S.String,
@@ -24,7 +28,7 @@ export const PermissionRow = S.Struct({
 })
 export type PermissionRow = S.Schema.Type<typeof PermissionRow>
 
-// Transform Row <-> Domain
+// Transform Row <-> Domain (normalize at boundaries)
 export const PermissionCodec = S.transform(PermissionRow, Permission, {
   decode: (r) => ({
     id: r.id as any,
@@ -43,6 +47,6 @@ export const PermissionCodec = S.transform(PermissionRow, Permission, {
   strict: false
 })
 
-// Factory functions
+// Factory functions for creating from unknown input
 export const makePermission = (input: unknown) => S.decodeUnknownSync(Permission)(input)
 export const makePermissionRow = (input: unknown) => S.decodeUnknownSync(PermissionRow)(input)

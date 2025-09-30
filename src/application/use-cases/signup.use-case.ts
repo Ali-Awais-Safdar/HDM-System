@@ -2,9 +2,21 @@ import { Result, ok, err } from "../../shared/result/result";
 import { AuthService } from "../../domain/services/auth.service";
 import { Email } from "../../domain/value-objects/email.vo";
 import { Password } from "../../domain/value-objects/password.vo";
-import { UserRole } from "../../domain/entities/user.entity";
+import { UserRole, Role } from "../../domain/entities/user.entity";
 import { JwtService } from "../ports/jwt.service";
 import { createServiceLogger, logPerformance, logSecurityEvent } from "../../shared/logging/logger";
+
+// Helper function to map old role to new roles array
+const mapRoleToRoles = (role: UserRole): Role[] => {
+  switch (role) {
+    case "admin":
+      return ["ADMIN"];
+    case "user":
+      return ["VIEWER"];
+    default:
+      return ["VIEWER"];
+  }
+};
 
 export interface SignupRequest {
   email: string;
@@ -80,7 +92,8 @@ export class SignupUseCase {
       const tokenResult = await this.jwtService.generateToken({
         userId: user.id,
         email: user.email,
-        role: user.role
+        role: user.role,
+        roles: mapRoleToRoles(user.role)
       });
 
       if (!tokenResult.ok) {

@@ -65,6 +65,7 @@ export class AttachUser extends Handler {
       req.user = {
         id: asUserId(jwt.userId),
         role: jwt.role,
+        roles: jwt.roles,
         email: jwt.email
       };
     }
