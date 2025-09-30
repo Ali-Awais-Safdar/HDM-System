@@ -1,119 +1,45 @@
-import { DocumentId, UserId, MimeType, FileSize } from "../../shared/types/brand";
-import { Option } from "effect";
+import { Schema as S, Option } from "effect"
+import { Document } from "../schema/document.schema"
 
-export interface DocumentEntity {
-  readonly id: DocumentId;
-  readonly ownerId: UserId;
-  readonly title: string;
-  readonly mimeType: MimeType;
-  readonly size: FileSize;
-  readonly storageKey: string;
-  readonly metadata: Record<string, unknown>;
-  readonly tags: string[];
-  readonly createdAt: Date;
-  readonly updatedAt: Option.Option<Date>;
-}
+export class DocumentEntity {
+  private constructor(readonly props: S.Schema.Type<typeof Document>) {}
 
-export class Document implements DocumentEntity {
-  constructor(
-    public readonly id: DocumentId,
-    public readonly ownerId: UserId,
-    public readonly title: string,
-    public readonly mimeType: MimeType,
-    public readonly size: FileSize,
-    public readonly storageKey: string,
-    public readonly metadata: Record<string, unknown> = {},
-    public readonly tags: string[] = [],
-    public readonly createdAt: Date = new Date(),
-    public readonly updatedAt: Option.Option<Date> = Option.none()
-  ) {
-    this.validateTitle(title);
-    this.validateSize(size);
+  static fromProps = (u: unknown) => {
+    const props = S.decodeUnknownSync(Document)(u)
+    return new DocumentEntity(props)
   }
 
-  private validateTitle(title: string): void {
-    if (!title || title.trim().length === 0) {
-      throw new Error("Document title cannot be empty");
-    }
-    if (title.length > 255) {
-      throw new Error("Document title cannot exceed 255 characters");
-    }
+  static unsafe = (p: S.Schema.Type<typeof Document>) => new DocumentEntity(p)
+
+  // convenience read accessors
+  get id() { return this.props.id }
+  get ownerId() { return this.props.ownerId }
+  get title() { return this.props.title }
+  get description() { return this.props.description }
+  get tags() { return this.props.tags }
+  get currentVersionId() { return this.props.currentVersionId }
+  get createdAt() { return this.props.createdAt }
+  get updatedAt() { return this.props.updatedAt }
+
+  // example rich behavior: pure update => new instance
+  rename = (newTitle: string) =>
+    DocumentEntity.fromProps({ ...this.props, title: newTitle, updatedAt: Option.some(new Date()) })
+
+  updateDescription = (newDescription: string | undefined) =>
+    DocumentEntity.fromProps({ ...this.props, description: newDescription, updatedAt: Option.some(new Date()) })
+
+  addTags = (newTags: string[]) => {
+    const currentTags = this.props.tags || []
+    const normalizedNewTags = newTags.map(tag => tag.trim().toLowerCase()).filter(tag => tag.length > 0)
+    const allTags = [...currentTags, ...normalizedNewTags]
+    const uniqueTags = Array.from(new Set(allTags))
+    return DocumentEntity.fromProps({ ...this.props, tags: uniqueTags, updatedAt: Option.some(new Date()) })
   }
 
-  private validateSize(size: FileSize): void {
-    if (size <= 0) {
-      throw new Error("Document size must be positive");
-    }
-  }
-
-  updateMetadata(metadata: Record<string, unknown>): Document {
-    return new Document(
-      this.id,
-      this.ownerId,
-      this.title,
-      this.mimeType,
-      this.size,
-      this.storageKey,
-      { ...this.metadata, ...metadata },
-      this.tags,
-      this.createdAt,
-      Option.some(new Date())
-    );
-  }
-
-  addTags(newTags: string[]): Document {
-    const uniqueTags = Array.from(new Set([...this.tags, ...newTags]));
-    return new Document(
-      this.id,
-      this.ownerId,
-      this.title,
-      this.mimeType,
-      this.size,
-      this.storageKey,
-      this.metadata,
-      uniqueTags,
-      this.createdAt,
-      Option.some(new Date())
-    );
-  }
-
-  removeTags(tagsToRemove: string[]): Document {
-    const filteredTags = this.tags.filter(tag => !tagsToRemove.includes(tag));
-    return new Document(
-      this.id,
-      this.ownerId,
-      this.title,
-      this.mimeType,
-      this.size,
-      this.storageKey,
-      this.metadata,
-      filteredTags,
-      this.createdAt,
-      Option.some(new Date())
-    );
-  }
-
-  static create(props: {
-    id: DocumentId;
-    ownerId: UserId;
-    title: string;
-    mimeType: MimeType;
-    size: FileSize;
-    storageKey: string;
-    metadata?: Record<string, unknown>;
-    tags?: string[];
-  }): Document {
-    return new Document(
-      props.id,
-      props.ownerId,
-      props.title,
-      props.mimeType,
-      props.size,
-      props.storageKey,
-      props.metadata || {},
-      props.tags || [],
-      new Date(),
-      Option.none()
-    );
+  removeTags = (tagsToRemove: string[]) => {
+    const currentTags = this.props.tags || []
+    const normalizedTagsToRemove = tagsToRemove.map(tag => tag.trim().toLowerCase())
+    const filteredTags = currentTags.filter(tag => !normalizedTagsToRemove.includes(tag.toLowerCase()))
+    return DocumentEntity.fromProps({ ...this.props, tags: filteredTags, updatedAt: Option.some(new Date()) })
   }
 }

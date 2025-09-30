@@ -1,10 +1,6 @@
-import { PermissionId, UserId, DocumentId, newPermissionId } from "../../shared/types/brand";
-
-/**
- * Permission level enum representing different access levels.
- * Based on the database enum defined in schema.ts
- */
-export type PermissionLevel = "read" | "write" | "admin";
+import { Schema as S } from "effect"
+import { Permission as PermissionSchema, PermissionLevel } from "../schema/permission.schema"
+import { makePermissionId } from "../value-objects/id.vo"
 
 /**
  * Permission domain entity representing document-level access control.
@@ -16,48 +12,48 @@ export type PermissionLevel = "read" | "write" | "admin";
  * - Admins bypass all permission checks
  */
 export class Permission {
-  private constructor(
-    public readonly id: PermissionId,
-    public readonly documentId: DocumentId,
-    public readonly userId: UserId,
-    public readonly level: PermissionLevel,
-    public readonly createdAt: Date
-  ) {}
+  private constructor(readonly props: S.Schema.Type<typeof PermissionSchema>) {}
+
+  static fromProps = (u: unknown) => {
+    const props = S.decodeUnknownSync(PermissionSchema)(u)
+    return new Permission(props)
+  }
+
+  static unsafe = (p: S.Schema.Type<typeof PermissionSchema>) => new Permission(p)
+
+  // convenience read accessors
+  get id() { return this.props.id }
+  get documentId() { return this.props.documentId }
+  get userId() { return this.props.userId }
+  get level() { return this.props.level }
+  get createdAt() { return this.props.createdAt }
 
   /**
    * Creates a new Permission entity with generated ID.
    */
   static create(props: {
-    documentId: DocumentId;
-    userId: UserId;
-    level: PermissionLevel;
+    documentId: S.Schema.Type<typeof PermissionSchema>['documentId'];
+    userId: S.Schema.Type<typeof PermissionSchema>['userId'];
+    level: S.Schema.Type<typeof PermissionSchema>['level'];
   }): Permission {
-    return new Permission(
-      newPermissionId(),
-      props.documentId,
-      props.userId,
-      props.level,
-      new Date()
-    );
+    return Permission.fromProps({
+      id: makePermissionId(crypto.randomUUID()),
+      ...props,
+      createdAt: new Date()
+    });
   }
 
   /**
    * Reconstructs a Permission entity from persistence layer.
    */
   static fromPersistence(props: {
-    id: PermissionId;
-    documentId: DocumentId;
-    userId: UserId;
-    level: PermissionLevel;
+    id: S.Schema.Type<typeof PermissionSchema>['id'];
+    documentId: S.Schema.Type<typeof PermissionSchema>['documentId'];
+    userId: S.Schema.Type<typeof PermissionSchema>['userId'];
+    level: S.Schema.Type<typeof PermissionSchema>['level'];
     createdAt: Date;
   }): Permission {
-    return new Permission(
-      props.id,
-      props.documentId,
-      props.userId,
-      props.level,
-      props.createdAt
-    );
+    return Permission.fromProps(props);
   }
 
   /**

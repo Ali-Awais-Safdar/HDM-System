@@ -1,6 +1,5 @@
-import { z } from "zod";
-import { MimeType, FileSize, asMimeType, asFileSize } from "../../shared/types/brand";
-import { Result, ok, err } from "../../shared/result/result";
+import { Schema as S } from "effect"
+import { MimeType, FileSize, makeMimeType, makeFileSize } from "./file-ref.vo"
 
 export interface FileUploadData {
   readonly originalName: string;
@@ -47,35 +46,33 @@ const ALLOWED_MIME_TYPES = [
 ] as const;
 
 /**
- * File upload validation schema using Zod for consistent validation.
+ * File upload validation schema using Effect Schema for consistent validation.
  */
-const fileUploadSchema = z.object({
-  originalName: z
-    .string()
-    .min(1, "File name cannot be empty")
-    .max(255, "File name cannot exceed 255 characters"),
-  mimeType: z
-    .string()
-    .min(1, "MIME type is required")
-    .refine(
-      (type) => ALLOWED_MIME_TYPES.includes(type.toLowerCase() as any),
-      { message: "MIME type is not allowed" }
-    ),
-  size: z
-    .number()
-    .positive("File size must be positive")
-    .max(MAX_FILE_SIZE, `File size cannot exceed ${MAX_FILE_SIZE / 1024 / 1024}MB`),
-  data: z
-    .instanceof(Buffer)
-    .refine(
-      (data) => data.length > 0,
-      "File data cannot be empty"
-    )
-});
+export const FileUploadSchema = S.Struct({
+  originalName: S.String.pipe(
+    S.filter((s) => s.trim().length > 0, { message: () => "File name cannot be empty" }),
+    S.filter((s) => s.length <= 255, { message: () => "File name cannot exceed 255 characters" })
+  ),
+  mimeType: S.String.pipe(
+    S.filter((s) => s.trim().length > 0, { message: () => "MIME type is required" }),
+    S.filter((s) => ALLOWED_MIME_TYPES.includes(s.toLowerCase() as any), { message: () => "MIME type is not allowed" })
+  ),
+  size: S.Number.pipe(
+    S.filter((n) => n > 0, { message: () => "File size must be positive" }),
+    S.filter((n) => n <= MAX_FILE_SIZE, { message: () => `File size cannot exceed ${MAX_FILE_SIZE / 1024 / 1024}MB` })
+  ),
+  data: S.instanceOf(Buffer).pipe(
+    S.filter((data: Buffer) => data.length > 0, { message: () => "File data cannot be empty" })
+  )
+})
+export type FileUploadSchema = S.Schema.Type<typeof FileUploadSchema>
+
+// Factory function for creating FileUploadSchema from unknown input
+export const makeFileUploadSchema = (input: unknown) => S.decodeUnknownSync(FileUploadSchema)(input)
 
 /**
  * File upload value object with validation rules.
- * Ensures uploaded files meet security and business requirements using Zod schemas.
+ * Ensures uploaded files meet security and business requirements using Effect Schema.
  */
 export class FileUpload {
   private constructor(
@@ -90,37 +87,34 @@ export class FileUpload {
     mimeType: string,
     size: number,
     data: Buffer
-  ): Result<FileUpload, Error> {
-    // Additional validation for MIME type with custom error message
-    if (!mimeType || !ALLOWED_MIME_TYPES.includes(mimeType.toLowerCase() as any)) {
-      return err(new Error(`MIME type '${mimeType || 'undefined'}' is not allowed`));
-    }
-
-    // Additional validation for size mismatch
-    if (data.length !== size) {
-      return err(new Error("File size mismatch with actual data length"));
-    }
-
-    try {
-      const validatedData = fileUploadSchema.parse({
-        originalName,
-        mimeType,
-        size,
-        data
-      });
-      
-      return ok(new FileUpload(
-        FileUpload.sanitizeFileName(validatedData.originalName),
-        asMimeType(validatedData.mimeType),
-        asFileSize(validatedData.size),
-        validatedData.data
-      ));
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return err(new Error(error.issues[0]?.message || "Validation error"));
-      }
-      return err(error as Error);
-    }
+  ): FileUpload {
+    // Use schema validation instead of throwing errors
+    const validatedData = S.decodeUnknownSync(FileUploadSchema)({
+      originalName,
+      mimeType,
+      size,
+      data
+    });
+    
+    // Additional validation for size mismatch using schema
+    const sizeMismatchSchema = S.Struct({
+      size: S.Number,
+      dataLength: S.Number
+    }).pipe(
+      S.filter(
+        ({ size, dataLength }) => size === dataLength,
+        { message: () => "File size mismatch with actual data length" }
+      )
+    );
+    
+    S.decodeUnknownSync(sizeMismatchSchema)({ size: validatedData.size, dataLength: validatedData.data.length });
+    
+    return new FileUpload(
+      FileUpload.sanitizeFileName(validatedData.originalName),
+      makeMimeType(validatedData.mimeType),
+      makeFileSize(validatedData.size),
+      validatedData.data
+    );
   }
 
   private static sanitizeFileName(fileName: string): string {

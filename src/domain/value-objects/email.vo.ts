@@ -1,39 +1,37 @@
-import { z } from "zod";
-import { EmailAddress, asEmailAddress } from "../../shared/types/brand";
-import { Result, ok, err } from "../../shared/result/result";
+import { Schema as S } from "effect"
 
 /**
- * Email validation schema using Zod for consistent validation.
+ * Email validation schema using Effect Schema for consistent validation.
  */
-const emailSchema = z
-  .string()
-  .min(1, "Email cannot be empty")
-  .email("Invalid email format")
-  .max(254, "Email cannot exceed 254 characters");
+export const EmailAddress = S.String.pipe(
+  S.filter((s) => s.trim().length > 0, { message: () => "Email cannot be empty" }),
+  S.filter((s) => s.length <= 254, { message: () => "Email cannot exceed 254 characters" }),
+  S.filter((s) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(s);
+  }, { message: () => "Invalid email format" }),
+  S.brand("EmailAddress")
+)
+export type EmailAddress = S.Schema.Type<typeof EmailAddress>
+
+// Factory function for creating EmailAddress from unknown input
+export const makeEmailAddress = (input: unknown) => S.decodeUnknownSync(EmailAddress)(input)
 
 /**
  * Email value object with validation rules.
- * Ensures valid email format and normalization using Zod schemas.
+ * Ensures valid email format and normalization using Effect Schema.
  */
 export class Email {
   private constructor(private readonly _value: EmailAddress) {}
 
-  static create(value: string): Result<Email, Error> {
-    try {
-      // Normalize the email first
-      const normalized = value.toLowerCase().trim();
-      
-      // Validate the normalized email
-      const validated = emailSchema.parse(normalized);
-      return ok(new Email(asEmailAddress(validated)));
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return err(new Error(error.issues[0]?.message || "Validation error"));
-      }
-      return err(error as Error);
-    }
+  static create(value: string): Email {
+    // Normalize the email first
+    const normalized = value.toLowerCase().trim();
+    
+    // Validate the normalized email using Effect Schema
+    const validated = S.decodeUnknownSync(EmailAddress)(normalized);
+    return new Email(validated);
   }
-
 
   get value(): EmailAddress {
     return this._value;

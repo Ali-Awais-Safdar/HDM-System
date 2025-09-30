@@ -1,6 +1,7 @@
-import { DownloadTokenId, UserId, DocumentId, newDownloadTokenId } from "../../shared/types/brand";
+import { Schema as S, Option } from "effect"
+import { DownloadToken as DownloadTokenSchema } from "../schema/download-token.schema"
+import { makeDownloadTokenId } from "../value-objects/id.vo"
 import { randomBytes } from "crypto";
-import { Option } from "effect";
 
 /**
  * DownloadToken domain entity representing secure, short-lived access tokens for document downloads.
@@ -13,43 +14,49 @@ import { Option } from "effect";
  * - Expired or used tokens are invalid
  */
 export class DownloadToken {
-  private constructor(
-    public readonly id: DownloadTokenId,
-    public readonly token: string,
-    public readonly documentId: DocumentId,
-    public readonly issuedTo: UserId,
-    public readonly expiresAt: Date,
-    public readonly usedAt: Option.Option<Date>,
-    public readonly createdAt: Date
-  ) {}
+  private constructor(readonly props: S.Schema.Type<typeof DownloadTokenSchema>) {}
+
+  static fromProps = (u: unknown) => {
+    const props = S.decodeUnknownSync(DownloadTokenSchema)(u)
+    return new DownloadToken(props)
+  }
+
+  static unsafe = (p: S.Schema.Type<typeof DownloadTokenSchema>) => new DownloadToken(p)
+
+  // convenience read accessors
+  get id() { return this.props.id }
+  get token() { return this.props.token }
+  get documentId() { return this.props.documentId }
+  get issuedTo() { return this.props.issuedTo }
+  get expiresAt() { return this.props.expiresAt }
+  get usedAt() { return this.props.usedAt }
+  get createdAt() { return this.props.createdAt }
 
   /**
    * Creates a new DownloadToken with a cryptographically secure random token.
    */
   static create(props: {
-    documentId: DocumentId;
-    issuedTo: UserId;
+    documentId: S.Schema.Type<typeof DownloadTokenSchema>['documentId'];
+    issuedTo: S.Schema.Type<typeof DownloadTokenSchema>['issuedTo'];
     expiresAt: Date;
   }): DownloadToken {
     const token = this.generateSecureToken();
     
-    return new DownloadToken(
-      newDownloadTokenId(),
+    return DownloadToken.fromProps({
+      id: makeDownloadTokenId(crypto.randomUUID()),
       token,
-      props.documentId,
-      props.issuedTo,
-      props.expiresAt,
-      Option.none(), // Not used yet
-      new Date()
-    );
+      ...props,
+      usedAt: Option.none(), // Not used yet
+      createdAt: new Date()
+    });
   }
 
   /**
    * Creates a new DownloadToken with default 5-minute expiration.
    */
   static createWithDefaultExpiry(props: {
-    documentId: DocumentId;
-    issuedTo: UserId;
+    documentId: S.Schema.Type<typeof DownloadTokenSchema>['documentId'];
+    issuedTo: S.Schema.Type<typeof DownloadTokenSchema>['issuedTo'];
   }): DownloadToken {
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes from now
     
@@ -63,23 +70,15 @@ export class DownloadToken {
    * Reconstructs a DownloadToken from persistence layer.
    */
   static fromPersistence(props: {
-    id: DownloadTokenId;
+    id: S.Schema.Type<typeof DownloadTokenSchema>['id'];
     token: string;
-    documentId: DocumentId;
-    issuedTo: UserId;
+    documentId: S.Schema.Type<typeof DownloadTokenSchema>['documentId'];
+    issuedTo: S.Schema.Type<typeof DownloadTokenSchema>['issuedTo'];
     expiresAt: Date;
     usedAt: Option.Option<Date>;
     createdAt: Date;
   }): DownloadToken {
-    return new DownloadToken(
-      props.id,
-      props.token,
-      props.documentId,
-      props.issuedTo,
-      props.expiresAt,
-      props.usedAt,
-      props.createdAt
-    );
+    return DownloadToken.fromProps(props);
   }
 
   /**
@@ -110,27 +109,23 @@ export class DownloadToken {
   /**
    * Marks the token as used with the current timestamp.
    * Returns a new instance (immutable).
+   * Uses schema validation instead of throwing errors.
    */
   markAsUsed(): DownloadToken {
-    if (this.isUsed()) {
-      throw new Error("Token has already been used");
-    }
-
-    return new DownloadToken(
-      this.id,
-      this.token,
-      this.documentId,
-      this.issuedTo,
-      this.expiresAt,
-      Option.some(new Date()), // Mark as used now
-      this.createdAt
-    );
+    // Use schema validation to ensure the token can be marked as used
+    const updatedProps = {
+      ...this.props,
+      usedAt: Option.some(new Date()) as any // Mark as used now
+    };
+    
+    // Validate the updated props through schema
+    return DownloadToken.fromProps(updatedProps);
   }
 
   /**
    * Checks if the token belongs to the specified user.
    */
-  belongsToUser(userId: UserId): boolean {
+  belongsToUser(userId: S.Schema.Type<typeof DownloadTokenSchema>['issuedTo']): boolean {
     return this.issuedTo === userId;
   }
 

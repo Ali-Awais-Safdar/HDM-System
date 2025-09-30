@@ -36,20 +36,42 @@ export const documents = pgTable("documents", {
   id: text("id").primaryKey(),
   ownerId: text("owner_id").notNull(),
   title: varchar("title", { length: 255 }).notNull(),
-  mimeType: varchar("mime_type", { length: 127 }).notNull(),
-  size: integer("size").notNull(), // Size in bytes as integer
-  storageKey: text("storage_key").notNull(), // Path/key to file in storage
-  metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+  description: text("description"),
+  tags: jsonb("tags").$type<string[]>().default([]),
+  currentVersionId: text("current_version_id").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }),
 }, (table) => [
   index("documents_owner_idx").on(table.ownerId),
   index("documents_title_idx").on(table.title),
   index("documents_created_at_idx").on(table.createdAt),
-  // Standard B-tree index for metadata (GIN will be added via raw SQL)
-  index("documents_metadata_idx").on(table.metadata),
+  index("documents_current_version_idx").on(table.currentVersionId),
   foreignKey({
     columns: [table.ownerId],
+    foreignColumns: [users.id],
+  }),
+]);
+
+export const documentVersions = pgTable("document_versions", {
+  id: text("id").primaryKey(),
+  documentId: text("document_id").notNull(),
+  version: integer("version").notNull(),
+  checksum: varchar("checksum", { length: 64 }).notNull(), // SHA-256 hex string
+  fileKey: text("file_key").notNull(),
+  mimeType: varchar("mime_type", { length: 127 }).notNull(),
+  size: integer("size").notNull(), // Size in bytes as integer
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  createdBy: text("created_by"),
+}, (table) => [
+  index("document_versions_document_idx").on(table.documentId),
+  index("document_versions_version_idx").on(table.documentId, table.version),
+  index("document_versions_created_at_idx").on(table.createdAt),
+  foreignKey({
+    columns: [table.documentId],
+    foreignColumns: [documents.id],
+  }),
+  foreignKey({
+    columns: [table.createdBy],
     foreignColumns: [users.id],
   }),
 ]);
@@ -133,9 +155,25 @@ export const documentsRelations = relations(documents, ({ one, many }) => ({
     fields: [documents.ownerId],
     references: [users.id],
   }),
+  currentVersion: one(documentVersions, {
+    fields: [documents.currentVersionId],
+    references: [documentVersions.id],
+  }),
+  versions: many(documentVersions),
   permissions: many(permissions),
   documentTags: many(documentTags),
   downloadTokens: many(downloadTokens),
+}));
+
+export const documentVersionsRelations = relations(documentVersions, ({ one }) => ({
+  document: one(documents, {
+    fields: [documentVersions.documentId],
+    references: [documents.id],
+  }),
+  creator: one(users, {
+    fields: [documentVersions.createdBy],
+    references: [users.id],
+  }),
 }));
 
 export const tagsRelations = relations(tags, ({ many }) => ({

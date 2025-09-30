@@ -1,24 +1,24 @@
-import { UserId, EmailAddress } from "../../shared/types/brand";
+import { Schema as S } from "effect"
+import { User } from "../schema/user.schema"
 
-export type UserRole = "admin" | "user";
+export class UserEntity {
+  private constructor(readonly props: S.Schema.Type<typeof User>) {}
 
-export interface UserEntity {
-  readonly id: UserId;
-  readonly email: EmailAddress;
-  readonly passwordHash: string;
-  readonly role: UserRole;
-  readonly createdAt: Date;
-}
+  static fromProps = (u: unknown) => {
+    const props = S.decodeUnknownSync(User)(u)
+    return new UserEntity(props)
+  }
 
-export class User implements UserEntity {
-  constructor(
-    public readonly id: UserId,
-    public readonly email: EmailAddress,
-    public readonly passwordHash: string,
-    public readonly role: UserRole,
-    public readonly createdAt: Date = new Date()
-  ) {}
+  static unsafe = (p: S.Schema.Type<typeof User>) => new UserEntity(p)
 
+  // convenience read accessors
+  get id() { return this.props.id }
+  get email() { return this.props.email }
+  get passwordHash() { return this.props.passwordHash }
+  get role() { return this.props.role }
+  get createdAt() { return this.props.createdAt }
+
+  // business logic methods
   isAdmin(): boolean {
     return this.role === "admin";
   }
@@ -27,17 +27,16 @@ export class User implements UserEntity {
     return this.isAdmin();
   }
 
+  // factory method for creating new users
   static create(props: {
-    id: UserId;
-    email: EmailAddress;
+    id: S.Schema.Type<typeof User>['id'];
+    email: S.Schema.Type<typeof User>['email'];
     passwordHash: string;
-    role: UserRole;
-  }): User {
-    return new User(
-      props.id,
-      props.email,
-      props.passwordHash,
-      props.role
-    );
+    role: S.Schema.Type<typeof User>['role'];
+  }): UserEntity {
+    return UserEntity.fromProps({
+      ...props,
+      createdAt: new Date()
+    });
   }
 }
