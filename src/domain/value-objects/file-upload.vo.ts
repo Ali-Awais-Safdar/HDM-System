@@ -1,5 +1,5 @@
 import { Schema as S } from "effect"
-import { MimeType, FileSize, makeMimeType, makeFileSize } from "./file-ref.vo"
+import { MimeType, FileSize, makeMimeTypeSync, makeFileSizeSync } from "./file-ref.vo"
 
 export interface FileUploadData {
   readonly originalName: string;
@@ -67,8 +67,8 @@ export const FileUploadSchema = S.Struct({
 })
 export type FileUploadSchema = S.Schema.Type<typeof FileUploadSchema>
 
-// Factory function for creating FileUploadSchema from unknown input
-export const makeFileUploadSchema = (input: unknown) => S.decodeUnknownSync(FileUploadSchema)(input)
+// Factory function for creating FileUploadSchema from unknown input using Effect pipeline
+export const makeFileUploadSchema = (input: unknown) => S.decodeUnknown(FileUploadSchema)(input)
 
 /**
  * File upload value object with validation rules.
@@ -111,8 +111,8 @@ export class FileUpload {
     
     return new FileUpload(
       FileUpload.sanitizeFileName(validatedData.originalName),
-      makeMimeType(validatedData.mimeType),
-      makeFileSize(validatedData.size),
+      makeMimeTypeSync(validatedData.mimeType),
+      makeFileSizeSync(validatedData.size),
       validatedData.data
     );
   }

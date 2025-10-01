@@ -10,6 +10,6 @@ export const DateTimeIso = S.transform(S.String, S.Date, {
   strict: false
 })
 
-// Factory functions for creating DateTime values from unknown input
-export const makeDateTime = (input: unknown) => S.decodeUnknownSync(DateTime)(input)
-export const makeDateTimeFromIso = (input: unknown) => S.decodeUnknownSync(DateTimeIso)(input)
+// Factory functions for creating DateTime values from unknown input using Effect pipeline
+export const makeDateTime = (input: unknown) => S.decodeUnknown(DateTime)(input)
+export const makeDateTimeFromIso = (input: unknown) => S.decodeUnknown(DateTimeIso)(input)

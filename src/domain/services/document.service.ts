@@ -3,9 +3,10 @@ import { DocumentEntity } from "../entities/document.entity";
 import { DocumentAccessPolicy, DocumentAccessContext } from "../policies/document-access.policy";
 import { Permission } from "../entities/permission.entity";
 import { DocumentId, UserId } from "../value-objects/id.vo";
-import { MimeType, FileSize } from "../value-objects/file-ref.vo";
+import { MimeType } from "../value-objects/file-ref.vo";
 import { Role } from "../schema/access-policy.schema";
 import { createServiceLogger, logPerformance } from "../../shared/logging/logger";
+import { Result } from "../../shared/result/result";
 
 /**
  * Domain service for document business logic.
@@ -24,7 +25,7 @@ export class DocumentService {
     title: string,
     mimeType: MimeType,
     fileData: Buffer,
-    metadata: Record<string, unknown> = {},
+    _metadata: Record<string, unknown> = {},
     tags: string[] = []
   ): Promise<Effect.Effect<DocumentEntity, DocumentError>> {
     const startTime = Date.now();
@@ -280,14 +281,14 @@ export class DocumentService {
 
 // Domain interfaces (ports)
 export interface DocumentRepository {
-  findById(id: DocumentId): Promise<Result<Document | null, Error>>;
-  findByOwner(ownerId: UserId): Promise<Result<Document[], Error>>;
-  search(filters: DocumentSearchFilters): Promise<Result<Document[], Error>>;
-  save(document: Document): Promise<Result<Document, Error>>;
+  findById(id: DocumentId): Promise<Result<DocumentEntity | null, Error>>;
+  findByOwner(ownerId: UserId): Promise<Result<DocumentEntity[], Error>>;
+  search(filters: DocumentSearchFilters): Promise<Result<DocumentEntity[], Error>>;
+  save(document: DocumentEntity): Promise<Result<DocumentEntity, Error>>;
   delete(id: DocumentId): Promise<Result<void, Error>>;
   
   // Transaction support
-  saveInTransaction(document: Document, tx: import("../../lib/db/connection").DatabaseTransaction): Promise<Result<Document, Error>>;
+  saveInTransaction(document: DocumentEntity, tx: import("../../lib/db/connection").DatabaseTransaction): Promise<Result<DocumentEntity, Error>>;
   deleteInTransaction(id: DocumentId, tx: import("../../lib/db/connection").DatabaseTransaction): Promise<Result<void, Error>>;
   executeInTransaction<T>(operation: (tx: import("../../lib/db/connection").DatabaseTransaction) => Promise<Result<T, Error>>): Promise<Result<T, Error>>;
 }

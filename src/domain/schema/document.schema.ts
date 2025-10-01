@@ -64,6 +64,6 @@ export const DocumentCodec = S.transform(DocumentRow, Document, {
   strict: false
 })
 
-// Factory functions for creating from unknown input
-export const makeDocument = (input: unknown) => S.decodeUnknownSync(Document)(input)
-export const makeDocumentRow = (input: unknown) => S.decodeUnknownSync(DocumentRow)(input)
+// Factory functions for creating from unknown input using Effect pipeline
+export const makeDocument = (input: unknown) => S.decodeUnknown(Document)(input)
+export const makeDocumentRow = (input: unknown) => S.decodeUnknown(DocumentRow)(input)

@@ -1,5 +1,8 @@
 import { Effect, Schema as S } from "effect"
 import { Permission as PermissionSchema, PermissionLevel } from "../schema/permission.schema"
+
+// Re-export PermissionLevel for external use
+export type { PermissionLevel }
 import { makePermissionId } from "../value-objects/id.vo"
 import { ValidationError, BusinessRuleViolationError } from "../errors/domain.errors"
 import { UserId, DocumentId } from "../value-objects/id.vo"
@@ -94,64 +97,64 @@ export class Permission implements Entity<S.Schema.Type<typeof PermissionSchema>
    * Effect-based method for upgrading permission level.
    */
   upgradeTo = (newLevel: PermissionLevel): Effect.Effect<Permission, ValidationError | BusinessRuleViolationError> => {
-    return Effect.gen(function* (this: Permission) {
-      if (!this.canBeUpgradedTo(newLevel)) {
-        yield* Effect.fail(new BusinessRuleViolationError(
-          "INVALID_UPGRADE",
-          `Cannot upgrade from ${this.level} to ${newLevel}`,
-          { currentLevel: this.level, newLevel }
-        ))
-      }
+    // Validate upgrade is possible
+    if (!this.canBeUpgradedTo(newLevel)) {
+      return Effect.fail(new BusinessRuleViolationError(
+        "INVALID_UPGRADE",
+        `Cannot upgrade from ${this.level} to ${newLevel}`,
+        { currentLevel: this.level, newLevel }
+      ))
+    }
 
-      const updatedData = {
-        ...this.props,
-        level: newLevel
-      }
+    // Create updated data and validate
+    const updatedData = {
+      ...this.props,
+      level: newLevel
+    }
 
-      const validated = yield* S.decodeUnknown(PermissionSchema)(updatedData).pipe(
-        Effect.mapError((error) => new ValidationError(
-          `Invalid permission level: ${error instanceof Error ? error.message : String(error)}`,
-          'level',
-          newLevel
-        ))
-      )
-      return new Permission(validated)
-    }.bind(this))
+    return S.decodeUnknown(PermissionSchema)(updatedData).pipe(
+      Effect.mapError((error) => new ValidationError(
+        `Invalid permission level: ${error instanceof Error ? error.message : String(error)}`,
+        'level',
+        newLevel
+      )),
+      Effect.map(validated => new Permission(validated))
+    )
   }
 
   /**
    * Effect-based method for downgrading permission level.
    */
   downgradeTo = (newLevel: PermissionLevel): Effect.Effect<Permission, ValidationError | BusinessRuleViolationError> => {
-    return Effect.gen(function* (this: Permission) {
-      const hierarchy: Record<PermissionLevel, number> = {
-        read: 1,
-        write: 2,
-        admin: 3
-      }
+    const hierarchy: Record<PermissionLevel, number> = {
+      read: 1,
+      write: 2,
+      admin: 3
+    }
 
-      if (hierarchy[newLevel] >= hierarchy[this.level]) {
-        yield* Effect.fail(new BusinessRuleViolationError(
-          "INVALID_DOWNGRADE",
-          `Cannot downgrade from ${this.level} to ${newLevel}`,
-          { currentLevel: this.level, newLevel }
-        ))
-      }
+    // Validate downgrade is possible
+    if (hierarchy[newLevel] >= hierarchy[this.level]) {
+      return Effect.fail(new BusinessRuleViolationError(
+        "INVALID_DOWNGRADE",
+        `Cannot downgrade from ${this.level} to ${newLevel}`,
+        { currentLevel: this.level, newLevel }
+      ))
+    }
 
-      const updatedData = {
-        ...this.props,
-        level: newLevel
-      }
+    // Create updated data and validate
+    const updatedData = {
+      ...this.props,
+      level: newLevel
+    }
 
-      const validated = yield* S.decodeUnknown(PermissionSchema)(updatedData).pipe(
-        Effect.mapError((error) => new ValidationError(
-          `Invalid permission level: ${error instanceof Error ? error.message : String(error)}`,
-          'level',
-          newLevel
-        ))
-      )
-      return new Permission(validated)
-    }.bind(this))
+    return S.decodeUnknown(PermissionSchema)(updatedData).pipe(
+      Effect.mapError((error) => new ValidationError(
+        `Invalid permission level: ${error instanceof Error ? error.message : String(error)}`,
+        'level',
+        newLevel
+      )),
+      Effect.map(validated => new Permission(validated))
+    )
   }
 
   /**

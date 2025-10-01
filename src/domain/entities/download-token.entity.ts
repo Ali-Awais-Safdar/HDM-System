@@ -54,13 +54,10 @@ export class DownloadToken implements Entity<S.Schema.Type<typeof DownloadTokenS
     documentId: DocumentId;
     issuedTo: UserId;
   }): Effect.Effect<DownloadToken, ValidationError> => {
-    return Effect.gen(function* () {
-      const expiresAt = new Date(Date.now() + 5 * 60 * 1000) // 5 minutes from now
-      
-      return yield* DownloadToken.createNew({
-        ...props,
-        expiresAt,
-      })
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000) // 5 minutes from now
+    return DownloadToken.createNew({
+      ...props,
+      expiresAt,
     })
   }
 
@@ -115,37 +112,38 @@ export class DownloadToken implements Entity<S.Schema.Type<typeof DownloadTokenS
    * Returns a new instance (immutable).
    */
   markAsUsed = (): Effect.Effect<DownloadToken, ValidationError | BusinessRuleViolationError> => {
-    return Effect.gen(function* (this: DownloadToken) {
-      if (this.isUsed()) {
-        yield* Effect.fail(new BusinessRuleViolationError(
-          "TOKEN_ALREADY_USED",
-          "Token has already been used",
-          { tokenId: this.id }
-        ))
-      }
+    // Check if already used
+    if (this.isUsed()) {
+      return Effect.fail(new BusinessRuleViolationError(
+        "TOKEN_ALREADY_USED",
+        "Token has already been used",
+        { tokenId: this.id }
+      ))
+    }
 
-      if (this.isExpired()) {
-        yield* Effect.fail(new BusinessRuleViolationError(
-          "TOKEN_EXPIRED",
-          "Cannot use expired token",
-          { tokenId: this.id, expiresAt: this.expiresAt }
-        ))
-      }
+    // Check if expired
+    if (this.isExpired()) {
+      return Effect.fail(new BusinessRuleViolationError(
+        "TOKEN_EXPIRED",
+        "Cannot use expired token",
+        { tokenId: this.id, expiresAt: this.expiresAt }
+      ))
+    }
 
-      const updatedData = {
-        ...this.props,
-        usedAt: Option.some(new Date())
-      }
+    // Update and validate
+    const updatedData = {
+      ...this.props,
+      usedAt: Option.some(new Date())
+    }
 
-      const validated = yield* S.decodeUnknown(DownloadTokenSchema)(updatedData).pipe(
-        Effect.mapError((error) => new ValidationError(
-          `Invalid token data: ${error instanceof Error ? error.message : String(error)}`,
-          'usedAt',
-          updatedData.usedAt
-        ))
-      )
-      return new DownloadToken(validated)
-    }.bind(this))
+    return S.decodeUnknown(DownloadTokenSchema)(updatedData).pipe(
+      Effect.mapError((error) => new ValidationError(
+        `Invalid token data: ${error instanceof Error ? error.message : String(error)}`,
+        'usedAt',
+        updatedData.usedAt
+      )),
+      Effect.map(validated => new DownloadToken(validated))
+    )
   }
 
   /**
@@ -171,33 +169,35 @@ export class DownloadToken implements Entity<S.Schema.Type<typeof DownloadTokenS
    * Effect-based method for validating token before use.
    */
   validateForUse = (userId: UserId, clockSkewToleranceMs: number = 0): Effect.Effect<DownloadToken, BusinessRuleViolationError> => {
-    return Effect.gen(function* (this: DownloadToken) {
-      if (!this.belongsToUser(userId)) {
-        yield* Effect.fail(new BusinessRuleViolationError(
-          "TOKEN_USER_MISMATCH",
-          "Token does not belong to the specified user",
-          { tokenId: this.id, userId, issuedTo: this.issuedTo }
-        ))
-      }
+    // Check if token belongs to user
+    if (!this.belongsToUser(userId)) {
+      return Effect.fail(new BusinessRuleViolationError(
+        "TOKEN_USER_MISMATCH",
+        "Token does not belong to the specified user",
+        { tokenId: this.id, userId, issuedTo: this.issuedTo }
+      ))
+    }
 
-      if (this.isUsed()) {
-        yield* Effect.fail(new BusinessRuleViolationError(
-          "TOKEN_ALREADY_USED",
-          "Token has already been used",
-          { tokenId: this.id }
-        ))
-      }
+    // Check if already used
+    if (this.isUsed()) {
+      return Effect.fail(new BusinessRuleViolationError(
+        "TOKEN_ALREADY_USED",
+        "Token has already been used",
+        { tokenId: this.id }
+      ))
+    }
 
-      if (this.isExpired(clockSkewToleranceMs)) {
-        yield* Effect.fail(new BusinessRuleViolationError(
-          "TOKEN_EXPIRED",
-          "Token has expired",
-          { tokenId: this.id, expiresAt: this.expiresAt }
-        ))
-      }
+    // Check if expired
+    if (this.isExpired(clockSkewToleranceMs)) {
+      return Effect.fail(new BusinessRuleViolationError(
+        "TOKEN_EXPIRED",
+        "Token has expired",
+        { tokenId: this.id, expiresAt: this.expiresAt }
+      ))
+    }
 
-      return this
-    }.bind(this))
+    // All validations passed
+    return Effect.succeed(this)
   }
 
   /**

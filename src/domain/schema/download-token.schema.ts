@@ -56,6 +56,6 @@ export const DownloadTokenCodec = S.transform(DownloadTokenRow, DownloadToken, {
   strict: false
 })
 
-// Factory functions for creating from unknown input
-export const makeDownloadToken = (input: unknown) => S.decodeUnknownSync(DownloadToken)(input)
-export const makeDownloadTokenRow = (input: unknown) => S.decodeUnknownSync(DownloadTokenRow)(input)
+// Factory functions for creating from unknown input using Effect pipeline
+export const makeDownloadToken = (input: unknown) => S.decodeUnknown(DownloadToken)(input)
+export const makeDownloadTokenRow = (input: unknown) => S.decodeUnknown(DownloadTokenRow)(input)

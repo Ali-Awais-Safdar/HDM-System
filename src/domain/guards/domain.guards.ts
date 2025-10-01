@@ -94,7 +94,7 @@ export const isValidPermissionLevel = (value: string): boolean => {
 }
 
 export const isValidUserRole = (value: string): boolean => {
-  return ['admin', 'user'].includes(value)
+  return ['ADMIN', 'USER'].includes(value)
 }
 
 // Token validation guards
@@ -183,7 +183,7 @@ export const validateArray = <T>(value: unknown, fieldName: string, itemValidato
     return value.map((item, index) => {
       try {
         return itemValidator(item)
-      } catch (error) {
+      } catch {
         throw new ValidationError(`${fieldName}[${index}] is invalid`, `${fieldName}[${index}]`, item)
       }
     })

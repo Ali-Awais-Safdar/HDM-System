@@ -1,7 +1,7 @@
 import { Schema as S } from "effect"
 import { PermissionId, UserId, DocumentId } from "../value-objects/id.vo"
 import { DateTime } from "../value-objects/datetime.vo"
-import { isValidPermissionLevel, isValidUuid } from "../guards/domain.guards"
+import { isValidPermissionLevel } from "../guards/domain.guards"
 
 export const PermissionLevel = S.Literal("read", "write", "admin")
 export type PermissionLevel = S.Schema.Type<typeof PermissionLevel>
@@ -47,6 +47,6 @@ export const PermissionCodec = S.transform(PermissionRow, Permission, {
   strict: false
 })
 
-// Factory functions for creating from unknown input
-export const makePermission = (input: unknown) => S.decodeUnknownSync(Permission)(input)
-export const makePermissionRow = (input: unknown) => S.decodeUnknownSync(PermissionRow)(input)
+// Factory functions for creating from unknown input using Effect pipeline
+export const makePermission = (input: unknown) => S.decodeUnknown(Permission)(input)
+export const makePermissionRow = (input: unknown) => S.decodeUnknown(PermissionRow)(input)

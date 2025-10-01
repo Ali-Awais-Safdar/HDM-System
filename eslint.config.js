@@ -20,4 +20,11 @@ export default [
       "@typescript-eslint/no-unused-vars": ["error", { "argsIgnorePattern": "^_" }]
     },
   },
+  {
+    // Domain layer specific rules - disable no-redeclare for Effect Schema patterns
+    files: ["src/domain/**/*.ts"],
+    rules: {
+      "no-redeclare": "off", // Allow schema/type name pairs in Effect Schema pattern
+    },
+  },
 ];

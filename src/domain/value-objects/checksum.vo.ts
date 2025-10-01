@@ -9,5 +9,5 @@ export const Sha256 = S.String.pipe(
 )
 export type Sha256 = S.Schema.Type<typeof Sha256>
 
-// Factory function for creating SHA-256 checksums from unknown input
-export const makeSha256 = (input: unknown) => S.decodeUnknownSync(Sha256)(input)
+// Factory function for creating SHA-256 checksums from unknown input using Effect pipeline
+export const makeSha256 = (input: unknown) => S.decodeUnknown(Sha256)(input)

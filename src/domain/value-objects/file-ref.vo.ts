@@ -19,7 +19,12 @@ export const FileSize = S.Number.pipe(
 )
 export type FileSize = S.Schema.Type<typeof FileSize>
 
-// Factory functions for creating file reference types from unknown input
-export const makeFileKey = (input: unknown) => S.decodeUnknownSync(FileKey)(input)
-export const makeMimeType = (input: unknown) => S.decodeUnknownSync(MimeType)(input)
-export const makeFileSize = (input: unknown) => S.decodeUnknownSync(FileSize)(input)
+// Sync factory functions for internal use
+export const makeFileKeySync = (input: unknown) => S.decodeUnknownSync(FileKey)(input)
+export const makeMimeTypeSync = (input: unknown) => S.decodeUnknownSync(MimeType)(input)
+export const makeFileSizeSync = (input: unknown) => S.decodeUnknownSync(FileSize)(input)
+
+// Effect-based factory functions for pipeline use
+export const makeFileKey = (input: unknown) => S.decodeUnknown(FileKey)(input)
+export const makeMimeType = (input: unknown) => S.decodeUnknown(MimeType)(input)
+export const makeFileSize = (input: unknown) => S.decodeUnknown(FileSize)(input)

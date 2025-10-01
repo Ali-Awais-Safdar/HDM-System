@@ -14,8 +14,8 @@ export const Password = S.String.pipe(
 )
 export type Password = S.Schema.Type<typeof Password>
 
-// Factory function for creating Password from unknown input
-export const makePassword = (input: unknown) => S.decodeUnknownSync(Password)(input)
+// Factory function for creating Password from unknown input using Effect pipeline
+export const makePassword = (input: unknown) => S.decodeUnknown(Password)(input)
 
 /**
  * Password value object with validation rules.

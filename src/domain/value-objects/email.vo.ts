@@ -56,5 +56,5 @@ export class Email {
   }
 }
 
-// Factory function for creating EmailAddress from unknown input
-export const makeEmailAddress = (input: unknown) => S.decodeUnknownSync(EmailAddress)(input)
+// Factory function for creating EmailAddress from unknown input using Effect pipeline
+export const makeEmailAddress = (input: unknown) => S.decodeUnknown(EmailAddress)(input)

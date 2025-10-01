@@ -64,6 +64,6 @@ export const DocumentVersionCodec = S.transform(DocumentVersionRow, DocumentVers
   strict: false
 })
 
-// Factory functions for creating from unknown input
-export const makeDocumentVersion = (input: unknown) => S.decodeUnknownSync(DocumentVersion)(input)
-export const makeDocumentVersionRow = (input: unknown) => S.decodeUnknownSync(DocumentVersionRow)(input)
+// Factory functions for creating from unknown input using Effect pipeline
+export const makeDocumentVersion = (input: unknown) => S.decodeUnknown(DocumentVersion)(input)
+export const makeDocumentVersionRow = (input: unknown) => S.decodeUnknown(DocumentVersionRow)(input)
