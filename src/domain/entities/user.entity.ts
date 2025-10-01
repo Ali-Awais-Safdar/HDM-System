@@ -1,4 +1,4 @@
-import { Effect, Schema as S, Option } from "effect"
+import { Effect, Schema as S, Option, ParseResult } from "effect"
 import { UserSchema } from "../schema/user.schema"
 import { Role } from "../schema/access-policy.schema"
 import { WorkspaceId } from "../value-objects/id.vo"
@@ -19,15 +19,11 @@ export interface IUser extends IEntity {
   readonly createdAt: Date
 }
 
-export type SerializedUser = {
-  id: string
-  email: string
-  passwordHash: string
-  roles: readonly string[]
-  workspaceId: string | null
-  createdAt: Date
-}
-export class UserEntity implements Entity<S.Schema.Type<typeof UserSchema>>, IUser {
+/**
+ * Serialized User type derived from schema encoding.
+ */
+export type SerializedUser = S.Schema.Encoded<typeof UserSchema>
+export class UserEntity implements Entity<S.Schema.Type<typeof UserSchema>, SerializedUser>, IUser {
   // Factory methods
   static create = createEntityFactory(
     UserSchema,
@@ -69,9 +65,11 @@ export class UserEntity implements Entity<S.Schema.Type<typeof UserSchema>>, IUs
     "User"
   ).unsafe
 
-  private constructor(readonly props: S.Schema.Type<typeof UserSchema>) {}
+  // ========== Constructor ==========
+  
+  private constructor(readonly props: Readonly<S.Schema.Type<typeof UserSchema>>) {}
 
-  // Getters
+  // ========== Getters & Computed Properties ==========
   
   get id() { return this.props.id }
   get email() { return this.props.email }
@@ -97,7 +95,8 @@ export class UserEntity implements Entity<S.Schema.Type<typeof UserSchema>>, IUs
     return parts[1] || ''
   }
 
-  // Domain methods
+  // ========== Public Domain Methods ==========
+  
   isAdmin(): boolean {
     return this.isAdminUser
   }
@@ -155,13 +154,18 @@ export class UserEntity implements Entity<S.Schema.Type<typeof UserSchema>>, IUs
     )
   }
 
-  // Serialization
+  // ========== Serialization Methods ==========
+  
   toWireFormat = (): S.Schema.Type<typeof UserSchema> => {
     return this.props
   }
 
-  serialized = (): S.Schema.Type<typeof UserSchema> => {
-    return this.props
+  /**
+   * Serializes the entity using Effect Schema encoding.
+   * Properly transforms Option<T> fields to nullable values for external systems.
+   */
+  serialized = (): Effect.Effect<SerializedUser, ParseResult.ParseError, never> => {
+    return S.encode(UserSchema)(this.props)
   }
 
   toPlainObject = () => {

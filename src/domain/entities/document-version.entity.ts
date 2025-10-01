@@ -1,4 +1,4 @@
-import { Effect, Schema as S, Option } from "effect"
+import { Effect, Schema as S, Option, ParseResult } from "effect"
 import { DocumentVersion } from "../schema/document-version.schema"
 import { ValidationError } from "../errors/domain.errors"
 import { DocumentVersionId, DocumentId, UserId } from "../value-objects/id.vo"
@@ -7,9 +7,9 @@ import { FileKey, MimeType, FileSize } from "../value-objects/file-ref.vo"
 import { fromNullable, toNullable, isSome } from "../utils/option.utils"
 import { createEntityFactory, type Entity, type IEntity } from "../utils/entity.utils"
 
-
- // DocumentVersion entity interface extending base IEntity.
-
+/**
+ * DocumentVersion entity interface extending base IEntity.
+ */
 export interface IDocumentVersion extends IEntity {
   readonly id: DocumentVersionId
   readonly documentId: DocumentId
@@ -23,21 +23,13 @@ export interface IDocumentVersion extends IEntity {
 }
 
 /**
- * Serialized DocumentVersion type for external APIs and persistence.
+ * Serialized DocumentVersion type derived from schema encoding.
+ * Represents the external format for APIs and persistence.
  */
-export type SerializedDocumentVersion = {
-  id: string
-  documentId: string
-  version: number
-  checksum: string
-  fileKey: string
-  mimeType: string
-  size: number
-  createdAt: Date
-  createdBy: string | null
-}
+export type SerializedDocumentVersion = S.Schema.Encoded<typeof DocumentVersion>
 
-export class DocumentVersionEntity implements Entity<S.Schema.Type<typeof DocumentVersion>>, IDocumentVersion {
+export class DocumentVersionEntity implements Entity<S.Schema.Type<typeof DocumentVersion>, SerializedDocumentVersion>, IDocumentVersion {
+  // ========== Static Factory Methods ==========
 
   static create = createEntityFactory(
     DocumentVersion,
@@ -82,7 +74,11 @@ export class DocumentVersionEntity implements Entity<S.Schema.Type<typeof Docume
     "DocumentVersion"
   ).unsafe
 
-  private constructor(readonly props: S.Schema.Type<typeof DocumentVersion>) {}
+  // ========== Constructor ==========
+
+  private constructor(readonly props: Readonly<S.Schema.Type<typeof DocumentVersion>>) {}
+
+  // ========== Getters & Computed Properties ==========
 
   get id() { return this.props.id }
   get documentId() { return this.props.documentId }
@@ -112,7 +108,7 @@ export class DocumentVersionEntity implements Entity<S.Schema.Type<typeof Docume
     return this.version === 1
   }
 
-  // Public Domain Methods
+  // ========== Public Domain Methods ==========
   
   hasCreator(): boolean {
     return this.hasCreatorInfo
@@ -139,14 +135,17 @@ export class DocumentVersionEntity implements Entity<S.Schema.Type<typeof Docume
     return this.version < other.version
   }
 
-  // Serialization Methods
+  // ========== Serialization Methods ==========
   
   toWireFormat = (): S.Schema.Type<typeof DocumentVersion> => {
     return this.props
   }
 
-  serialized = (): S.Schema.Type<typeof DocumentVersion> => {
-    return this.props
+  /**
+   * Serializes the entity using Effect Schema encoding.
+   */
+  serialized = (): Effect.Effect<SerializedDocumentVersion, ParseResult.ParseError, never> => {
+    return S.encode(DocumentVersion)(this.props)
   }
 
   toPlainObject = () => {

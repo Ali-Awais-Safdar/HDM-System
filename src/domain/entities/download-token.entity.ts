@@ -1,4 +1,4 @@
-import { Effect, Schema as S, Option } from "effect"
+import { Effect, Schema as S, Option, ParseResult } from "effect"
 import { DownloadToken as DownloadTokenSchema } from "../schema/download-token.schema"
 import { makeDownloadTokenIdSync } from "../value-objects/id.vo"
 import { ValidationError, BusinessRuleViolationError } from "../errors/domain.errors"
@@ -17,18 +17,13 @@ export interface IDownloadToken extends IEntity {
   readonly createdAt: Date
 }
 
-export type SerializedDownloadToken = {
-  id: string
-  token: string
-  documentId: string
-  issuedTo: string
-  expiresAt: Date
-  usedAt: Date | null
-  createdAt: Date
-}
+/**
+ * Serialized DownloadToken type derived from schema encoding.
+ */
+export type SerializedDownloadToken = S.Schema.Encoded<typeof DownloadTokenSchema>
 
-export class DownloadTokenEntity implements Entity<S.Schema.Type<typeof DownloadTokenSchema>>, IDownloadToken {
-  // Factory methods
+export class DownloadTokenEntity implements Entity<S.Schema.Type<typeof DownloadTokenSchema>, SerializedDownloadToken>, IDownloadToken {
+  // ========== Static Factory Methods ==========
   
   static create = createEntityFactory(
     DownloadTokenSchema,
@@ -94,9 +89,11 @@ export class DownloadTokenEntity implements Entity<S.Schema.Type<typeof Download
       .replace(/=/g, '') // Remove padding for URL safety
   }
 
-  private constructor(readonly props: S.Schema.Type<typeof DownloadTokenSchema>) {}
+  // ========== Constructor ==========
 
-  // Getters and Computed Properties
+  private constructor(readonly props: Readonly<S.Schema.Type<typeof DownloadTokenSchema>>) {}
+
+  // ========== Getters & Computed Properties ==========
   
   get id() { return this.props.id }
   get token() { return this.props.token }
@@ -226,14 +223,18 @@ export class DownloadTokenEntity implements Entity<S.Schema.Type<typeof Download
     return Effect.succeed(this)
   }
 
-  // Serialization Methods
+  // ========== Serialization Methods ==========
 
   toWireFormat = (): S.Schema.Type<typeof DownloadTokenSchema> => {
     return this.props
   }
 
-  serialized = (): S.Schema.Type<typeof DownloadTokenSchema> => {
-    return this.props
+  /**
+   * Serializes the entity using Effect Schema encoding.
+   * Properly transforms Option<T> fields to nullable values for external systems.
+   */
+  serialized = (): Effect.Effect<SerializedDownloadToken, ParseResult.ParseError, never> => {
+    return S.encode(DownloadTokenSchema)(this.props)
   }
 
   toPlainObject = (clockSkewToleranceMs: number = 0) => {

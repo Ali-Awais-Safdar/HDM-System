@@ -1,4 +1,4 @@
-import { Effect, Schema as S, Option } from "effect"
+import { Effect, Schema as S, Option, ParseResult } from "effect"
 import { Document } from "../schema/document.schema"
 import { ValidationError, BusinessRuleViolationError } from "../errors/domain.errors"
 import { DocumentId, UserId, DocumentVersionId } from "../value-objects/id.vo"
@@ -16,19 +16,14 @@ export interface IDocument extends IEntity {
   readonly updatedAt: Option.Option<Date>
 }
 
-export type SerializedDocument = {
-  id: string
-  ownerId: string
-  title: string
-  description: string | null
-  tags: readonly string[] | null
-  currentVersionId: string
-  createdAt: Date
-  updatedAt: Date | null
-}
+/**
+ * Serialized Document type derived from schema encoding.
+ * Represents the external format for APIs and persistence.
+ */
+export type SerializedDocument = S.Schema.Encoded<typeof Document>
 
-export class DocumentEntity implements Entity<S.Schema.Type<typeof Document>>, IDocument {
-  // Factory methods
+export class DocumentEntity implements Entity<S.Schema.Type<typeof Document>, SerializedDocument>, IDocument {
+  // ========== Static Factory Methods ==========
   
   static create = createEntityFactory(
     Document,
@@ -73,11 +68,12 @@ export class DocumentEntity implements Entity<S.Schema.Type<typeof Document>>, I
     "Document"
   ).unsafe
 
-  // Constructor (Private)
+  // ========== Constructor ==========
   
-  private constructor(readonly props: S.Schema.Type<typeof Document>) {}
+  private constructor(readonly props: Readonly<S.Schema.Type<typeof Document>>) {}
 
-  // Getters
+  // ========== Getters & Computed Properties ==========
+  
   get id() { return this.props.id }
   get ownerId() { return this.props.ownerId }
   get title() { return this.props.title }
@@ -111,7 +107,8 @@ export class DocumentEntity implements Entity<S.Schema.Type<typeof Document>>, I
     return Option.getOrElse(this.tags, () => [])
   }
 
-  // Domain methods
+  // ========== Public Domain Methods ==========
+  
   hasDescription(): boolean {
     return this.hasDescriptionValue
   }
@@ -233,13 +230,17 @@ export class DocumentEntity implements Entity<S.Schema.Type<typeof Document>>, I
     )
   }
 
-  // Serialization
+  // ========== Serialization Methods ==========
+  
   toWireFormat = (): S.Schema.Type<typeof Document> => {
     return this.props
   }
 
-  serialized = (): S.Schema.Type<typeof Document> => {
-    return this.props
+  /**
+   * Serializes the entity using Effect Schema encoding.
+   */
+  serialized = (): Effect.Effect<SerializedDocument, ParseResult.ParseError, never> => {
+    return S.encode(Document)(this.props)
   }
 
   toPlainObject = () => {

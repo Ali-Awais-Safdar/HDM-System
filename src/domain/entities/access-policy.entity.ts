@@ -1,4 +1,4 @@
-import { Effect, Schema as S } from "effect"
+import { Effect, Schema as S, ParseResult } from "effect"
 import { AccessPolicySchema, PermissionAction, Role, SubjectType, PermissionLevel } from "../schema/access-policy.schema"
 import { ValidationError, BusinessRuleViolationError } from "../errors/domain.errors"
 import { AccessPolicyValidationError } from "../errors/access-policy.errors"
@@ -18,18 +18,12 @@ export interface IAccessPolicy extends IEntity {
   readonly createdAt: Date
 }
 
-export type SerializedAccessPolicy = {
-  id: string
-  resourceType: "document"
-  resourceId: string
-  subjectType: SubjectType
-  subjectId?: string
-  role?: Role
-  actions: readonly PermissionAction[]
-  effect: "allow"
-  createdAt?: Date
-}
-export class AccessPolicyEntity implements Entity<S.Schema.Type<typeof AccessPolicySchema>>, IAccessPolicy {
+/**
+ * Serialized AccessPolicy type derived from schema encoding.
+ */
+export type SerializedAccessPolicy = S.Schema.Encoded<typeof AccessPolicySchema>
+export class AccessPolicyEntity implements Entity<S.Schema.Type<typeof AccessPolicySchema>, SerializedAccessPolicy>, IAccessPolicy {
+  // ========== Static Factory Methods ==========
 
   static create = createEntityFactory(
     AccessPolicySchema,
@@ -123,9 +117,12 @@ export class AccessPolicyEntity implements Entity<S.Schema.Type<typeof AccessPol
     "AccessPolicy"
   ).unsafe
 
-  private constructor(readonly props: S.Schema.Type<typeof AccessPolicySchema>) {}
+  // ========== Constructor ==========
 
-  // Getters
+  private constructor(readonly props: Readonly<S.Schema.Type<typeof AccessPolicySchema>>) {}
+
+  // ========== Getters & Computed Properties ==========
+  
   get id() { return this.props.id }
   get resourceType() { return this.props.resourceType }
   get resourceId() { return this.props.resourceId }
@@ -165,7 +162,8 @@ export class AccessPolicyEntity implements Entity<S.Schema.Type<typeof AccessPol
     return "read"
   }
 
-  // Domain methods
+  // ========== Public Domain Methods ==========
+  
   appliesToSubject(subjectType: SubjectType, subjectId?: string, role?: Role): boolean {
     if (this.subjectType !== subjectType) return false
     
@@ -260,13 +258,18 @@ export class AccessPolicyEntity implements Entity<S.Schema.Type<typeof AccessPol
     )
   }
 
-  // Serialization
+  // ========== Serialization Methods ==========
+  
   toWireFormat = (): S.Schema.Type<typeof AccessPolicySchema> => {
     return this.props
   }
 
-  serialized = (): S.Schema.Type<typeof AccessPolicySchema> => {
-    return this.props
+  /**
+   * Serializes the entity using Effect Schema encoding.
+   * Properly transforms optional fields to external format for APIs and persistence.
+   */
+  serialized = (): Effect.Effect<SerializedAccessPolicy, ParseResult.ParseError, never> => {
+    return S.encode(AccessPolicySchema)(this.props)
   }
 
   toPlainObject = () => {
