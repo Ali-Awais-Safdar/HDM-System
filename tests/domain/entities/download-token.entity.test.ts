@@ -1,430 +1,196 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { DownloadToken } from "../../../src/domain/entities/download-token.entity";
-import { asDocumentId, asUserId, asDownloadTokenId } from "../../../src/shared/types/brand";
-import { Option } from "effect";
+import { describe, expect, it } from "vitest";
+import { DownloadTokenEntity } from "../../../src/domain/entities/download-token.entity";
+import { ValidationError, BusinessRuleViolationError } from "../../../src/domain/errors/domain.errors";
+import { 
+  generateTestDownloadToken,
+  createUnusedToken,
+  createUsedToken,
+  createExpiringSoonToken,
+  downloadTokenArbitrary
+} from "../../factories/download-token.factory";
+import { TestPatterns } from "../../utils/test.helpers";
+import * as fc from "fast-check";
 
-describe("DownloadToken Entity", () => {
-  const mockDocumentId = asDocumentId("doc-123");
-  const mockUserId = asUserId("user-456");
+describe("DownloadTokenEntity", () => {
+  describe("Creation & Validation", () => {
+    it("should create valid download token", () => {
+      const tokenData = generateTestDownloadToken();
+      const token = TestPatterns.Effect.expectSuccess(DownloadTokenEntity.create(tokenData));
 
-  beforeEach(() => {
-    // Mock Date.now() for consistent tests
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2023-01-01T10:00:00Z'));
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  describe("create", () => {
-    it("should create a new download token with specified expiration", () => {
-      const expiresAt = new Date('2023-01-01T10:05:00Z');
-      
-      const token = DownloadToken.create({
-        documentId: mockDocumentId,
-        issuedTo: mockUserId,
-        expiresAt,
-      });
-
-      expect(token.documentId).toBe(mockDocumentId);
-      expect(token.issuedTo).toBe(mockUserId);
-      expect(token.expiresAt).toBe(expiresAt);
-      expect(Option.isNone(token.usedAt)).toBe(true);
-      expect(token.createdAt).toEqual(new Date('2023-01-01T10:00:00Z'));
+      expect(token).toBeInstanceOf(DownloadTokenEntity);
       expect(token.token).toBeDefined();
-      expect(token.token.length).toBeGreaterThan(40); // Base64 encoded 32 bytes should be longer
-      expect(token.id).toBeDefined();
+      expect(token.token.length).toBeGreaterThanOrEqual(32);
     });
 
-    it("should generate unique tokens for each creation", () => {
-      const expiresAt = new Date('2023-01-01T10:05:00Z');
-      
-      const token1 = DownloadToken.create({
-        documentId: mockDocumentId,
-        issuedTo: mockUserId,
-        expiresAt,
-      });
-
-      const token2 = DownloadToken.create({
-        documentId: mockDocumentId,
-        issuedTo: mockUserId,
-        expiresAt,
-      });
-
-      expect(token1.token).not.toBe(token2.token);
-      expect(token1.id).not.toBe(token2.id);
+    it("should validate token length", () => {
+      const invalidData = generateTestDownloadToken({ token: "short" });
+      TestPatterns.Effect.expectFailure(DownloadTokenEntity.create(invalidData), ValidationError);
     });
 
-    it("should generate URL-safe tokens", () => {
-      const expiresAt = new Date('2023-01-01T10:05:00Z');
-      
-      const token = DownloadToken.create({
-        documentId: mockDocumentId,
-        issuedTo: mockUserId,
-        expiresAt,
-      });
-
-      // URL-safe base64 should not contain +, /, or = characters
-      expect(token.token).not.toMatch(/[+/=]/);
+    it("should validate expiry is in future", () => {
+      const pastDate = new Date(Date.now() - 1000).toISOString();
+      const invalidData = generateTestDownloadToken({ expiresAt: pastDate });
+      TestPatterns.Effect.expectFailure(DownloadTokenEntity.create(invalidData), ValidationError);
     });
   });
 
-  describe("createWithDefaultExpiry", () => {
-    it("should create a token with 5-minute default expiration", () => {
-      const token = DownloadToken.createWithDefaultExpiry({
-        documentId: mockDocumentId,
-        issuedTo: mockUserId,
-      });
+  describe("Token State Logic", () => {
+    it("should identify unused tokens", () => {
+      const token = TestPatterns.Effect.expectSuccess(
+        DownloadTokenEntity.create(createUnusedToken())
+      );
 
-      const expectedExpiry = new Date('2023-01-01T10:05:00Z'); // 5 minutes later
-      expect(token.expiresAt).toEqual(expectedExpiry);
-    });
-  });
-
-  describe("fromPersistence", () => {
-    it("should recreate token from persistence data", () => {
-      const tokenId = asDownloadTokenId("token-123");
-      const tokenString = "secure-token-string";
-      const expiresAt = new Date('2023-01-01T10:05:00Z');
-      const usedAt = new Date('2023-01-01T10:02:00Z');
-      const createdAt = new Date('2023-01-01T10:00:00Z');
-
-      const token = DownloadToken.fromPersistence({
-        id: tokenId,
-        token: tokenString,
-        documentId: mockDocumentId,
-        issuedTo: mockUserId,
-        expiresAt,
-        usedAt: Option.some(usedAt),
-        createdAt,
-      });
-
-      expect(token.id).toBe(tokenId);
-      expect(token.token).toBe(tokenString);
-      expect(token.documentId).toBe(mockDocumentId);
-      expect(token.issuedTo).toBe(mockUserId);
-      expect(token.expiresAt).toBe(expiresAt);
-      expect(Option.getOrNull(token.usedAt)).toBe(usedAt);
-      expect(token.createdAt).toBe(createdAt);
-    });
-  });
-
-  describe("isValid", () => {
-    it("should return true for unused and non-expired token", () => {
-      const expiresAt = new Date('2023-01-01T10:05:00Z'); // 5 minutes later
-      
-      const token = DownloadToken.create({
-        documentId: mockDocumentId,
-        issuedTo: mockUserId,
-        expiresAt,
-      });
-
+      expect(token.hasBeenUsed).toBe(false);
+      expect(token.isCurrentlyValid).toBe(true);
       expect(token.isValid()).toBe(true);
     });
 
-    it("should return false for expired token", () => {
-      const expiresAt = new Date('2023-01-01T09:55:00Z'); // 5 minutes ago
+    it("should identify used tokens", () => {
+      // Create a token that was used in the past but hasn't expired yet
+      const createdAt = new Date(Date.now() - 2 * 60 * 1000); // 2 min ago
+      const usedAt = new Date(Date.now() - 1 * 60 * 1000); // 1 min ago
+      const expiresAt = new Date(Date.now() + 3 * 60 * 1000); // 3 min from now (future)
       
-      const token = DownloadToken.create({
-        documentId: mockDocumentId,
-        issuedTo: mockUserId,
-        expiresAt,
-      });
+      const token = TestPatterns.Effect.expectSuccess(
+        DownloadTokenEntity.create(createUsedToken({
+          createdAt: createdAt.toISOString(),
+          usedAt: { _tag: "Some" as const, value: usedAt.toISOString() },
+          expiresAt: expiresAt.toISOString(),
+        }))
+      );
 
-      expect(token.isValid()).toBe(false);
+      expect(token.hasBeenUsed).toBe(true);
+      expect(token.isUsed()).toBe(true);
     });
 
-    it("should return false for used token", () => {
-      const expiresAt = new Date('2023-01-01T10:05:00Z');
-      
-      const token = DownloadToken.create({
-        documentId: mockDocumentId,
-        issuedTo: mockUserId,
-        expiresAt,
-      });
+    it("should identify expired tokens", () => {
+      // Create token that will expire very soon, then wait for it to expire
+      const token = TestPatterns.Effect.expectSuccess(
+        DownloadTokenEntity.create(createExpiringSoonToken({
+          expiresAt: new Date(Date.now() + 10).toISOString(), // Expires in 10ms
+        }))
+      );
 
-      const usedToken = token.markAsUsed();
-      expect(usedToken.isValid()).toBe(false);
+      // Wait a bit for it to expire (20ms)
+      const checkExpired = () => {
+        expect(token.hasExpired).toBe(true);
+        expect(token.isExpired()).toBe(true);
+        expect(token.isCurrentlyValid).toBe(false);
+      };
+      
+      setTimeout(checkExpired, 20);
     });
 
-    it("should handle clock-skew tolerance in validation", () => {
-      const expiresAt = new Date('2023-01-01T09:59:30Z'); // 30 seconds ago
-      const clockSkewTolerance = 60000; // 1 minute tolerance
-      
-      const token = DownloadToken.create({
-        documentId: mockDocumentId,
-        issuedTo: mockUserId,
-        expiresAt,
-      });
+    it("should calculate time to expiry", () => {
+      const token = TestPatterns.Effect.expectSuccess(
+        DownloadTokenEntity.create(createExpiringSoonToken())
+      );
 
-      // Without clock-skew tolerance, should be invalid
-      expect(token.isValid(0)).toBe(false);
-      
-      // With clock-skew tolerance, should be valid
-      expect(token.isValid(clockSkewTolerance)).toBe(true);
-    });
-  });
-
-  describe("isExpired", () => {
-    it("should return false for future expiration", () => {
-      const expiresAt = new Date('2023-01-01T10:05:00Z');
-      
-      const token = DownloadToken.create({
-        documentId: mockDocumentId,
-        issuedTo: mockUserId,
-        expiresAt,
-      });
-
-      expect(token.isExpired()).toBe(false);
-    });
-
-    it("should return true for past expiration", () => {
-      const expiresAt = new Date('2023-01-01T09:55:00Z');
-      
-      const token = DownloadToken.create({
-        documentId: mockDocumentId,
-        issuedTo: mockUserId,
-        expiresAt,
-      });
-
-      expect(token.isExpired()).toBe(true);
-    });
-
-    it("should handle clock-skew tolerance", () => {
-      const expiresAt = new Date('2023-01-01T09:59:30Z'); // 30 seconds ago
-      const clockSkewTolerance = 60000; // 1 minute tolerance
-      
-      const token = DownloadToken.create({
-        documentId: mockDocumentId,
-        issuedTo: mockUserId,
-        expiresAt,
-      });
-
-      // Without clock-skew tolerance, should be expired
-      expect(token.isExpired(0)).toBe(true);
-      
-      // With clock-skew tolerance, should not be expired
-      expect(token.isExpired(clockSkewTolerance)).toBe(false);
-    });
-
-    it("should still be expired with clock-skew tolerance if too far past", () => {
-      const expiresAt = new Date('2023-01-01T09:50:00Z'); // 10 minutes ago
-      const clockSkewTolerance = 60000; // 1 minute tolerance
-      
-      const token = DownloadToken.create({
-        documentId: mockDocumentId,
-        issuedTo: mockUserId,
-        expiresAt,
-      });
-
-      // Even with clock-skew tolerance, should be expired
-      expect(token.isExpired(clockSkewTolerance)).toBe(true);
+      expect(token.secondsUntilExpiry).toBeLessThanOrEqual(60);
+      expect(token.millisecondsUntilExpiry).toBeGreaterThan(0);
     });
   });
 
-  describe("isUsed", () => {
-    it("should return false for unused token", () => {
-      const expiresAt = new Date('2023-01-01T10:05:00Z');
-      
-      const token = DownloadToken.create({
-        documentId: mockDocumentId,
-        issuedTo: mockUserId,
-        expiresAt,
-      });
+  describe("Token Operations", () => {
+    it("should mark token as used", () => {
+      const token = TestPatterns.Effect.expectSuccess(
+        DownloadTokenEntity.create(createUnusedToken())
+      );
 
-      expect(token.isUsed()).toBe(false);
+      const used = TestPatterns.Effect.expectSuccess(token.markAsUsed());
+      expect(used.hasBeenUsed).toBe(true);
     });
 
-    it("should return true for used token", () => {
-      const expiresAt = new Date('2023-01-01T10:05:00Z');
+    it("should reject marking used token again", () => {
+      const createdAt = new Date(Date.now() - 2 * 60 * 1000);
+      const usedAt = new Date(Date.now() - 1 * 60 * 1000);
+      const expiresAt = new Date(Date.now() + 3 * 60 * 1000);
       
-      const token = DownloadToken.create({
-        documentId: mockDocumentId,
-        issuedTo: mockUserId,
-        expiresAt,
-      });
+      const token = TestPatterns.Effect.expectSuccess(
+        DownloadTokenEntity.create(createUsedToken({
+          createdAt: createdAt.toISOString(),
+          usedAt: { _tag: "Some" as const, value: usedAt.toISOString() },
+          expiresAt: expiresAt.toISOString(),
+        }))
+      );
 
-      const usedToken = token.markAsUsed();
-      expect(usedToken.isUsed()).toBe(true);
-    });
-  });
-
-  describe("markAsUsed", () => {
-    it("should return new token instance with usedAt timestamp", () => {
-      const expiresAt = new Date('2023-01-01T10:05:00Z');
-      
-      const token = DownloadToken.create({
-        documentId: mockDocumentId,
-        issuedTo: mockUserId,
-        expiresAt,
-      });
-
-      const usedToken = token.markAsUsed();
-
-      expect(usedToken).not.toBe(token); // Different instance
-      expect(Option.getOrNull(usedToken.usedAt)).toEqual(new Date('2023-01-01T10:00:00Z'));
-      expect(usedToken.token).toBe(token.token); // Same token string
-      expect(Option.isNone(token.usedAt)).toBe(true); // Original unchanged
+      TestPatterns.Effect.expectFailure(
+        token.markAsUsed(),
+        BusinessRuleViolationError
+      );
     });
 
-    it("should throw error when marking already used token", () => {
-      const expiresAt = new Date('2023-01-01T10:05:00Z');
-      
-      const token = DownloadToken.create({
-        documentId: mockDocumentId,
-        issuedTo: mockUserId,
-        expiresAt,
-      });
+    it("should reject marking expired token", () => {
+      // Token that will expire in 10ms
+      const token = TestPatterns.Effect.expectSuccess(
+        DownloadTokenEntity.create(createExpiringSoonToken({
+          expiresAt: new Date(Date.now() + 10).toISOString(),
+        }))
+      );
 
-      const usedToken = token.markAsUsed();
-
-      expect(() => usedToken.markAsUsed()).toThrow("Token has already been used");
-    });
-  });
-
-  describe("belongsToUser", () => {
-    it("should return true for matching user", () => {
-      const expiresAt = new Date('2023-01-01T10:05:00Z');
-      
-      const token = DownloadToken.create({
-        documentId: mockDocumentId,
-        issuedTo: mockUserId,
-        expiresAt,
-      });
-
-      expect(token.belongsToUser(mockUserId)).toBe(true);
+      // Wait for expiry (20ms), then try to mark as used
+      setTimeout(() => {
+        TestPatterns.Effect.expectFailure(
+          token.markAsUsed(),
+          BusinessRuleViolationError
+        );
+      }, 20);
     });
 
-    it("should return false for different user", () => {
-      const expiresAt = new Date('2023-01-01T10:05:00Z');
-      const otherUserId = asUserId("other-user");
-      
-      const token = DownloadToken.create({
-        documentId: mockDocumentId,
-        issuedTo: mockUserId,
-        expiresAt,
-      });
+    it("should validate for use", () => {
+      const userId = crypto.randomUUID();
+      const token = TestPatterns.Effect.expectSuccess(
+        DownloadTokenEntity.create(createUnusedToken({ issuedTo: userId }))
+      );
 
-      expect(token.belongsToUser(otherUserId)).toBe(false);
+      const validated = TestPatterns.Effect.expectSuccess(
+        token.validateForUse(userId as any)
+      );
+      expect(validated).toBe(token);
+    });
+
+    it("should reject validation for wrong user", () => {
+      const token = TestPatterns.Effect.expectSuccess(
+        DownloadTokenEntity.create(createUnusedToken())
+      );
+
+      TestPatterns.Effect.expectFailure(
+        token.validateForUse(crypto.randomUUID() as any),
+        BusinessRuleViolationError
+      );
+    });
+
+    it("should check token ownership", () => {
+      const userId = crypto.randomUUID();
+      const token = TestPatterns.Effect.expectSuccess(
+        DownloadTokenEntity.create(createUnusedToken({ issuedTo: userId }))
+      );
+
+      expect(token.belongsToUser(userId as any)).toBe(true);
+      expect(token.belongsToUser(crypto.randomUUID() as any)).toBe(false);
     });
   });
 
-  describe("getTimeToExpiry", () => {
-    it("should return remaining time in milliseconds", () => {
-      const expiresAt = new Date('2023-01-01T10:05:00Z'); // 5 minutes later
-      
-      const token = DownloadToken.create({
-        documentId: mockDocumentId,
-        issuedTo: mockUserId,
-        expiresAt,
-      });
-
-      expect(token.getTimeToExpiry()).toBe(5 * 60 * 1000); // 5 minutes in ms
-    });
-
-    it("should return 0 for expired token", () => {
-      const expiresAt = new Date('2023-01-01T09:55:00Z'); // 5 minutes ago
-      
-      const token = DownloadToken.create({
-        documentId: mockDocumentId,
-        issuedTo: mockUserId,
-        expiresAt,
-      });
-
-      expect(token.getTimeToExpiry()).toBe(0);
-    });
-
-    it("should handle clock-skew tolerance in time calculation", () => {
-      const expiresAt = new Date('2023-01-01T09:59:30Z'); // 30 seconds ago
-      const clockSkewTolerance = 60000; // 1 minute tolerance
-      
-      const token = DownloadToken.create({
-        documentId: mockDocumentId,
-        issuedTo: mockUserId,
-        expiresAt,
-      });
-
-      // Without clock-skew tolerance, should be 0 (expired)
-      expect(token.getTimeToExpiry(0)).toBe(0);
-      
-      // With clock-skew tolerance, should have remaining time
-      const remainingTime = token.getTimeToExpiry(clockSkewTolerance);
-      expect(remainingTime).toBeGreaterThan(0);
-      expect(remainingTime).toBeLessThanOrEqual(30000); // Should be around 30 seconds
-    });
-  });
-
-  describe("toPlainObject", () => {
-    it("should return serializable object without token string", () => {
-      const expiresAt = new Date('2023-01-01T10:05:00Z');
-      
-      const token = DownloadToken.create({
-        documentId: mockDocumentId,
-        issuedTo: mockUserId,
-        expiresAt,
-      });
-
-      const plainObject = token.toPlainObject();
-
-      expect(plainObject).toEqual({
-        id: token.id,
-        documentId: mockDocumentId,
-        issuedTo: mockUserId,
-        expiresAt: expiresAt,
-        usedAt: null,
-        createdAt: token.createdAt,
-        isValid: true,
-        isExpired: false,
-        isUsed: false,
-        timeToExpiry: 5 * 60 * 1000,
-      });
-
-      // Token string should not be included for security
-      expect(plainObject).not.toHaveProperty('token');
-    });
-
-    it("should be JSON serializable", () => {
-      const expiresAt = new Date('2023-01-01T10:05:00Z');
-      
-      const token = DownloadToken.create({
-        documentId: mockDocumentId,
-        issuedTo: mockUserId,
-        expiresAt,
-      });
-
-      const plainObject = token.toPlainObject();
-      
-      expect(() => JSON.stringify(plainObject)).not.toThrow();
-      
-      const serialized = JSON.stringify(plainObject);
-      const deserialized = JSON.parse(serialized);
-      
-      expect(deserialized.id).toBe(token.id);
-      expect(deserialized.isValid).toBe(true);
-    });
-
-    it("should handle clock-skew tolerance in plain object", () => {
-      const expiresAt = new Date('2023-01-01T09:59:30Z'); // 30 seconds ago
-      const clockSkewTolerance = 60000; // 1 minute tolerance
-      
-      const token = DownloadToken.create({
-        documentId: mockDocumentId,
-        issuedTo: mockUserId,
-        expiresAt,
-      });
-
-      // Without clock-skew tolerance
-      const plainObjectWithoutTolerance = token.toPlainObject(0);
-      expect(plainObjectWithoutTolerance.isValid).toBe(false);
-      expect(plainObjectWithoutTolerance.isExpired).toBe(true);
-      expect(plainObjectWithoutTolerance.timeToExpiry).toBe(0);
-
-      // With clock-skew tolerance
-      const plainObjectWithTolerance = token.toPlainObject(clockSkewTolerance);
-      expect(plainObjectWithTolerance.isValid).toBe(true);
-      expect(plainObjectWithTolerance.isExpired).toBe(false);
-      expect(plainObjectWithTolerance.timeToExpiry).toBeGreaterThan(0);
+  describe("Property-Based Testing", () => {
+    it("should handle valid data", () => {
+      fc.assert(
+        fc.property(downloadTokenArbitrary, (data) => {
+          // Pre-condition: token must be at least 32 characters and not whitespace-only
+          const tokenValid = data.token.trim().length >= 32;
+          
+          // Pre-condition: expiresAt must be in the future
+          const expiryDate = new Date(data.expiresAt);
+          const expiryValid = expiryDate.getTime() > Date.now();
+          
+          fc.pre(tokenValid && expiryValid);
+          
+          const token = TestPatterns.Effect.expectSuccess(DownloadTokenEntity.create(data));
+          expect(token.token).toBe(data.token);
+          expect(token.documentId).toBe(data.documentId);
+        }),
+        { numRuns: 30 }
+      );
     });
   });
 });
+

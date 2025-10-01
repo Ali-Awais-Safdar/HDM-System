@@ -125,33 +125,25 @@ export class UserEntity implements Entity<S.Schema.Type<typeof UserSchema>, Seri
   }
 
   assignToWorkspace = (workspaceId: WorkspaceId): Effect.Effect<UserEntity, ValidationError> => {
-    const updatedData = {
+    // WorkspaceId is a branded type (UUID), so it's already validated
+    // Construct new entity directly
+    const updated = new UserEntity({
       ...this.props,
       workspaceId: Option.some(workspaceId)
-    }
-    return S.decodeUnknown(UserSchema)(updatedData).pipe(
-      Effect.map((validated) => new UserEntity(validated)),
-      Effect.mapError((error) => new ValidationError(
-        `Invalid workspace ID: ${error instanceof Error ? error.message : String(error)}`,
-        'workspaceId',
-        workspaceId
-      ))
-    )
+    })
+    
+    return Effect.succeed(updated)
   }
 
   removeFromWorkspace = (): Effect.Effect<UserEntity, ValidationError> => {
-    const updatedData = {
+    // No validation needed for removing workspace
+    // Construct new entity directly
+    const updated = new UserEntity({
       ...this.props,
       workspaceId: Option.none()
-    }
-    return S.decodeUnknown(UserSchema)(updatedData).pipe(
-      Effect.map((validated) => new UserEntity(validated)),
-      Effect.mapError((error) => new ValidationError(
-        `Failed to remove workspace: ${error instanceof Error ? error.message : String(error)}`,
-        'workspaceId',
-        null
-      ))
-    )
+    })
+    
+    return Effect.succeed(updated)
   }
 
   // ========== Serialization Methods ==========

@@ -175,20 +175,14 @@ export class DownloadTokenEntity implements Entity<S.Schema.Type<typeof Download
       ))
     }
 
-    // Update and validate
-    const updatedData = {
+    // Construct new entity directly with usedAt set to now
+    const usedAt = new Date()
+    const updated = new DownloadTokenEntity({
       ...this.props,
-      usedAt: Option.some(new Date())
-    }
+      usedAt: Option.some(usedAt)
+    })
 
-    return S.decodeUnknown(DownloadTokenSchema)(updatedData).pipe(
-      Effect.mapError((error) => new ValidationError(
-        `Invalid token data: ${error instanceof Error ? error.message : String(error)}`,
-        'usedAt',
-        updatedData.usedAt
-      )),
-      Effect.map(validated => new DownloadTokenEntity(validated))
-    )
+    return Effect.succeed(updated)
   }
 
   validateForUse = (userId: UserId, clockSkewToleranceMs: number = 0): Effect.Effect<DownloadTokenEntity, BusinessRuleViolationError> => {

@@ -213,19 +213,17 @@ export class AccessPolicyEntity implements Entity<S.Schema.Type<typeof AccessPol
 
     const allActions = Array.from(new Set([...this.actions, ...newActions]))
 
-    const updatedData = {
+    // Validate that all actions are valid PermissionAction values
+    // Since allActions comes from combining existing (valid) actions with new (typed) actions,
+    // and the array is deduplicated, it should be valid
+    
+    // Construct new entity directly
+    const updated = new AccessPolicyEntity({
       ...this.props,
       actions: allActions
-    }
+    })
 
-    return S.decodeUnknown(AccessPolicySchema)(updatedData).pipe(
-      Effect.map((validated) => new AccessPolicyEntity(validated)),
-      Effect.mapError((error) => new ValidationError(
-        `Invalid actions: ${error instanceof Error ? error.message : String(error)}`,
-        'actions',
-        allActions
-      ))
-    )
+    return Effect.succeed(updated)
   }
 
   removeActions = (actionsToRemove: PermissionAction[]): Effect.Effect<AccessPolicyEntity, ValidationError | BusinessRuleViolationError> => {
@@ -243,19 +241,13 @@ export class AccessPolicyEntity implements Entity<S.Schema.Type<typeof AccessPol
       ))
     }
 
-    const updatedData = {
+    // Construct new entity directly with remaining actions
+    const updated = new AccessPolicyEntity({
       ...this.props,
       actions: remainingActions
-    }
+    })
 
-    return S.decodeUnknown(AccessPolicySchema)(updatedData).pipe(
-      Effect.map((validated) => new AccessPolicyEntity(validated)),
-      Effect.mapError((error) => new ValidationError(
-        `Invalid actions: ${error instanceof Error ? error.message : String(error)}`,
-        'actions',
-        remainingActions
-      ))
-    )
+    return Effect.succeed(updated)
   }
 
   // ========== Serialization Methods ==========

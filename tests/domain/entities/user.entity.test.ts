@@ -1,77 +1,104 @@
-import { describe, it, expect } from "vitest";
-import { User } from "../../../src/domain/entities/user.entity";
-import { asUserId, asEmailAddress } from "../../../src/shared/types/brand";
+import { describe, expect, it } from "vitest";
+import { UserEntity } from "../../../src/domain/entities/user.entity";
+import { ValidationError } from "../../../src/domain/errors/domain.errors";
+import { 
+  generateTestUser, 
+  createAdminUser,
+  createRegularUser,
+  createUserWithWorkspace,
+  createUserWithoutWorkspace,
+  userArbitrary
+} from "../../factories/user.factory";
+import { TestPatterns } from "../../utils/test.helpers";
+import * as fc from "fast-check";
 
-describe("User Entity", () => {
-  const validUserId = asUserId("01234567-89ab-cdef-0123-456789abcdef");
-  const validEmail = asEmailAddress("test@example.com");
-  const validPasswordHash = "hashed_password_123";
+describe("UserEntity", () => {
+  describe("Entity Creation", () => {
+    it("should create valid user", () => {
+      const userData = generateTestUser();
+      const user = TestPatterns.Effect.expectSuccess(UserEntity.create(userData));
 
-  describe("creation", () => {
-    it("should create a user with valid properties", () => {
-      const user = User.create({
-        id: validUserId,
-        email: validEmail,
-        passwordHash: validPasswordHash,
-        role: "user"
-      });
-
-      expect(user.id).toBe(validUserId);
-      expect(user.email).toBe(validEmail);
-      expect(user.passwordHash).toBe(validPasswordHash);
-      expect(user.role).toBe("user");
-      expect(user.createdAt).toBeInstanceOf(Date);
+      expect(user).toBeInstanceOf(UserEntity);
+      expect(user.email).toBeDefined();
+      expect(user.roles.length).toBeGreaterThan(0);
     });
 
-    it("should create an admin user", () => {
-      const user = User.create({
-        id: validUserId,
-        email: validEmail,
-        passwordHash: validPasswordHash,
-        role: "admin"
-      });
-
-      expect(user.role).toBe("admin");
+    it("should validate email format", () => {
+      const invalidData = generateTestUser({ email: "invalid-email" as any });
+      TestPatterns.Effect.expectFailure(UserEntity.create(invalidData), ValidationError);
     });
   });
 
-  describe("role-based permissions", () => {
-    it("should identify admin users correctly", () => {
-      const adminUser = User.create({
-        id: validUserId,
-        email: validEmail,
-        passwordHash: validPasswordHash,
-        role: "admin"
-      });
+  describe("Optional Fields", () => {
+    it("should handle workspace assignment", () => {
+      const workspaceId = crypto.randomUUID();
+      const userData = createUserWithWorkspace(workspaceId);
+      const user = TestPatterns.Effect.expectSuccess(UserEntity.create(userData));
 
-      const regularUser = User.create({
-        id: validUserId,
-        email: validEmail,
-        passwordHash: validPasswordHash,
-        role: "user"
-      });
-
-      expect(adminUser.isAdmin()).toBe(true);
-      expect(regularUser.isAdmin()).toBe(false);
+      const wsId = TestPatterns.Option.expectSome(user.workspaceId);
+      expect(wsId).toBe(workspaceId);
+      expect(user.hasWorkspaceAssignment).toBe(true);
     });
 
-    it("should determine user management permissions", () => {
-      const adminUser = User.create({
-        id: validUserId,
-        email: validEmail,
-        passwordHash: validPasswordHash,
-        role: "admin"
-      });
+    it("should handle missing workspace", () => {
+      const userData = createUserWithoutWorkspace();
+      const user = TestPatterns.Effect.expectSuccess(UserEntity.create(userData));
 
-      const regularUser = User.create({
-        id: validUserId,
-        email: validEmail,
-        passwordHash: validPasswordHash,
-        role: "user"
-      });
+      TestPatterns.Option.expectNone(user.workspaceId);
+      expect(user.hasWorkspaceAssignment).toBe(false);
+    });
+  });
 
-      expect(adminUser.canManageUsers()).toBe(true);
-      expect(regularUser.canManageUsers()).toBe(false);
+  describe("Business Logic", () => {
+    it("should identify admin users", () => {
+      const adminData = createAdminUser();
+      const regularData = createRegularUser();
+
+      const admin = TestPatterns.Effect.expectSuccess(UserEntity.create(adminData));
+      const regular = TestPatterns.Effect.expectSuccess(UserEntity.create(regularData));
+
+      expect(admin.isAdminUser).toBe(true);
+      expect(admin.isAdmin()).toBe(true);
+      expect(regular.isAdminUser).toBe(false);
+    });
+
+    it("should assign/remove workspace", () => {
+      const user = TestPatterns.Effect.expectSuccess(
+        UserEntity.create(createUserWithoutWorkspace())
+      );
+
+      const workspaceId = crypto.randomUUID();
+      const updated = TestPatterns.Effect.expectSuccess(user.assignToWorkspace(workspaceId as any));
+      
+      expect(updated.hasWorkspace()).toBe(true);
+
+      const removed = TestPatterns.Effect.expectSuccess(updated.removeFromWorkspace());
+      expect(removed.hasWorkspace()).toBe(false);
+    });
+
+    it("should check workspace membership", () => {
+      const workspaceId = crypto.randomUUID();
+      const user = TestPatterns.Effect.expectSuccess(
+        UserEntity.create(createUserWithWorkspace(workspaceId))
+      );
+
+      expect(user.belongsToWorkspace(workspaceId as any)).toBe(true);
+      expect(user.belongsToWorkspace(crypto.randomUUID() as any)).toBe(false);
+    });
+  });
+
+  describe("Property-Based Testing", () => {
+    it("should handle any valid user data", () => {
+      fc.assert(
+        fc.property(userArbitrary, (data) => {
+          const user = TestPatterns.Effect.expectSuccess(UserEntity.create(data));
+          expect(user).toBeInstanceOf(UserEntity);
+          expect(user.email).toBe(data.email);
+          expect(user.roles).toEqual(data.roles);
+        }),
+        { numRuns: 50 }
+      );
     });
   });
 });
+

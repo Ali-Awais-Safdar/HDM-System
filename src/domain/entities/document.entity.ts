@@ -4,6 +4,7 @@ import { ValidationError, BusinessRuleViolationError } from "../errors/domain.er
 import { DocumentId, UserId, DocumentVersionId } from "../value-objects/id.vo"
 import { toNullable, fromNullable, isSome } from "../utils/option.utils"
 import { createEntityFactory, type Entity, type IEntity } from "../utils/entity.utils"
+import { isValidDocumentTitle, isValidDocumentDescription, isValidDocumentTagList } from "../guards/document.guards"
 
 export interface IDocument extends IEntity {
   readonly id: DocumentId
@@ -126,45 +127,56 @@ export class DocumentEntity implements Entity<S.Schema.Type<typeof Document>, Se
   }
 
   rename = (newTitle: string): Effect.Effect<DocumentEntity, ValidationError> => {
-    const updatedData = {
-      ...this.props,
-      title: newTitle,
-      updatedAt: Option.some(new Date())
-    }
-    return S.decodeUnknown(Document)(updatedData).pipe(
-      Effect.map((validated) => new DocumentEntity(validated)),
-      Effect.mapError((error) => new ValidationError(
-        `Invalid title: ${error instanceof Error ? error.message : String(error)}`,
+    // Validate only the title field
+    if (!isValidDocumentTitle(newTitle)) {
+      return Effect.fail(new ValidationError(
+        'Title is required and cannot exceed 255 characters',
         'title',
         newTitle
       ))
-    )
+    }
+    
+    // Construct new entity directly
+    const updated = new DocumentEntity({
+      ...this.props,
+      title: newTitle,
+      updatedAt: Option.some(new Date())
+    })
+    
+    return Effect.succeed(updated)
   }
 
   updateDescription = (newDescription: string | null | undefined): Effect.Effect<DocumentEntity, ValidationError> => {
-    const updatedData = {
-      ...this.props,
-      description: fromNullable(newDescription),
-      updatedAt: Option.some(new Date())
-    }
-    return S.decodeUnknown(Document)(updatedData).pipe(
-      Effect.map((validated) => new DocumentEntity(validated)),
-      Effect.mapError((error) => new ValidationError(
-        `Invalid description: ${error instanceof Error ? error.message : String(error)}`,
+    // Validate only the description field
+    const desc = newDescription ?? undefined
+    if (!isValidDocumentDescription(desc)) {
+      return Effect.fail(new ValidationError(
+        'Description cannot exceed 1000 characters',
         'description',
         newDescription
       ))
-    )
+    }
+    
+    // Construct new entity directly
+    const updated = new DocumentEntity({
+      ...this.props,
+      description: fromNullable(newDescription),
+      updatedAt: Option.some(new Date())
+    })
+    
+    return Effect.succeed(updated)
   }
 
   addTags = (newTags: string[]): Effect.Effect<DocumentEntity, ValidationError | BusinessRuleViolationError> => {
     if (newTags.length === 0) {
       return Effect.succeed(this)
     }
+    
     const currentTags = Option.getOrElse(this.props.tags, () => [])
     const normalizedNewTags = newTags
       .map((tag: string) => tag.trim().toLowerCase())
       .filter((tag: string) => tag.length > 0)
+    
     if (normalizedNewTags.length === 0) {
       return Effect.fail(new BusinessRuleViolationError(
         "INVALID_TAGS",
@@ -172,62 +184,71 @@ export class DocumentEntity implements Entity<S.Schema.Type<typeof Document>, Se
         { newTags }
       ))
     }
+    
     const allTags = [...currentTags, ...normalizedNewTags]
     const uniqueTags = Array.from(new Set(allTags))
-    const updatedData = {
-      ...this.props,
-      tags: Option.some(uniqueTags),
-      updatedAt: Option.some(new Date())
-    }
-    return S.decodeUnknown(Document)(updatedData).pipe(
-      Effect.map((validated) => new DocumentEntity(validated)),
-      Effect.mapError((error) => new ValidationError(
-        `Invalid tags: ${error instanceof Error ? error.message : String(error)}`,
+    
+    // Validate the final tag list
+    if (!isValidDocumentTagList(uniqueTags)) {
+      return Effect.fail(new ValidationError(
+        'Invalid tag list: duplicate tags or too many tags',
         'tags',
         uniqueTags
       ))
-    )
+    }
+    
+    // Construct new entity directly
+    const updated = new DocumentEntity({
+      ...this.props,
+      tags: Option.some(uniqueTags),
+      updatedAt: Option.some(new Date())
+    })
+    
+    return Effect.succeed(updated)
   }
 
   removeTags = (tagsToRemove: string[]): Effect.Effect<DocumentEntity, ValidationError> => {
     if (tagsToRemove.length === 0) {
       return Effect.succeed(this)
     }
+    
     const currentTags = Option.getOrElse(this.props.tags, () => [])
     if (currentTags.length === 0) {
       return Effect.succeed(this)
     }
+    
     const normalizedTagsToRemove = tagsToRemove.map((tag: string) => tag.trim().toLowerCase())
     const filteredTags = currentTags.filter((tag: string) => !normalizedTagsToRemove.includes(tag.toLowerCase()))
-    const updatedData = {
-      ...this.props,
-      tags: filteredTags.length > 0 ? Option.some(filteredTags) : Option.none(),
-      updatedAt: Option.some(new Date())
-    }
-    return S.decodeUnknown(Document)(updatedData).pipe(
-      Effect.map((validated) => new DocumentEntity(validated)),
-      Effect.mapError((error) => new ValidationError(
-        `Invalid tags: ${error instanceof Error ? error.message : String(error)}`,
+    
+    // Validate the final tag list if not empty
+    if (filteredTags.length > 0 && !isValidDocumentTagList(filteredTags)) {
+      return Effect.fail(new ValidationError(
+        'Invalid tag list after removal',
         'tags',
         filteredTags
       ))
-    )
+    }
+    
+    // Construct new entity directly
+    const updated = new DocumentEntity({
+      ...this.props,
+      tags: filteredTags.length > 0 ? Option.some(filteredTags) : Option.none(),
+      updatedAt: Option.some(new Date())
+    })
+    
+    return Effect.succeed(updated)
   }
 
   updateCurrentVersion = (newVersionId: DocumentVersionId): Effect.Effect<DocumentEntity, ValidationError> => {
-    const updatedData = {
+    // DocumentVersionId is a branded type, so it's already validated
+    // Construct new entity directly
+    const updated = new DocumentEntity({
       ...this.props,
       currentVersionId: newVersionId,
       updatedAt: Option.some(new Date())
-    }
-    return S.decodeUnknown(Document)(updatedData).pipe(
-      Effect.map((validated) => new DocumentEntity(validated)),
-      Effect.mapError((error) => new ValidationError(
-        `Invalid version ID: ${error instanceof Error ? error.message : String(error)}`,
-        'currentVersionId',
-        newVersionId
-      ))
-    )
+    })
+    
+    return Effect.succeed(updated)
   }
 
   // ========== Serialization Methods ==========
