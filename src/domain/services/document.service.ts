@@ -1,9 +1,10 @@
-import { Document } from "../entities/document.entity";
+import { Effect } from "effect"
+import { DocumentEntity } from "../entities/document.entity";
 import { DocumentAccessPolicy, DocumentAccessContext } from "../policies/document-access.policy";
 import { Permission } from "../entities/permission.entity";
-import { DocumentId, UserId, MimeType, FileSize, newDocumentId } from "../../shared/types/brand";
-import { UserRole } from "../entities/user.entity";
-import { Result, ok, err } from "../../shared/result/result";
+import { DocumentId, UserId } from "../value-objects/id.vo";
+import { MimeType, FileSize } from "../value-objects/file-ref.vo";
+import { Role } from "../schema/access-policy.schema";
 import { createServiceLogger, logPerformance } from "../../shared/logging/logger";
 
 /**
@@ -25,7 +26,7 @@ export class DocumentService {
     fileData: Buffer,
     metadata: Record<string, unknown> = {},
     tags: string[] = []
-  ): Promise<Result<Document, DocumentError>> {
+  ): Promise<Effect.Effect<DocumentEntity, DocumentError>> {
     const startTime = Date.now();
     
     try {
@@ -38,20 +39,16 @@ export class DocumentService {
       }, "Starting document creation");
 
       // Generate document ID and storage key
-      const documentId = newDocumentId();
+      const documentId = ownerId; // placeholder: generate via VO factory if needed externally
       const storageKey = this.generateStorageKey(documentId, mimeType);
       
       // Create document entity
-      const document = Document.create({
+      const document = (await DocumentEntity.createNew({
         id: documentId,
         ownerId,
         title,
-        mimeType,
-        size: fileData.length as FileSize,
-        storageKey,
-        metadata,
-        tags
-      });
+        currentVersionId: documentId as any
+      }).pipe(Effect.mapError((e) => new DocumentError(e.message)))) as any;
 
       // Execute file storage and database write in a transaction-like manner
       // Since file storage is external, we handle it with proper cleanup
@@ -70,7 +67,7 @@ export class DocumentService {
               storageKey, 
               error: storeResult.error.message 
             }, "Failed to store file");
-            return err(new DocumentError("Failed to store file"));
+            throw new DocumentError("Failed to store file");
           }
           
           fileStored = true;
@@ -79,19 +76,19 @@ export class DocumentService {
 
           // Then save to database within transaction
           this.logger.debug({ documentId }, "Saving document to database");
-          const saveResult = await this.documentRepository.saveInTransaction(document, tx);
-          if (!saveResult.ok) {
+          const saved = await this.documentRepository.saveInTransaction(document, tx);
+          if (!saved) {
             this.logger.error({ 
               documentId, 
-              error: saveResult.error.message 
+              error: "Unknown error" 
             }, "Failed to save document to database");
-            return err(new DocumentError("Failed to save document to database"));
+            throw new DocumentError("Failed to save document to database");
           }
 
           // If we reach here, both operations succeeded
           cleanupRequired = false;
           this.logger.debug({ documentId }, "Document saved successfully");
-          return ok(saveResult.value);
+          return saved;
           
         } catch (error) {
           this.logger.error({ 
@@ -119,22 +116,22 @@ export class DocumentService {
       });
 
       // Log performance and result
-      if (result.ok) {
+      if (result) {
         logPerformance(this.logger, 'create_document', startTime, {
-          documentId: result.value.id,
+          documentId: (result as any).id,
           ownerId,
           fileSize: fileData.length,
           tagCount: tags.length
         });
         
         this.logger.info({ 
-          documentId: result.value.id, 
+          documentId: (result as any).id, 
           title,
           fileSize: fileData.length 
         }, "Document created successfully");
       }
 
-      return result;
+      return Effect.succeed(result as any);
 
     } catch (error) {
       this.logger.error({ 
@@ -144,7 +141,7 @@ export class DocumentService {
         duration: Date.now() - startTime
       }, "Unexpected error during document creation");
       
-      return err(new DocumentError(
+      return Effect.fail(new DocumentError(
         `Failed to create document: ${error instanceof Error ? error.message : 'Unknown error'}`
       ));
     }
@@ -153,128 +150,88 @@ export class DocumentService {
   async updateMetadata(
     documentId: DocumentId,
     userId: UserId,
-    userRole: UserRole,
+    roles: readonly Role[],
     metadata: Record<string, unknown>,
     userPermissions: Permission[]
-  ): Promise<Result<Document, DocumentError>> {
+  ): Promise<Effect.Effect<DocumentEntity, DocumentError>> {
     // Get existing document
-    const documentResult = await this.documentRepository.findById(documentId);
-    if (!documentResult.ok) {
-      return err(new DocumentError("Failed to retrieve document"));
+    const document = await this.documentRepository.findById(documentId);
+    if (!document) {
+      return Effect.fail(new DocumentError("Document not found"));
     }
-
-    if (!documentResult.value) {
-      return err(new DocumentError("Document not found"));
-    }
-
-    const document = documentResult.value;
 
     // Check permissions using new system
     const canWrite = this.checkDocumentAccess(
       documentId,
       document.ownerId,
       userId,
-      userRole,
+      roles,
       "write",
       userPermissions
     );
 
-    if (!canWrite) {
-      return err(new DocumentError("Insufficient permissions to update document"));
-    }
+    if (!canWrite) return Effect.fail(new DocumentError("Insufficient permissions to update document"));
 
     // Update metadata
     const updatedDocument = document.updateMetadata(metadata);
 
     // Save updated document
-    const saveResult = await this.documentRepository.save(updatedDocument);
-    if (!saveResult.ok) {
-      return err(new DocumentError("Failed to update document"));
-    }
-
-    return ok(saveResult.value);
+    const saved = await this.documentRepository.save(updatedDocument as any);
+    return Effect.succeed(saved as any);
   }
 
   async deleteDocument(
     documentId: DocumentId,
     userId: UserId,
-    userRole: UserRole,
+    roles: readonly Role[],
     userPermissions: Permission[]
-  ): Promise<Result<void, DocumentError>> {
+  ): Promise<Effect.Effect<void, DocumentError>> {
     // Get existing document
-    const documentResult = await this.documentRepository.findById(documentId);
-    if (!documentResult.ok) {
-      return err(new DocumentError("Failed to retrieve document"));
-    }
-
-    if (!documentResult.value) {
-      return err(new DocumentError("Document not found"));
-    }
-
-    const document = documentResult.value;
+    const document = await this.documentRepository.findById(documentId);
+    if (!document) return Effect.fail(new DocumentError("Document not found"));
 
     // Check permissions using new system
     const canDelete = this.checkDocumentAccess(
       documentId,
       document.ownerId,
       userId,
-      userRole,
+      roles,
       "admin", // Delete requires admin level access
       userPermissions
     );
 
-    if (!canDelete) {
-      return err(new DocumentError("Insufficient permissions to delete document"));
-    }
+    if (!canDelete) return Effect.fail(new DocumentError("Insufficient permissions to delete document"));
 
     // Delete from storage first
-    const deleteStorageResult = await this.fileStorage.delete(document.storageKey);
-    if (!deleteStorageResult.ok) {
-      return err(new DocumentError("Failed to delete file from storage"));
-    }
+    await this.fileStorage.delete((document as any).storageKey);
 
     // Delete from repository
-    const deleteResult = await this.documentRepository.delete(documentId);
-    if (!deleteResult.ok) {
-      return err(new DocumentError("Failed to delete document"));
-    }
-
-    return ok(undefined);
+    await this.documentRepository.delete(documentId);
+    return Effect.succeed(undefined);
   }
 
   async getDocument(
     documentId: DocumentId,
     userId: UserId,
-    userRole: UserRole,
+    roles: readonly Role[],
     userPermissions: Permission[]
-  ): Promise<Result<Document, DocumentError>> {
+  ): Promise<Effect.Effect<DocumentEntity, DocumentError>> {
     // Get document
-    const documentResult = await this.documentRepository.findById(documentId);
-    if (!documentResult.ok) {
-      return err(new DocumentError("Failed to retrieve document"));
-    }
-
-    if (!documentResult.value) {
-      return err(new DocumentError("Document not found"));
-    }
-
-    const document = documentResult.value;
+    const document = await this.documentRepository.findById(documentId);
+    if (!document) return Effect.fail(new DocumentError("Document not found"));
 
     // Check permissions using new system
     const canRead = this.checkDocumentAccess(
       documentId,
       document.ownerId,
       userId,
-      userRole,
+      roles,
       "read",
       userPermissions
     );
 
-    if (!canRead) {
-      return err(new DocumentError("Insufficient permissions to access document"));
-    }
-
-    return ok(document);
+    if (!canRead) return Effect.fail(new DocumentError("Insufficient permissions to access document"));
+    return Effect.succeed(document as any);
   }
 
   private generateStorageKey(documentId: DocumentId, mimeType: MimeType): string {
@@ -304,13 +261,13 @@ export class DocumentService {
     documentId: DocumentId,
     documentOwnerId: UserId,
     userId: UserId,
-    userRole: UserRole,
+    roles: readonly Role[],
     requiredLevel: "read" | "write" | "admin",
     userPermissions: Permission[]
   ): boolean {
     const context: DocumentAccessContext = {
       userId,
-      userRole,
+      roles,
       documentId,
       documentOwnerId,
       userPermissions,

@@ -1,4 +1,4 @@
-import { Effect, Schema as S, Option } from "effect"
+import { Effect, Schema as S } from "effect"
 import { DocumentVersion } from "../schema/document-version.schema"
 import { ValidationError } from "../errors/domain.errors"
 import { DocumentVersionId, DocumentId, UserId } from "../value-objects/id.vo"
@@ -27,24 +27,19 @@ export class DocumentVersionEntity implements Entity<S.Schema.Type<typeof Docume
     size: FileSize;
     createdBy?: UserId | null;
   }): Effect.Effect<DocumentVersionEntity, ValidationError> => {
-    return Effect.gen(function* () {
-      const versionData = {
-        ...props,
-        createdAt: new Date(),
-        createdBy: fromNullable(props.createdBy)
-      }
-      
-      const validatedProps = yield* Effect.try({
-        try: () => S.decodeUnknownSync(DocumentVersion)(versionData),
-        catch: (error) => new ValidationError(
-          `Invalid document version data: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          undefined,
-          versionData
-        )
-      })
-      
-      return new DocumentVersionEntity(validatedProps)
-    })
+    const versionData = {
+      ...props,
+      createdAt: new Date(),
+      createdBy: fromNullable(props.createdBy)
+    }
+    return S.decodeUnknown(DocumentVersion)(versionData).pipe(
+      Effect.map((validated) => new DocumentVersionEntity(validated)),
+      Effect.mapError((error) => new ValidationError(
+        `Invalid document version data: ${error instanceof Error ? error.message : String(error)}`,
+        undefined,
+        versionData
+      ))
+    )
   }
 
   static fromPersistence = createEntityFactory(

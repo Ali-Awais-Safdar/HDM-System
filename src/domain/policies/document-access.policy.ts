@@ -1,5 +1,5 @@
-import { UserId, DocumentId } from "../../shared/types/brand";
-import { UserRole } from "../entities/user.entity";
+import { UserId, DocumentId } from "../value-objects/id.vo";
+import { Role } from "../schema/access-policy.schema";
 import { Permission } from "../entities/permission.entity"
 import { PermissionLevel } from "../schema/permission.schema";
 
@@ -9,14 +9,14 @@ import { PermissionLevel } from "../schema/permission.schema";
 export interface DocumentAccessContext {
   /** The user requesting access */
   userId: UserId;
-  /** The user's role */
-  userRole: UserRole;
+  /** The user's roles */
+  roles: readonly Role[];
   /** The document being accessed */
   documentId: DocumentId;
   /** The owner of the document */
   documentOwnerId: UserId;
   /** Explicit permissions granted to the user for this document */
-  userPermissions: Permission[];
+  userPermissions: ReadonlyArray<Permission>;
 }
 
 /**
@@ -52,7 +52,7 @@ export class DocumentAccessPolicy {
     requiredLevel: PermissionLevel
   ): DocumentAccessResult {
     // Rule 1: Admins bypass all permission checks
-    if (context.userRole === "admin") {
+    if (context.roles.includes("ADMIN" as Role)) {
       return {
         granted: true,
         reason: "Admin role bypasses all permission checks",

@@ -32,28 +32,22 @@ export class DownloadToken implements Entity<S.Schema.Type<typeof DownloadTokenS
     issuedTo: UserId;
     expiresAt: Date;
   }): Effect.Effect<DownloadToken, ValidationError> => {
-    return Effect.gen(function* () {
-      const token = DownloadToken.generateSecureToken()
-      
-      const tokenData = {
-        id: makeDownloadTokenId(crypto.randomUUID()),
-        token,
-        ...props,
-        usedAt: Option.none(), // Not used yet
-        createdAt: new Date()
-      }
-      
-      const validatedProps = yield* Effect.try({
-        try: () => S.decodeUnknownSync(DownloadTokenSchema)(tokenData),
-        catch: (error) => new ValidationError(
-          `Invalid download token data: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          undefined,
-          tokenData
-        )
-      })
-      
-      return new DownloadToken(validatedProps)
-    })
+    const token = DownloadToken.generateSecureToken()
+    const tokenData = {
+      id: makeDownloadTokenId(crypto.randomUUID()),
+      token,
+      ...props,
+      usedAt: Option.none(),
+      createdAt: new Date()
+    }
+    return S.decodeUnknown(DownloadTokenSchema)(tokenData).pipe(
+      Effect.map((validated) => new DownloadToken(validated)),
+      Effect.mapError((error) => new ValidationError(
+        `Invalid download token data: ${error instanceof Error ? error.message : String(error)}`,
+        undefined,
+        tokenData
+      ))
+    )
   }
 
   static createWithDefaultExpiry = (props: {
@@ -143,16 +137,14 @@ export class DownloadToken implements Entity<S.Schema.Type<typeof DownloadTokenS
         usedAt: Option.some(new Date())
       }
 
-      const validatedProps = yield* Effect.try({
-        try: () => S.decodeUnknownSync(DownloadTokenSchema)(updatedData),
-        catch: (error) => new ValidationError(
-          `Invalid token data: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      const validated = yield* S.decodeUnknown(DownloadTokenSchema)(updatedData).pipe(
+        Effect.mapError((error) => new ValidationError(
+          `Invalid token data: ${error instanceof Error ? error.message : String(error)}`,
           'usedAt',
-          new Date()
-        )
-      })
-
-      return new DownloadToken(validatedProps)
+          updatedData.usedAt
+        ))
+      )
+      return new DownloadToken(validated)
     }.bind(this))
   }
 

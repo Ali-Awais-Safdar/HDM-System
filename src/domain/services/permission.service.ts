@@ -1,5 +1,5 @@
 import { Result, ok, err } from "../../shared/result/result";
-import { UserId, DocumentId } from "../../shared/types/brand";
+import { UserId, DocumentId } from "../value-objects/id.vo";
 import { Permission, PermissionLevel } from "../entities/permission.entity";
 
 /**

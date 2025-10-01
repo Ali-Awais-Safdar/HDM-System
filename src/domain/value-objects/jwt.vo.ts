@@ -72,3 +72,9 @@ export class Jwt {
     return Math.max(0, this._payload.exp * 1000 - currentTime);
   }
 }
+
+// Compatibility helper: normalize legacy single role to roles[] using domain Role
+export const payloadRoles = (p: JwtPayload): readonly Role[] =>
+  p.roles && p.roles.length > 0
+    ? p.roles
+    : (p.role ? [p.role.toUpperCase() as Role] : [])

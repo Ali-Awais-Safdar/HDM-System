@@ -19,17 +19,16 @@ export const createEntityFromUnknown = <TEntity>(
   entityConstructor: (props: any) => TEntity,
   entityName: string
 ) => (input: unknown): Effect.Effect<TEntity, ValidationError> => {
-  return Effect.gen(function* () {
-    const props = yield* Effect.try({
-      try: () => S.decodeUnknownSync(schema)(input),
-      catch: (error) => new ValidationError(
-        `Invalid ${entityName.toLowerCase()} data: ${error instanceof Error ? error.message : 'Unknown error'}`,
+  return S.decodeUnknown(schema)(input).pipe(
+    Effect.map(entityConstructor),
+    Effect.mapError((error) =>
+      new ValidationError(
+        `Invalid ${entityName.toLowerCase()} data: ${error instanceof Error ? error.message : String(error)}`,
         undefined,
         input
       )
-    })
-    return entityConstructor(props)
-  })
+    )
+  )
 }
 
 /**
@@ -41,17 +40,16 @@ export const createEntityFromProps = <TEntity>(
   entityConstructor: (props: any) => TEntity,
   entityName: string
 ) => (props: unknown): Effect.Effect<TEntity, ValidationError> => {
-  return Effect.gen(function* () {
-    const validatedProps = yield* Effect.try({
-      try: () => S.decodeUnknownSync(schema)(props),
-      catch: (error) => new ValidationError(
-        `Invalid ${entityName.toLowerCase()} props: ${error instanceof Error ? error.message : 'Unknown error'}`,
+  return S.decodeUnknown(schema)(props).pipe(
+    Effect.map(entityConstructor),
+    Effect.mapError((error) =>
+      new ValidationError(
+        `Invalid ${entityName.toLowerCase()} props: ${error instanceof Error ? error.message : String(error)}`,
         undefined,
         props
       )
-    })
-    return entityConstructor(validatedProps)
-  })
+    )
+  )
 }
 
 /**

@@ -29,24 +29,19 @@ export class Permission implements Entity<S.Schema.Type<typeof PermissionSchema>
     userId: UserId;
     level: PermissionLevel;
   }): Effect.Effect<Permission, ValidationError> => {
-    return Effect.gen(function* () {
-      const permissionData = {
-        id: makePermissionId(crypto.randomUUID()),
-        ...props,
-        createdAt: new Date()
-      }
-      
-      const validatedProps = yield* Effect.try({
-        try: () => S.decodeUnknownSync(PermissionSchema)(permissionData),
-        catch: (error) => new ValidationError(
-          `Invalid permission data: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          undefined,
-          permissionData
-        )
-      })
-      
-      return new Permission(validatedProps)
-    })
+    const permissionData = {
+      id: makePermissionId(crypto.randomUUID()),
+      ...props,
+      createdAt: new Date()
+    }
+    return S.decodeUnknown(PermissionSchema)(permissionData).pipe(
+      Effect.map((validated) => new Permission(validated)),
+      Effect.mapError((error) => new ValidationError(
+        `Invalid permission data: ${error instanceof Error ? error.message : String(error)}`,
+        undefined,
+        permissionData
+      ))
+    )
   }
 
   static fromPersistence = createEntityFactory(
@@ -113,16 +108,14 @@ export class Permission implements Entity<S.Schema.Type<typeof PermissionSchema>
         level: newLevel
       }
 
-      const validatedProps = yield* Effect.try({
-        try: () => S.decodeUnknownSync(PermissionSchema)(updatedData),
-        catch: (error) => new ValidationError(
-          `Invalid permission level: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      const validated = yield* S.decodeUnknown(PermissionSchema)(updatedData).pipe(
+        Effect.mapError((error) => new ValidationError(
+          `Invalid permission level: ${error instanceof Error ? error.message : String(error)}`,
           'level',
           newLevel
-        )
-      })
-
-      return new Permission(validatedProps)
+        ))
+      )
+      return new Permission(validated)
     }.bind(this))
   }
 
@@ -150,16 +143,14 @@ export class Permission implements Entity<S.Schema.Type<typeof PermissionSchema>
         level: newLevel
       }
 
-      const validatedProps = yield* Effect.try({
-        try: () => S.decodeUnknownSync(PermissionSchema)(updatedData),
-        catch: (error) => new ValidationError(
-          `Invalid permission level: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      const validated = yield* S.decodeUnknown(PermissionSchema)(updatedData).pipe(
+        Effect.mapError((error) => new ValidationError(
+          `Invalid permission level: ${error instanceof Error ? error.message : String(error)}`,
           'level',
           newLevel
-        )
-      })
-
-      return new Permission(validatedProps)
+        ))
+      )
+      return new Permission(validated)
     }.bind(this))
   }
 

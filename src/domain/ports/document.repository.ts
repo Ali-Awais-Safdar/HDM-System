@@ -1,6 +1,5 @@
-import { Document } from "../entities/document.entity";
-import { DocumentId, UserId } from "../../shared/types/brand";
-import { Result } from "../../shared/result/result";
+import { DocumentEntity } from "../entities/document.entity";
+import { DocumentId, UserId } from "../value-objects/id.vo";
 
 export interface DocumentSearchFilters {
   query?: string;
@@ -12,9 +11,9 @@ export interface DocumentSearchFilters {
 }
 
 export interface DocumentRepository {
-  findById(id: DocumentId): Promise<Result<Document | null, Error>>;
-  findByOwner(ownerId: UserId): Promise<Result<Document[], Error>>;
-  search(filters: DocumentSearchFilters): Promise<Result<Document[], Error>>;
-  save(document: Document): Promise<Result<Document, Error>>;
-  delete(id: DocumentId): Promise<Result<void, Error>>;
+  findById(id: DocumentId): Promise<DocumentEntity | null>;
+  findByOwner(ownerId: UserId): Promise<readonly DocumentEntity[]>;
+  search(filters: DocumentSearchFilters): Promise<readonly DocumentEntity[]>;
+  save(document: DocumentEntity): Promise<DocumentEntity>;
+  delete(id: DocumentId): Promise<void>;
 }

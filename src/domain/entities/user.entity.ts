@@ -26,23 +26,18 @@ export class UserEntity implements Entity<S.Schema.Type<typeof User>> {
     roles: Role[];
     workspaceIds: string[];
   }): Effect.Effect<UserEntity, ValidationError> => {
-    return Effect.gen(function* () {
-      const userData = {
-        ...props,
-        createdAt: new Date()
-      }
-      
-      const validatedProps = yield* Effect.try({
-        try: () => S.decodeUnknownSync(User)(userData),
-        catch: (error) => new ValidationError(
-          `Invalid user data: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          undefined,
-          userData
-        )
-      })
-      
-      return new UserEntity(validatedProps)
-    })
+    const userData = {
+      ...props,
+      createdAt: new Date()
+    }
+    return S.decodeUnknown(User)(userData).pipe(
+      Effect.map((validated) => new UserEntity(validated)),
+      Effect.mapError((error) => new ValidationError(
+        `Invalid user data: ${error instanceof Error ? error.message : String(error)}`,
+        undefined,
+        userData
+      ))
+    )
   }
 
   static fromPersistence = createEntityFactory(
@@ -67,7 +62,7 @@ export class UserEntity implements Entity<S.Schema.Type<typeof User>> {
 
   // business logic methods
   isAdmin(): boolean {
-    return this.roles.includes("admin" as Role);
+    return this.roles.includes("ADMIN" as Role);
   }
 
   canManageUsers(): boolean {
@@ -98,16 +93,14 @@ export class UserEntity implements Entity<S.Schema.Type<typeof User>> {
         workspaceIds: [...this.props.workspaceIds, workspaceId]
       }
 
-      const validatedProps = yield* Effect.try({
-        try: () => S.decodeUnknownSync(User)(updatedData),
-        catch: (error) => new ValidationError(
-          `Invalid workspace data: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      const validated = yield* S.decodeUnknown(User)(updatedData).pipe(
+        Effect.mapError((error) => new ValidationError(
+          `Invalid workspace data: ${error instanceof Error ? error.message : String(error)}`,
           'workspaceIds',
           workspaceId
-        )
-      })
-
-      return new UserEntity(validatedProps)
+        ))
+      )
+      return new UserEntity(validated)
     }.bind(this))
   }
 
@@ -127,16 +120,14 @@ export class UserEntity implements Entity<S.Schema.Type<typeof User>> {
         workspaceIds: this.props.workspaceIds.filter((id: string) => id !== workspaceId)
       }
 
-      const validatedProps = yield* Effect.try({
-        try: () => S.decodeUnknownSync(User)(updatedData),
-        catch: (error) => new ValidationError(
-          `Invalid workspace data: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      const validated = yield* S.decodeUnknown(User)(updatedData).pipe(
+        Effect.mapError((error) => new ValidationError(
+          `Invalid workspace data: ${error instanceof Error ? error.message : String(error)}`,
           'workspaceIds',
           workspaceId
-        )
-      })
-
-      return new UserEntity(validatedProps)
+        ))
+      )
+      return new UserEntity(validated)
     }.bind(this))
   }
 

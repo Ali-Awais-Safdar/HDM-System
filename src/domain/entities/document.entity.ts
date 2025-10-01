@@ -23,26 +23,21 @@ export class DocumentEntity implements Entity<S.Schema.Type<typeof Document>> {
     tags?: string[] | null;
     currentVersionId: DocumentVersionId;
   }): Effect.Effect<DocumentEntity, ValidationError> => {
-    return Effect.gen(function* () {
-      const documentData = {
-        ...props,
-        description: fromNullable(props.description),
-        tags: fromNullable(props.tags),
-        createdAt: new Date(),
-        updatedAt: Option.none()
-      }
-      
-      const validatedProps = yield* Effect.try({
-        try: () => S.decodeUnknownSync(Document)(documentData),
-        catch: (error) => new ValidationError(
-          `Invalid document data: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          undefined,
-          documentData
-        )
-      })
-      
-      return new DocumentEntity(validatedProps)
-    })
+    const documentData = {
+      ...props,
+      description: fromNullable(props.description),
+      tags: fromNullable(props.tags),
+      createdAt: new Date(),
+      updatedAt: Option.none()
+    }
+    return S.decodeUnknown(Document)(documentData).pipe(
+      Effect.map((validated) => new DocumentEntity(validated)),
+      Effect.mapError((error) => new ValidationError(
+        `Invalid document data: ${error instanceof Error ? error.message : String(error)}`,
+        undefined,
+        documentData
+      ))
+    )
   }
 
   static fromPersistence = createEntityFactory(
@@ -69,144 +64,112 @@ export class DocumentEntity implements Entity<S.Schema.Type<typeof Document>> {
 
   // Effect-based method for renaming document
   rename = (newTitle: string): Effect.Effect<DocumentEntity, ValidationError> => {
-    return Effect.gen(function* (this: DocumentEntity) {
-      const updatedData = {
-        ...this.props,
-        title: newTitle,
-        updatedAt: Option.some(new Date())
-      }
-
-      const validatedProps = yield* Effect.try({
-        try: () => S.decodeUnknownSync(Document)(updatedData),
-        catch: (error) => new ValidationError(
-          `Invalid title: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          'title',
-          newTitle
-        )
-      })
-
-      return new DocumentEntity(validatedProps)
-    }.bind(this))
+    const updatedData = {
+      ...this.props,
+      title: newTitle,
+      updatedAt: Option.some(new Date())
+    }
+    return S.decodeUnknown(Document)(updatedData).pipe(
+      Effect.map((validated) => new DocumentEntity(validated)),
+      Effect.mapError((error) => new ValidationError(
+        `Invalid title: ${error instanceof Error ? error.message : String(error)}`,
+        'title',
+        newTitle
+      ))
+    )
   }
 
   // Effect-based method for updating description
   updateDescription = (newDescription: string | null | undefined): Effect.Effect<DocumentEntity, ValidationError> => {
-    return Effect.gen(function* (this: DocumentEntity) {
-      const updatedData = {
-        ...this.props,
-        description: fromNullable(newDescription),
-        updatedAt: Option.some(new Date())
-      }
-
-      const validatedProps = yield* Effect.try({
-        try: () => S.decodeUnknownSync(Document)(updatedData),
-        catch: (error) => new ValidationError(
-          `Invalid description: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          'description',
-          newDescription
-        )
-      })
-
-      return new DocumentEntity(validatedProps)
-    }.bind(this))
+    const updatedData = {
+      ...this.props,
+      description: fromNullable(newDescription),
+      updatedAt: Option.some(new Date())
+    }
+    return S.decodeUnknown(Document)(updatedData).pipe(
+      Effect.map((validated) => new DocumentEntity(validated)),
+      Effect.mapError((error) => new ValidationError(
+        `Invalid description: ${error instanceof Error ? error.message : String(error)}`,
+        'description',
+        newDescription
+      ))
+    )
   }
 
   // Effect-based method for adding tags
   addTags = (newTags: string[]): Effect.Effect<DocumentEntity, ValidationError | BusinessRuleViolationError> => {
-    return Effect.gen(function* (this: DocumentEntity) {
-      if (newTags.length === 0) {
-        return this // No changes needed
-      }
-
-      const currentTags = Option.getOrElse(this.props.tags, () => [])
-      const normalizedNewTags = newTags
-        .map((tag: string) => tag.trim().toLowerCase())
-        .filter((tag: string) => tag.length > 0)
-      
-      if (normalizedNewTags.length === 0) {
-        yield* Effect.fail(new BusinessRuleViolationError(
-          "INVALID_TAGS",
-          "No valid tags provided",
-          { newTags }
-        ))
-      }
-
-      const allTags = [...currentTags, ...normalizedNewTags]
-      const uniqueTags = Array.from(new Set(allTags))
-
-      const updatedData = {
-        ...this.props,
-        tags: Option.some(uniqueTags),
-        updatedAt: Option.some(new Date())
-      }
-
-      const validatedProps = yield* Effect.try({
-        try: () => S.decodeUnknownSync(Document)(updatedData),
-        catch: (error) => new ValidationError(
-          `Invalid tags: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          'tags',
-          uniqueTags
-        )
-      })
-
-      return new DocumentEntity(validatedProps)
-    }.bind(this))
+    if (newTags.length === 0) {
+      return Effect.succeed(this)
+    }
+    const currentTags = Option.getOrElse(this.props.tags, () => [])
+    const normalizedNewTags = newTags
+      .map((tag: string) => tag.trim().toLowerCase())
+      .filter((tag: string) => tag.length > 0)
+    if (normalizedNewTags.length === 0) {
+      return Effect.fail(new BusinessRuleViolationError(
+        "INVALID_TAGS",
+        "No valid tags provided",
+        { newTags }
+      ))
+    }
+    const allTags = [...currentTags, ...normalizedNewTags]
+    const uniqueTags = Array.from(new Set(allTags))
+    const updatedData = {
+      ...this.props,
+      tags: Option.some(uniqueTags),
+      updatedAt: Option.some(new Date())
+    }
+    return S.decodeUnknown(Document)(updatedData).pipe(
+      Effect.map((validated) => new DocumentEntity(validated)),
+      Effect.mapError((error) => new ValidationError(
+        `Invalid tags: ${error instanceof Error ? error.message : String(error)}`,
+        'tags',
+        uniqueTags
+      ))
+    )
   }
 
   // Effect-based method for removing tags
   removeTags = (tagsToRemove: string[]): Effect.Effect<DocumentEntity, ValidationError> => {
-    return Effect.gen(function* (this: DocumentEntity) {
-      if (tagsToRemove.length === 0) {
-        return this // No changes needed
-      }
-
-      const currentTags = Option.getOrElse(this.props.tags, () => [])
-      if (currentTags.length === 0) {
-        return this // No tags to remove
-      }
-
-      const normalizedTagsToRemove = tagsToRemove.map((tag: string) => tag.trim().toLowerCase())
-      const filteredTags = currentTags.filter((tag: string) => !normalizedTagsToRemove.includes(tag.toLowerCase()))
-
-      const updatedData = {
-        ...this.props,
-        tags: filteredTags.length > 0 ? Option.some(filteredTags) : Option.none(),
-        updatedAt: Option.some(new Date())
-      }
-
-      const validatedProps = yield* Effect.try({
-        try: () => S.decodeUnknownSync(Document)(updatedData),
-        catch: (error) => new ValidationError(
-          `Invalid tags: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          'tags',
-          filteredTags
-        )
-      })
-
-      return new DocumentEntity(validatedProps)
-    }.bind(this))
+    if (tagsToRemove.length === 0) {
+      return Effect.succeed(this)
+    }
+    const currentTags = Option.getOrElse(this.props.tags, () => [])
+    if (currentTags.length === 0) {
+      return Effect.succeed(this)
+    }
+    const normalizedTagsToRemove = tagsToRemove.map((tag: string) => tag.trim().toLowerCase())
+    const filteredTags = currentTags.filter((tag: string) => !normalizedTagsToRemove.includes(tag.toLowerCase()))
+    const updatedData = {
+      ...this.props,
+      tags: filteredTags.length > 0 ? Option.some(filteredTags) : Option.none(),
+      updatedAt: Option.some(new Date())
+    }
+    return S.decodeUnknown(Document)(updatedData).pipe(
+      Effect.map((validated) => new DocumentEntity(validated)),
+      Effect.mapError((error) => new ValidationError(
+        `Invalid tags: ${error instanceof Error ? error.message : String(error)}`,
+        'tags',
+        filteredTags
+      ))
+    )
   }
 
   // Effect-based method for updating current version
   updateCurrentVersion = (newVersionId: DocumentVersionId): Effect.Effect<DocumentEntity, ValidationError> => {
-    return Effect.gen(function* (this: DocumentEntity) {
-      const updatedData = {
-        ...this.props,
-        currentVersionId: newVersionId,
-        updatedAt: Option.some(new Date())
-      }
-
-      const validatedProps = yield* Effect.try({
-        try: () => S.decodeUnknownSync(Document)(updatedData),
-        catch: (error) => new ValidationError(
-          `Invalid version ID: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          'currentVersionId',
-          newVersionId
-        )
-      })
-
-      return new DocumentEntity(validatedProps)
-    }.bind(this))
+    const updatedData = {
+      ...this.props,
+      currentVersionId: newVersionId,
+      updatedAt: Option.some(new Date())
+    }
+    return S.decodeUnknown(Document)(updatedData).pipe(
+      Effect.map((validated) => new DocumentEntity(validated)),
+      Effect.mapError((error) => new ValidationError(
+        `Invalid version ID: ${error instanceof Error ? error.message : String(error)}`,
+        'currentVersionId',
+        newVersionId
+      ))
+    )
   }
 
   // Business logic methods

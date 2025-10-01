@@ -1,8 +1,10 @@
-import { User, UserRole } from "../entities/user.entity";
+import { Effect, Schema as S } from "effect"
+import { UserEntity } from "../entities/user.entity";
+import { Role } from "../schema/access-policy.schema";
 import { Email } from "../value-objects/email.vo";
 import { Password } from "../value-objects/password.vo";
-import { UserId, newUserId } from "../../shared/types/brand";
-import { Result, ok, err } from "../../shared/result/result";
+import { UserId } from "../value-objects/id.vo";
+import { randomUUID } from "crypto"
 
 /**
  * Domain service for authentication business logic.
@@ -14,89 +16,104 @@ export class AuthService {
     private readonly userRepository: UserRepository
   ) {}
 
-  async signup(
+  signup(
     email: Email, 
     password: Password, 
-    role: UserRole = "user"
-  ): Promise<Result<User, AuthError>> {
-    // Check if user already exists
-    const existingUserResult = await this.userRepository.findByEmail(email.value);
-    if (!existingUserResult.ok) {
-      return err(new AuthError("Failed to check existing user"));
-    }
+    roles: readonly Role[] = ["VIEWER" as Role]
+  ): Effect.Effect<UserEntity, AuthError> {
+    const { userRepository, passwordHasher } = this;
+    return Effect.gen(function* () {
+      // Check if user already exists
+      const existing = yield* Effect.tryPromise(() =>
+        userRepository.findByEmail(email.value)
+      ).pipe(
+        Effect.mapError(() => new AuthError("Failed to check existing user"))
+      )
+      if (existing !== null) {
+        yield* Effect.fail(new AuthError("User already exists with this email"))
+      }
 
-    if (existingUserResult.value !== null) {
-      return err(new AuthError("User already exists with this email"));
-    }
+      // Hash password (Password is a branded string)
+      const hashed = yield* Effect.tryPromise(() =>
+        passwordHasher.hash(password as unknown as string)
+      ).pipe(
+        Effect.mapError(() => new AuthError("Failed to process password"))
+      )
 
-    // Hash password
-    const hashedPasswordResult = await this.passwordHasher.hash(password.value);
-    if (!hashedPasswordResult.ok) {
-      return err(new AuthError("Failed to process password"));
-    }
+      // Generate user id and validate brand
+      const userId = yield* S.decodeUnknown(UserId)(randomUUID()).pipe(
+        Effect.mapError(() => new AuthError("Failed to generate user id"))
+      )
 
-    // Create new user
-    const userId = newUserId();
-    const user = User.create({
-      id: userId,
-      email: email.value,
-      passwordHash: hashedPasswordResult.value,
-      role
-    });
+      // Create new user entity
+      const user = yield* UserEntity.createNew({
+        id: userId,
+        email: email.value,
+        passwordHash: hashed,
+        roles: roles as Role[],
+        workspaceIds: []
+      }).pipe(
+        Effect.mapError((e) => new AuthError(e.message))
+      )
 
-    // Save user
-    const saveResult = await this.userRepository.save(user);
-    if (!saveResult.ok) {
-      return err(new AuthError("Failed to create user"));
-    }
+      // Save user
+      const saved = yield* Effect.tryPromise(() => userRepository.save(user)).pipe(
+        Effect.mapError(() => new AuthError("Failed to create user"))
+      )
 
-    return ok(saveResult.value);
+      return saved
+    })
   }
 
-  async login(
+  login(
     email: Email, 
     password: Password
-  ): Promise<Result<User, AuthError>> {
-    // Find user by email
-    const userResult = await this.userRepository.findByEmail(email.value);
-    if (!userResult.ok) {
-      return err(new AuthError("Authentication failed"));
-    }
+  ): Effect.Effect<UserEntity, AuthError> {
+    const { userRepository, passwordHasher } = this;
+    return Effect.gen(function* () {
+      // Find user by email
+      const user = yield* Effect.tryPromise(() =>
+        userRepository.findByEmail(email.value)
+      ).pipe(
+        Effect.mapError(() => new AuthError("Authentication failed"))
+      )
+      if (user === null) {
+        yield* Effect.fail(new AuthError("Invalid credentials"))
+      }
 
-    if (userResult.value === null) {
-      return err(new AuthError("Invalid credentials"));
-    }
+      // Verify password
+      const isValid = yield* Effect.tryPromise(() =>
+        passwordHasher.verify(password as unknown as string, (user as UserEntity).passwordHash)
+      ).pipe(
+        Effect.mapError(() => new AuthError("Authentication failed"))
+      )
+      if (!isValid) {
+        yield* Effect.fail(new AuthError("Invalid credentials"))
+      }
 
-    const user = userResult.value;
-
-    // Verify password
-    const isValidResult = await this.passwordHasher.verify(password.value, user.passwordHash);
-    if (!isValidResult.ok || !isValidResult.value) {
-      return err(new AuthError("Invalid credentials"));
-    }
-
-    return ok(user);
+      return user as UserEntity
+    })
   }
 
-  async createAdminUser(
+  createAdminUser(
     email: Email,
     password: Password
-  ): Promise<Result<User, AuthError>> {
-    return this.signup(email, password, "admin");
+  ): Effect.Effect<UserEntity, AuthError> {
+    return this.signup(email, password, ["ADMIN" as Role]);
   }
 }
 
 // Domain interfaces (ports)
 export interface PasswordHasher {
-  hash(password: string): Promise<Result<string, Error>>;
-  verify(password: string, hash: string): Promise<Result<boolean, Error>>;
+  hash(password: string): Promise<string>;
+  verify(password: string, hash: string): Promise<boolean>;
 }
 
 export interface UserRepository {
-  findById(id: UserId): Promise<Result<User | null, Error>>;
-  findByEmail(email: import("../../shared/types/brand").EmailAddress): Promise<Result<User | null, Error>>;
-  save(user: User): Promise<Result<User, Error>>;
-  delete(id: UserId): Promise<Result<void, Error>>;
+  findById(id: UserId): Promise<UserEntity | null>;
+  findByEmail(email: import("../value-objects/email.vo").EmailAddress): Promise<UserEntity | null>;
+  save(user: UserEntity): Promise<UserEntity>;
+  delete(id: UserId): Promise<void>;
 }
 
 // Domain errors

@@ -1,201 +1,233 @@
 import { describe, it, expect } from "vitest";
-import { DocumentPolicy } from "../../../src/domain/policies/document.policy";
-import { asUserId, asDocumentId } from "../../../src/shared/types/brand";
+import { DocumentAccessPolicy } from "../../../src/domain/policies/document-access.policy";
+import { Role } from "../../../src/domain/schema/access-policy.schema";
+import type { UserId, DocumentId } from "../../../src/domain/value-objects/id.vo";
 
-describe("Document Policy", () => {
-  const adminUserId = asUserId("admin-user-id");
-  const regularUserId = asUserId("regular-user-id");
-  const otherUserId = asUserId("other-user-id");
-  const documentId = asDocumentId("document-id");
+describe("Document Access Policy", () => {
+  const adminUserId = "admin-user-id" as unknown as UserId;
+  const regularUserId = "regular-user-id" as unknown as UserId;
+  const otherUserId = "other-user-id" as unknown as UserId;
+  const documentId = "document-id" as unknown as DocumentId;
 
   describe("canRead", () => {
     it("should allow admin to read any document", () => {
-      const result = DocumentPolicy.canRead({
+      const result = DocumentAccessPolicy.canRead({
         userId: adminUserId,
-        userRole: "admin",
+        roles: ["ADMIN" as Role],
         documentId,
-        ownerId: otherUserId
+        documentOwnerId: otherUserId,
+        userPermissions: []
       });
 
-      expect(result).toBe(true);
+      expect(result.granted).toBe(true);
     });
 
     it("should allow owner to read their own document", () => {
-      const result = DocumentPolicy.canRead({
+      const result = DocumentAccessPolicy.canRead({
         userId: regularUserId,
-        userRole: "user",
+        roles: [],
         documentId,
-        ownerId: regularUserId
+        documentOwnerId: regularUserId,
+        userPermissions: []
       });
 
-      expect(result).toBe(true);
+      expect(result.granted).toBe(true);
     });
 
     it("should allow user with read permission", () => {
-      const result = DocumentPolicy.canRead({
+      const result = DocumentAccessPolicy.canRead({
         userId: regularUserId,
-        userRole: "user",
+        roles: [],
         documentId,
-        ownerId: otherUserId,
-        directPermission: "read"
+        documentOwnerId: otherUserId,
+        userPermissions: [{
+          // minimal shape for Permission entity interop via 'as any'
+          level: "read",
+          grantsAccess: (lvl: any) => ["read", "write", "admin"].includes(lvl),
+        } as any]
       });
 
-      expect(result).toBe(true);
+      expect(result.granted).toBe(true);
     });
 
     it("should allow user with write permission to read", () => {
-      const result = DocumentPolicy.canRead({
+      const result = DocumentAccessPolicy.canRead({
         userId: regularUserId,
-        userRole: "user",
+        roles: [],
         documentId,
-        ownerId: otherUserId,
-        directPermission: "write"
+        documentOwnerId: otherUserId,
+        userPermissions: [{
+          level: "write",
+          grantsAccess: (lvl: any) => ["read", "write", "admin"].includes(lvl),
+        } as any]
       });
 
-      expect(result).toBe(true);
+      expect(result.granted).toBe(true);
     });
 
     it("should deny user without permission", () => {
-      const result = DocumentPolicy.canRead({
+      const result = DocumentAccessPolicy.canRead({
         userId: regularUserId,
-        userRole: "user",
+        roles: [],
         documentId,
-        ownerId: otherUserId
+        documentOwnerId: otherUserId,
+        userPermissions: []
       });
 
-      expect(result).toBe(false);
+      expect(result.granted).toBe(false);
     });
   });
 
   describe("canWrite", () => {
     it("should allow admin to write any document", () => {
-      const result = DocumentPolicy.canWrite({
+      const result = DocumentAccessPolicy.canWrite({
         userId: adminUserId,
-        userRole: "admin",
+        roles: ["ADMIN" as Role],
         documentId,
-        ownerId: otherUserId
+        documentOwnerId: otherUserId,
+        userPermissions: []
       });
 
-      expect(result).toBe(true);
+      expect(result.granted).toBe(true);
     });
 
     it("should allow owner to write their own document", () => {
-      const result = DocumentPolicy.canWrite({
+      const result = DocumentAccessPolicy.canWrite({
         userId: regularUserId,
-        userRole: "user",
+        roles: [],
         documentId,
-        ownerId: regularUserId
+        documentOwnerId: regularUserId,
+        userPermissions: []
       });
 
-      expect(result).toBe(true);
+      expect(result.granted).toBe(true);
     });
 
     it("should allow user with write permission", () => {
-      const result = DocumentPolicy.canWrite({
+      const result = DocumentAccessPolicy.canWrite({
         userId: regularUserId,
-        userRole: "user",
+        roles: [],
         documentId,
-        ownerId: otherUserId,
-        directPermission: "write"
+        documentOwnerId: otherUserId,
+        userPermissions: [{
+          level: "write",
+          grantsAccess: (lvl: any) => ["write", "admin"].includes(lvl),
+        } as any]
       });
 
-      expect(result).toBe(true);
+      expect(result.granted).toBe(true);
     });
 
     it("should deny user with only read permission", () => {
-      const result = DocumentPolicy.canWrite({
+      const result = DocumentAccessPolicy.canWrite({
         userId: regularUserId,
-        userRole: "user",
+        roles: [],
         documentId,
-        ownerId: otherUserId,
-        directPermission: "read"
+        documentOwnerId: otherUserId,
+        userPermissions: [{
+          level: "read",
+          grantsAccess: (lvl: any) => ["read"].includes(lvl),
+        } as any]
       });
 
-      expect(result).toBe(false);
+      expect(result.granted).toBe(false);
     });
   });
 
   describe("canDelete", () => {
     it("should allow admin to delete any document", () => {
-      const result = DocumentPolicy.canDelete({
+      const result = DocumentAccessPolicy.canAdmin({
         userId: adminUserId,
-        userRole: "admin",
+        roles: ["ADMIN" as Role],
         documentId,
-        ownerId: otherUserId
+        documentOwnerId: otherUserId,
+        userPermissions: []
       });
 
-      expect(result).toBe(true);
+      expect(result.granted).toBe(true);
     });
 
     it("should allow owner to delete their own document", () => {
-      const result = DocumentPolicy.canDelete({
+      const result = DocumentAccessPolicy.canAdmin({
         userId: regularUserId,
-        userRole: "user",
+        roles: [],
         documentId,
-        ownerId: regularUserId
+        documentOwnerId: regularUserId,
+        userPermissions: []
       });
 
-      expect(result).toBe(true);
+      expect(result.granted).toBe(true);
     });
 
     it("should deny user with write permission from deleting", () => {
-      const result = DocumentPolicy.canDelete({
+      const result = DocumentAccessPolicy.canAdmin({
         userId: regularUserId,
-        userRole: "user",
+        roles: [],
         documentId,
-        ownerId: otherUserId,
-        directPermission: "write"
+        documentOwnerId: otherUserId,
+        userPermissions: [{
+          level: "write",
+          grantsAccess: (lvl: any) => ["write", "admin"].includes(lvl),
+        } as any]
       });
 
-      expect(result).toBe(false);
+      expect(result.granted).toBe(false);
     });
 
     it("should allow user with admin permission to delete", () => {
-      const result = DocumentPolicy.canDelete({
+      const result = DocumentAccessPolicy.canAdmin({
         userId: regularUserId,
-        userRole: "user",
+        roles: [],
         documentId,
-        ownerId: otherUserId,
-        directPermission: "admin"
+        documentOwnerId: otherUserId,
+        userPermissions: [{
+          level: "admin",
+          grantsAccess: (lvl: any) => ["admin"].includes(lvl),
+        } as any]
       });
 
-      expect(result).toBe(true);
+      expect(result.granted).toBe(true);
     });
   });
 
   describe("canShare", () => {
     it("should allow admin to share any document", () => {
-      const result = DocumentPolicy.canShare({
+      const result = DocumentAccessPolicy.canShare({
         userId: adminUserId,
-        userRole: "admin",
+        roles: ["ADMIN" as Role],
         documentId,
-        ownerId: otherUserId
+        documentOwnerId: otherUserId,
+        userPermissions: []
       });
 
-      expect(result).toBe(true);
+      expect(result.granted).toBe(true);
     });
 
     it("should allow owner to share their own document", () => {
-      const result = DocumentPolicy.canShare({
+      const result = DocumentAccessPolicy.canShare({
         userId: regularUserId,
-        userRole: "user",
+        roles: [],
         documentId,
-        ownerId: regularUserId
+        documentOwnerId: regularUserId,
+        userPermissions: []
       });
 
-      expect(result).toBe(true);
+      expect(result.granted).toBe(true);
     });
 
     it("should deny user with write permission from sharing", () => {
-      const result = DocumentPolicy.canShare({
+      const result = DocumentAccessPolicy.canShare({
         userId: regularUserId,
-        userRole: "user",
+        roles: [],
         documentId,
-        ownerId: otherUserId,
-        directPermission: "write"
+        documentOwnerId: otherUserId,
+        userPermissions: [{
+          level: "write",
+          grantsAccess: (lvl: any) => ["write", "admin"].includes(lvl),
+        } as any]
       });
 
-      expect(result).toBe(false);
+      expect(result.granted).toBe(false);
     });
   });
 });
