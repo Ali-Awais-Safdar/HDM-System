@@ -1,29 +1,38 @@
 import { Effect, Schema as S, Option } from "effect"
 import { DownloadToken as DownloadTokenSchema } from "../schema/download-token.schema"
-import { makeDownloadTokenId } from "../value-objects/id.vo"
+import { makeDownloadTokenIdSync } from "../value-objects/id.vo"
 import { ValidationError, BusinessRuleViolationError } from "../errors/domain.errors"
-import { UserId, DocumentId } from "../value-objects/id.vo"
+import { UserId, DocumentId, DownloadTokenId } from "../value-objects/id.vo"
 import { toNullable, isSome } from "../utils/option.utils"
-import { createEntityFactory, type Entity } from "../utils/entity.utils"
+import { createEntityFactory, type Entity, type IEntity } from "../utils/entity.utils"
 import { randomBytes } from "crypto"
 
-/**
- * DownloadToken domain entity representing secure, short-lived access tokens for document downloads.
- * 
- * Business Rules:
- * - Tokens are single-use (marked as used after first consumption)
- * - Tokens have short expiration times (default 5 minutes)
- * - Tokens are cryptographically secure random strings
- * - Tokens are bound to a specific user and document
- * - Expired or used tokens are invalid
- */
-export class DownloadToken implements Entity<S.Schema.Type<typeof DownloadTokenSchema>> {
-  private constructor(readonly props: S.Schema.Type<typeof DownloadTokenSchema>) {}
+export interface IDownloadToken extends IEntity {
+  readonly id: DownloadTokenId
+  readonly token: string
+  readonly documentId: DocumentId
+  readonly issuedTo: UserId
+  readonly expiresAt: Date
+  readonly usedAt: Option.Option<Date>
+  readonly createdAt: Date
+}
 
-  // Standardized factory methods using the entity utilities
+export type SerializedDownloadToken = {
+  id: string
+  token: string
+  documentId: string
+  issuedTo: string
+  expiresAt: Date
+  usedAt: Date | null
+  createdAt: Date
+}
+
+export class DownloadTokenEntity implements Entity<S.Schema.Type<typeof DownloadTokenSchema>>, IDownloadToken {
+  // Factory methods
+  
   static create = createEntityFactory(
     DownloadTokenSchema,
-    (props) => new DownloadToken(props),
+    (props) => new DownloadTokenEntity(props),
     "DownloadToken"
   ).create
 
@@ -31,17 +40,17 @@ export class DownloadToken implements Entity<S.Schema.Type<typeof DownloadTokenS
     documentId: DocumentId;
     issuedTo: UserId;
     expiresAt: Date;
-  }): Effect.Effect<DownloadToken, ValidationError> => {
-    const token = DownloadToken.generateSecureToken()
+  }): Effect.Effect<DownloadTokenEntity, ValidationError> => {
+    const token = DownloadTokenEntity.generateSecureToken()
     const tokenData = {
-      id: makeDownloadTokenId(crypto.randomUUID()),
+      id: makeDownloadTokenIdSync(crypto.randomUUID()),
       token,
       ...props,
       usedAt: Option.none(),
       createdAt: new Date()
     }
     return S.decodeUnknown(DownloadTokenSchema)(tokenData).pipe(
-      Effect.map((validated) => new DownloadToken(validated)),
+      Effect.map((validated) => new DownloadTokenEntity(validated)),
       Effect.mapError((error) => new ValidationError(
         `Invalid download token data: ${error instanceof Error ? error.message : String(error)}`,
         undefined,
@@ -53,9 +62,9 @@ export class DownloadToken implements Entity<S.Schema.Type<typeof DownloadTokenS
   static createWithDefaultExpiry = (props: {
     documentId: DocumentId;
     issuedTo: UserId;
-  }): Effect.Effect<DownloadToken, ValidationError> => {
+  }): Effect.Effect<DownloadTokenEntity, ValidationError> => {
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000) // 5 minutes from now
-    return DownloadToken.createNew({
+    return DownloadTokenEntity.createNew({
       ...props,
       expiresAt,
     })
@@ -63,17 +72,32 @@ export class DownloadToken implements Entity<S.Schema.Type<typeof DownloadTokenS
 
   static fromPersistence = createEntityFactory(
     DownloadTokenSchema,
-    (props) => new DownloadToken(props),
+    (props) => new DownloadTokenEntity(props),
     "DownloadToken"
   ).fromPersistence
 
   static unsafe = createEntityFactory(
     DownloadTokenSchema,
-    (props) => new DownloadToken(props),
+    (props) => new DownloadTokenEntity(props),
     "DownloadToken"
   ).unsafe
 
-  // convenience read accessors
+  /**
+   * Generates a cryptographically secure random token.
+   * Uses 32 bytes (256 bits) of randomness, encoded as URL-safe base64.
+   */
+  private static generateSecureToken(): string {
+    return randomBytes(32)
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=/g, '') // Remove padding for URL safety
+  }
+
+  private constructor(readonly props: S.Schema.Type<typeof DownloadTokenSchema>) {}
+
+  // Getters and Computed Properties
+  
   get id() { return this.props.id }
   get token() { return this.props.token }
   get documentId() { return this.props.documentId }
@@ -82,38 +106,62 @@ export class DownloadToken implements Entity<S.Schema.Type<typeof DownloadTokenS
   get usedAt() { return this.props.usedAt }
   get createdAt() { return this.props.createdAt }
 
-  /**
-   * Checks if the token is valid (not expired and not used).
-   * Includes clock-skew tolerance for expiration check.
-   */
-  isValid(clockSkewToleranceMs: number = 0): boolean {
-    return !this.isExpired(clockSkewToleranceMs) && !this.isUsed()
+  get hasBeenUsed(): boolean {
+    return isSome(this.usedAt)
   }
 
-  /**
-   * Checks if the token has expired.
-   * Includes clock-skew tolerance to handle time differences between client and server.
-   */
+  get hasExpired(): boolean {
+    return new Date() > this.expiresAt
+  }
+
+  get isCurrentlyValid(): boolean {
+    return !this.hasExpired && !this.hasBeenUsed
+  }
+
+  get millisecondsUntilExpiry(): number {
+    const timeLeft = this.expiresAt.getTime() - new Date().getTime()
+    return Math.max(0, timeLeft)
+  }
+
+  get secondsUntilExpiry(): number {
+    return Math.floor(this.millisecondsUntilExpiry / 1000)
+  }
+
+  // Public Domain Methods
+  
+  isValid(clockSkewToleranceMs: number = 0): boolean {
+    return !this.isExpired(clockSkewToleranceMs) && !this.hasBeenUsed
+  }
+
   isExpired(clockSkewToleranceMs: number = 0): boolean {
     const now = new Date()
     const adjustedExpiryTime = new Date(this.expiresAt.getTime() + clockSkewToleranceMs)
     return now > adjustedExpiryTime
   }
 
-  /**
-   * Checks if the token has been used.
-   */
   isUsed(): boolean {
-    return isSome(this.usedAt)
+    return this.hasBeenUsed
+  }
+
+  belongsToUser(userId: UserId): boolean {
+    return this.issuedTo === userId
   }
 
   /**
-   * Effect-based method for marking the token as used.
-   * Returns a new instance (immutable).
+   * Gets the remaining time before expiration in milliseconds.
+   * Returns 0 if already expired.
+   * Includes clock-skew tolerance in the calculation.
    */
-  markAsUsed = (): Effect.Effect<DownloadToken, ValidationError | BusinessRuleViolationError> => {
+  getTimeToExpiry(clockSkewToleranceMs: number = 0): number {
+    const now = new Date()
+    const adjustedExpiryTime = this.expiresAt.getTime() + clockSkewToleranceMs
+    const timeLeft = adjustedExpiryTime - now.getTime()
+    return Math.max(0, timeLeft)
+  }
+
+  markAsUsed = (): Effect.Effect<DownloadTokenEntity, ValidationError | BusinessRuleViolationError> => {
     // Check if already used
-    if (this.isUsed()) {
+    if (this.hasBeenUsed) {
       return Effect.fail(new BusinessRuleViolationError(
         "TOKEN_ALREADY_USED",
         "Token has already been used",
@@ -122,7 +170,7 @@ export class DownloadToken implements Entity<S.Schema.Type<typeof DownloadTokenS
     }
 
     // Check if expired
-    if (this.isExpired()) {
+    if (this.hasExpired) {
       return Effect.fail(new BusinessRuleViolationError(
         "TOKEN_EXPIRED",
         "Cannot use expired token",
@@ -142,33 +190,11 @@ export class DownloadToken implements Entity<S.Schema.Type<typeof DownloadTokenS
         'usedAt',
         updatedData.usedAt
       )),
-      Effect.map(validated => new DownloadToken(validated))
+      Effect.map(validated => new DownloadTokenEntity(validated))
     )
   }
 
-  /**
-   * Checks if the token belongs to the specified user.
-   */
-  belongsToUser(userId: UserId): boolean {
-    return this.issuedTo === userId
-  }
-
-  /**
-   * Gets the remaining time before expiration in milliseconds.
-   * Returns 0 if already expired.
-   * Includes clock-skew tolerance in the calculation.
-   */
-  getTimeToExpiry(clockSkewToleranceMs: number = 0): number {
-    const now = new Date()
-    const adjustedExpiryTime = this.expiresAt.getTime() + clockSkewToleranceMs
-    const timeLeft = adjustedExpiryTime - now.getTime()
-    return Math.max(0, timeLeft)
-  }
-
-  /**
-   * Effect-based method for validating token before use.
-   */
-  validateForUse = (userId: UserId, clockSkewToleranceMs: number = 0): Effect.Effect<DownloadToken, BusinessRuleViolationError> => {
+  validateForUse = (userId: UserId, clockSkewToleranceMs: number = 0): Effect.Effect<DownloadTokenEntity, BusinessRuleViolationError> => {
     // Check if token belongs to user
     if (!this.belongsToUser(userId)) {
       return Effect.fail(new BusinessRuleViolationError(
@@ -179,7 +205,7 @@ export class DownloadToken implements Entity<S.Schema.Type<typeof DownloadTokenS
     }
 
     // Check if already used
-    if (this.isUsed()) {
+    if (this.hasBeenUsed) {
       return Effect.fail(new BusinessRuleViolationError(
         "TOKEN_ALREADY_USED",
         "Token has already been used",
@@ -200,17 +226,16 @@ export class DownloadToken implements Entity<S.Schema.Type<typeof DownloadTokenS
     return Effect.succeed(this)
   }
 
-  /**
-   * Standardized serialization methods
-   */
+  // Serialization Methods
+
   toWireFormat = (): S.Schema.Type<typeof DownloadTokenSchema> => {
     return this.props
   }
 
-  /**
-   * Returns a plain object representation for serialization.
-   * Note: The actual token is excluded for security reasons.
-   */
+  serialized = (): S.Schema.Type<typeof DownloadTokenSchema> => {
+    return this.props
+  }
+
   toPlainObject = (clockSkewToleranceMs: number = 0) => {
     return {
       id: this.id,
@@ -221,20 +246,12 @@ export class DownloadToken implements Entity<S.Schema.Type<typeof DownloadTokenS
       createdAt: this.createdAt,
       isValid: this.isValid(clockSkewToleranceMs),
       isExpired: this.isExpired(clockSkewToleranceMs),
-      isUsed: this.isUsed(),
+      isUsed: this.hasBeenUsed,
       timeToExpiry: this.getTimeToExpiry(clockSkewToleranceMs),
+      hasBeenUsed: this.hasBeenUsed,
+      hasExpired: this.hasExpired,
+      isCurrentlyValid: this.isCurrentlyValid,
+      secondsUntilExpiry: this.secondsUntilExpiry
     }
-  }
-
-  /**
-   * Generates a cryptographically secure random token.
-   * Uses 32 bytes (256 bits) of randomness, encoded as URL-safe base64.
-   */
-  private static generateSecureToken(): string {
-    return randomBytes(32)
-      .toString('base64')
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-      .replace(/=/g, '') // Remove padding for URL safety
   }
 }

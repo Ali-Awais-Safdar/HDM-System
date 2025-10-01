@@ -1,16 +1,34 @@
-import { Effect, Schema as S } from "effect"
+import { Effect, Schema as S, Option } from "effect"
 import { UserSchema } from "../schema/user.schema"
 import { Role } from "../schema/access-policy.schema"
+import { WorkspaceId } from "../value-objects/id.vo"
 import { ValidationError } from "../errors/domain.errors"
 import { UserId } from "../value-objects/id.vo"
 import { EmailAddress } from "../value-objects/email.vo"
-import { createEntityFactory, type Entity } from "../utils/entity.utils"
+import { createEntityFactory, type Entity, type IEntity } from "../utils/entity.utils"
+import { toNullable, fromNullable, isSome } from "../utils/option.utils"
 
+export type { Role }
 
-export class UserEntity implements Entity<S.Schema.Type<typeof UserSchema>> {
-  private constructor(readonly props: S.Schema.Type<typeof UserSchema>) {}
+export interface IUser extends IEntity {
+  readonly id: UserId
+  readonly email: EmailAddress
+  readonly passwordHash: string
+  readonly roles: readonly Role[]
+  readonly workspaceId: Option.Option<WorkspaceId>
+  readonly createdAt: Date
+}
 
-  // Standardized factory methods using the entity utilities
+export type SerializedUser = {
+  id: string
+  email: string
+  passwordHash: string
+  roles: readonly string[]
+  workspaceId: string | null
+  createdAt: Date
+}
+export class UserEntity implements Entity<S.Schema.Type<typeof UserSchema>>, IUser {
+  // Factory methods
   static create = createEntityFactory(
     UserSchema,
     (props) => new UserEntity(props),
@@ -22,9 +40,11 @@ export class UserEntity implements Entity<S.Schema.Type<typeof UserSchema>> {
     email: EmailAddress;
     passwordHash: string;
     roles: Role[];
+    workspaceId?: WorkspaceId | null;
   }): Effect.Effect<UserEntity, ValidationError> => {
     const userData = {
       ...props,
+      workspaceId: fromNullable(props.workspaceId),
       createdAt: new Date()
     }
     return S.decodeUnknown(UserSchema)(userData).pipe(
@@ -49,28 +69,98 @@ export class UserEntity implements Entity<S.Schema.Type<typeof UserSchema>> {
     "User"
   ).unsafe
 
-  // convenience read accessors
+  private constructor(readonly props: S.Schema.Type<typeof UserSchema>) {}
+
+  // Getters
+  
   get id() { return this.props.id }
   get email() { return this.props.email }
   get passwordHash() { return this.props.passwordHash }
   get roles() { return this.props.roles }
+  get workspaceId() { return this.props.workspaceId }
   get createdAt() { return this.props.createdAt }
 
-  // business logic methods
+  get isAdminUser(): boolean {
+    return this.roles.includes("ADMIN" as Role)
+  }
+
+  get roleCount(): number {
+    return this.roles.length
+  }
+
+  get hasWorkspaceAssignment(): boolean {
+    return isSome(this.workspaceId)
+  }
+
+  get emailDomain(): string {
+    const parts = this.email.split('@')
+    return parts[1] || ''
+  }
+
+  // Domain methods
   isAdmin(): boolean {
-    return this.roles.includes("ADMIN" as Role);
+    return this.isAdminUser
   }
 
   canManageUsers(): boolean {
-    return this.isAdmin();
+    return this.isAdmin()
   }
 
   hasRole(role: Role): boolean {
-    return this.roles.includes(role);
+    return this.roles.includes(role)
   }
 
-  // Standardized serialization methods
+  hasWorkspace(): boolean {
+    return this.hasWorkspaceAssignment
+  }
+
+  belongsToWorkspace(workspaceId: WorkspaceId): boolean {
+    return Option.match(this.workspaceId, {
+      onNone: () => false,
+      onSome: (id) => id === workspaceId
+    })
+  }
+
+  getWorkspaceId(): WorkspaceId | null {
+    return toNullable(this.workspaceId)
+  }
+
+  assignToWorkspace = (workspaceId: WorkspaceId): Effect.Effect<UserEntity, ValidationError> => {
+    const updatedData = {
+      ...this.props,
+      workspaceId: Option.some(workspaceId)
+    }
+    return S.decodeUnknown(UserSchema)(updatedData).pipe(
+      Effect.map((validated) => new UserEntity(validated)),
+      Effect.mapError((error) => new ValidationError(
+        `Invalid workspace ID: ${error instanceof Error ? error.message : String(error)}`,
+        'workspaceId',
+        workspaceId
+      ))
+    )
+  }
+
+  removeFromWorkspace = (): Effect.Effect<UserEntity, ValidationError> => {
+    const updatedData = {
+      ...this.props,
+      workspaceId: Option.none()
+    }
+    return S.decodeUnknown(UserSchema)(updatedData).pipe(
+      Effect.map((validated) => new UserEntity(validated)),
+      Effect.mapError((error) => new ValidationError(
+        `Failed to remove workspace: ${error instanceof Error ? error.message : String(error)}`,
+        'workspaceId',
+        null
+      ))
+    )
+  }
+
+  // Serialization
   toWireFormat = (): S.Schema.Type<typeof UserSchema> => {
+    return this.props
+  }
+
+  serialized = (): S.Schema.Type<typeof UserSchema> => {
     return this.props
   }
 
@@ -79,7 +169,10 @@ export class UserEntity implements Entity<S.Schema.Type<typeof UserSchema>> {
       id: this.id,
       email: this.email,
       roles: this.roles,
-      createdAt: this.createdAt
+      workspaceId: toNullable(this.workspaceId),
+      createdAt: this.createdAt,
+      isAdmin: this.isAdminUser,
+      hasWorkspace: this.hasWorkspaceAssignment
     }
   }
 }

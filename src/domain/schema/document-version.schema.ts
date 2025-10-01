@@ -6,7 +6,6 @@ import { DateTime } from "../value-objects/datetime.vo"
 import { isPositiveNumber } from "../guards/domain.guards"
 import { fromNullable } from "../utils/option.utils"
 
-// Domain schema with embedded guards
 export const DocumentVersion = S.Struct({
   id: DocumentVersionId,
   documentId: DocumentId,
@@ -19,11 +18,10 @@ export const DocumentVersion = S.Struct({
   mimeType: MimeType,
   size: FileSize,
   createdAt: DateTime,
-  createdBy: S.Option(UserId) // Option<UserId> in domain for optional fields
+  createdBy: S.Option(UserId)
 })
 export type DocumentVersion = S.Schema.Type<typeof DocumentVersion>
 
-// Persistence/DTO shape (snake_case + nullable created_by) - wire format
 export const DocumentVersionRow = S.Struct({
   id: S.String,
   document_id: S.String,
@@ -33,11 +31,10 @@ export const DocumentVersionRow = S.Struct({
   mime_type: S.String,
   size: S.Number,
   created_at: S.Date,
-  created_by: S.Union(S.String, S.Null) // nullable in persistence
+  created_by: S.Union(S.String, S.Null)
 })
 export type DocumentVersionRow = S.Schema.Type<typeof DocumentVersionRow>
 
-// Codec (transform Row <-> Domain with normalization at boundaries)
 export const DocumentVersionCodec = S.transform(DocumentVersionRow, DocumentVersion, {
   decode: (r) => ({
     id: r.id as any,
@@ -64,6 +61,5 @@ export const DocumentVersionCodec = S.transform(DocumentVersionRow, DocumentVers
   strict: false
 })
 
-// Factory functions for creating from unknown input using Effect pipeline
 export const makeDocumentVersion = (input: unknown) => S.decodeUnknown(DocumentVersion)(input)
 export const makeDocumentVersionRow = (input: unknown) => S.decodeUnknown(DocumentVersionRow)(input)

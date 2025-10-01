@@ -1,16 +1,44 @@
-import { Effect, Schema as S } from "effect"
+import { Effect, Schema as S, Option } from "effect"
 import { DocumentVersion } from "../schema/document-version.schema"
 import { ValidationError } from "../errors/domain.errors"
 import { DocumentVersionId, DocumentId, UserId } from "../value-objects/id.vo"
 import { Sha256 } from "../value-objects/checksum.vo"
 import { FileKey, MimeType, FileSize } from "../value-objects/file-ref.vo"
 import { fromNullable, toNullable, isSome } from "../utils/option.utils"
-import { createEntityFactory, type Entity } from "../utils/entity.utils"
+import { createEntityFactory, type Entity, type IEntity } from "../utils/entity.utils"
 
-export class DocumentVersionEntity implements Entity<S.Schema.Type<typeof DocumentVersion>> {
-  private constructor(readonly props: S.Schema.Type<typeof DocumentVersion>) {}
 
-  // Standardized factory methods using the entity utilities
+ // DocumentVersion entity interface extending base IEntity.
+
+export interface IDocumentVersion extends IEntity {
+  readonly id: DocumentVersionId
+  readonly documentId: DocumentId
+  readonly version: number
+  readonly checksum: Sha256
+  readonly fileKey: FileKey
+  readonly mimeType: MimeType
+  readonly size: FileSize
+  readonly createdAt: Date
+  readonly createdBy: Option.Option<UserId>
+}
+
+/**
+ * Serialized DocumentVersion type for external APIs and persistence.
+ */
+export type SerializedDocumentVersion = {
+  id: string
+  documentId: string
+  version: number
+  checksum: string
+  fileKey: string
+  mimeType: string
+  size: number
+  createdAt: Date
+  createdBy: string | null
+}
+
+export class DocumentVersionEntity implements Entity<S.Schema.Type<typeof DocumentVersion>>, IDocumentVersion {
+
   static create = createEntityFactory(
     DocumentVersion,
     (props) => new DocumentVersionEntity(props),
@@ -54,7 +82,8 @@ export class DocumentVersionEntity implements Entity<S.Schema.Type<typeof Docume
     "DocumentVersion"
   ).unsafe
 
-  // convenience read accessors
+  private constructor(readonly props: S.Schema.Type<typeof DocumentVersion>) {}
+
   get id() { return this.props.id }
   get documentId() { return this.props.documentId }
   get version() { return this.props.version }
@@ -65,9 +94,28 @@ export class DocumentVersionEntity implements Entity<S.Schema.Type<typeof Docume
   get createdAt() { return this.props.createdAt }
   get createdBy() { return this.props.createdBy }
 
-  // Business logic methods
-  hasCreator(): boolean {
+
+  get hasCreatorInfo(): boolean {
     return isSome(this.createdBy)
+  }
+
+
+  get sizeInKB(): number {
+    return Math.round(this.size / 1024)
+  }
+
+  get sizeInMB(): number {
+    return Math.round((this.size / (1024 * 1024)) * 100) / 100
+  }
+
+  get isFirstVersion(): boolean {
+    return this.version === 1
+  }
+
+  // Public Domain Methods
+  
+  hasCreator(): boolean {
+    return this.hasCreatorInfo
   }
 
   getCreatorId(): UserId | null {
@@ -86,12 +134,18 @@ export class DocumentVersionEntity implements Entity<S.Schema.Type<typeof Docume
     return this.version > other.version
   }
 
+
   isOlderThan(other: DocumentVersionEntity): boolean {
     return this.version < other.version
   }
 
-  // Standardized serialization methods
+  // Serialization Methods
+  
   toWireFormat = (): S.Schema.Type<typeof DocumentVersion> => {
+    return this.props
+  }
+
+  serialized = (): S.Schema.Type<typeof DocumentVersion> => {
     return this.props
   }
 
@@ -105,7 +159,11 @@ export class DocumentVersionEntity implements Entity<S.Schema.Type<typeof Docume
       mimeType: this.mimeType,
       size: this.size,
       createdAt: this.createdAt,
-      createdBy: toNullable(this.createdBy)
+      createdBy: toNullable(this.createdBy),
+      hasCreator: this.hasCreatorInfo,
+      sizeInKB: this.sizeInKB,
+      sizeInMB: this.sizeInMB,
+      isFirstVersion: this.isFirstVersion
     }
   }
 }

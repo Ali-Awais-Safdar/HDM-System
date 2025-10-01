@@ -2,13 +2,34 @@ import { Effect, Schema as S, Option } from "effect"
 import { Document } from "../schema/document.schema"
 import { ValidationError, BusinessRuleViolationError } from "../errors/domain.errors"
 import { DocumentId, UserId, DocumentVersionId } from "../value-objects/id.vo"
-import { toNullable, fromNullable } from "../utils/option.utils"
-import { createEntityFactory, type Entity } from "../utils/entity.utils"
+import { toNullable, fromNullable, isSome } from "../utils/option.utils"
+import { createEntityFactory, type Entity, type IEntity } from "../utils/entity.utils"
 
-export class DocumentEntity implements Entity<S.Schema.Type<typeof Document>> {
-  private constructor(readonly props: S.Schema.Type<typeof Document>) {}
+export interface IDocument extends IEntity {
+  readonly id: DocumentId
+  readonly ownerId: UserId
+  readonly title: string
+  readonly description: Option.Option<string>
+  readonly tags: Option.Option<readonly string[]>
+  readonly currentVersionId: DocumentVersionId
+  readonly createdAt: Date
+  readonly updatedAt: Option.Option<Date>
+}
 
-  // Standardized factory methods using the entity utilities
+export type SerializedDocument = {
+  id: string
+  ownerId: string
+  title: string
+  description: string | null
+  tags: readonly string[] | null
+  currentVersionId: string
+  createdAt: Date
+  updatedAt: Date | null
+}
+
+export class DocumentEntity implements Entity<S.Schema.Type<typeof Document>>, IDocument {
+  // Factory methods
+  
   static create = createEntityFactory(
     Document,
     (props) => new DocumentEntity(props),
@@ -52,7 +73,11 @@ export class DocumentEntity implements Entity<S.Schema.Type<typeof Document>> {
     "Document"
   ).unsafe
 
-  // convenience read accessors
+  // Constructor (Private)
+  
+  private constructor(readonly props: S.Schema.Type<typeof Document>) {}
+
+  // Getters
   get id() { return this.props.id }
   get ownerId() { return this.props.ownerId }
   get title() { return this.props.title }
@@ -62,7 +87,47 @@ export class DocumentEntity implements Entity<S.Schema.Type<typeof Document>> {
   get createdAt() { return this.props.createdAt }
   get updatedAt() { return this.props.updatedAt }
 
-  // Effect-based method for renaming document
+  get hasDescriptionValue(): boolean {
+    return isSome(this.description)
+  }
+
+  get hasTagsValue(): boolean {
+    return isSome(this.tags) && Option.getOrElse(this.tags, () => []).length > 0
+  }
+
+  get isModified(): boolean {
+    return isSome(this.updatedAt)
+  }
+
+  get tagCount(): number {
+    return Option.getOrElse(this.tags, () => []).length
+  }
+
+  get descriptionOrEmpty(): string {
+    return Option.getOrElse(this.description, () => '')
+  }
+
+  get tagsOrEmpty(): readonly string[] {
+    return Option.getOrElse(this.tags, () => [])
+  }
+
+  // Domain methods
+  hasDescription(): boolean {
+    return this.hasDescriptionValue
+  }
+
+  hasTags(): boolean {
+    return this.hasTagsValue
+  }
+
+  hasBeenUpdated(): boolean {
+    return this.isModified
+  }
+
+  getTagCount(): number {
+    return this.tagCount
+  }
+
   rename = (newTitle: string): Effect.Effect<DocumentEntity, ValidationError> => {
     const updatedData = {
       ...this.props,
@@ -79,7 +144,6 @@ export class DocumentEntity implements Entity<S.Schema.Type<typeof Document>> {
     )
   }
 
-  // Effect-based method for updating description
   updateDescription = (newDescription: string | null | undefined): Effect.Effect<DocumentEntity, ValidationError> => {
     const updatedData = {
       ...this.props,
@@ -96,7 +160,6 @@ export class DocumentEntity implements Entity<S.Schema.Type<typeof Document>> {
     )
   }
 
-  // Effect-based method for adding tags
   addTags = (newTags: string[]): Effect.Effect<DocumentEntity, ValidationError | BusinessRuleViolationError> => {
     if (newTags.length === 0) {
       return Effect.succeed(this)
@@ -129,7 +192,6 @@ export class DocumentEntity implements Entity<S.Schema.Type<typeof Document>> {
     )
   }
 
-  // Effect-based method for removing tags
   removeTags = (tagsToRemove: string[]): Effect.Effect<DocumentEntity, ValidationError> => {
     if (tagsToRemove.length === 0) {
       return Effect.succeed(this)
@@ -155,7 +217,6 @@ export class DocumentEntity implements Entity<S.Schema.Type<typeof Document>> {
     )
   }
 
-  // Effect-based method for updating current version
   updateCurrentVersion = (newVersionId: DocumentVersionId): Effect.Effect<DocumentEntity, ValidationError> => {
     const updatedData = {
       ...this.props,
@@ -172,25 +233,12 @@ export class DocumentEntity implements Entity<S.Schema.Type<typeof Document>> {
     )
   }
 
-  // Business logic methods
-  hasDescription(): boolean {
-    return Option.isSome(this.description)
-  }
-
-  hasTags(): boolean {
-    return Option.isSome(this.tags) && Option.getOrElse(this.tags, () => []).length > 0
-  }
-
-  hasBeenUpdated(): boolean {
-    return Option.isSome(this.updatedAt)
-  }
-
-  getTagCount(): number {
-    return Option.getOrElse(this.tags, () => []).length
-  }
-
-  // Standardized serialization methods
+  // Serialization
   toWireFormat = (): S.Schema.Type<typeof Document> => {
+    return this.props
+  }
+
+  serialized = (): S.Schema.Type<typeof Document> => {
     return this.props
   }
 
@@ -203,7 +251,11 @@ export class DocumentEntity implements Entity<S.Schema.Type<typeof Document>> {
       tags: toNullable(this.tags),
       currentVersionId: this.currentVersionId,
       createdAt: this.createdAt,
-      updatedAt: toNullable(this.updatedAt)
+      updatedAt: toNullable(this.updatedAt),
+      hasDescription: this.hasDescriptionValue,
+      hasTags: this.hasTagsValue,
+      tagCount: this.tagCount,
+      isModified: this.isModified
     }
   }
 }

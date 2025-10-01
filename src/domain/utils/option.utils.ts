@@ -1,12 +1,6 @@
 import { Option } from "effect"
 
 /**
- * Centralized utilities for Option/null mapping and manipulation.
- * These utilities maintain consistency across the domain layer and implement
- * the "normalize at boundaries" principle.
- */
-
-/**
  * Converts a nullable value to an Option<T>.
  * Normalizes null/undefined values to Option.none() at domain boundaries.
  * This is the primary normalization function for incoming data.

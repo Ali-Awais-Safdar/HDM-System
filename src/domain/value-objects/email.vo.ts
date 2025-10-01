@@ -15,46 +15,21 @@ export const EmailAddress = S.String.pipe(
 )
 export type EmailAddress = S.Schema.Type<typeof EmailAddress>
 
-/**
- * Email value object that uses the schema as single source of truth.
- * All validation and normalization is handled by the schema.
- */
-export class Email {
-  private constructor(private readonly _value: EmailAddress) {}
-
-  /**
-   * Creates an Email from a string, normalizing and validating it.
-   * Uses Effect Schema for all validation logic.
-   */
-  static create(value: string): Email {
-    // Normalize the email first
-    const normalized = value.toLowerCase().trim();
-    const validated = S.decodeUnknownSync(EmailAddress)(normalized);
-    return new Email(validated);
-  }
-
-  get value(): EmailAddress {
-    return this._value;
-  }
-
-  get domain(): string {
-    const parts = this._value.split('@');
-    return parts[1] || '';
-  }
-
-  get localPart(): string {
-    const parts = this._value.split('@');
-    return parts[0] || '';
-  }
-
-  equals(other: Email): boolean {
-    return this._value === other._value;
-  }
-
-  toString(): string {
-    return this._value;
-  }
+export const makeEmailAddress = (input: unknown) => {
+  // Normalize if it's a string
+  const normalized = typeof input === 'string' ? input.toLowerCase().trim() : input
+  return S.decodeUnknown(EmailAddress)(normalized)
 }
 
-// Factory function for creating EmailAddress from unknown input using Effect pipeline
-export const makeEmailAddress = (input: unknown) => S.decodeUnknown(EmailAddress)(input)
+/**
+ * Utility functions for working with EmailAddress values
+ */
+export const getEmailDomain = (email: EmailAddress): string => {
+  const parts = email.split('@')
+  return parts[1] || ''
+}
+
+export const getEmailLocalPart = (email: EmailAddress): string => {
+  const parts = email.split('@')
+  return parts[0] || ''
+}

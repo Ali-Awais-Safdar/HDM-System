@@ -1,11 +1,6 @@
 import { Schema as S } from "effect"
 import { ValidationError } from "../errors/domain.errors"
 
-/**
- * Centralized domain guards for reusable validation logic.
- * These guards can be used both in schemas and in business logic.
- */
-
 // String validation guards
 export const isNonEmptyString = (value: string): boolean => {
   return typeof value === 'string' && value.trim().length > 0
@@ -26,7 +21,11 @@ export const isValidPasswordHash = (value: string): boolean => {
   return isNonEmptyString(value) && value.length >= 60 // bcrypt hashes are typically 60+ chars
 }
 
-// Number validation guards
+export const isValidUserRole = (value: string): boolean => {
+  return value === "ADMIN" || value === "USER"
+}
+
+// Number validation
 export const isPositiveNumber = (value: number): boolean => {
   return typeof value === 'number' && value > 0 && Number.isFinite(value)
 }
@@ -39,7 +38,7 @@ export const isInteger = (value: number): boolean => {
   return Number.isInteger(value)
 }
 
-// Date validation guards
+// Date validation
 export const isValidDate = (value: Date): boolean => {
   return value instanceof Date && !isNaN(value.getTime())
 }
@@ -52,7 +51,7 @@ export const isPastDate = (value: Date): boolean => {
   return isValidDate(value) && value.getTime() < Date.now()
 }
 
-// Array validation guards
+// Array validation
 export const isNonEmptyArray = <T>(value: T[]): boolean => {
   return Array.isArray(value) && value.length > 0
 }
@@ -65,44 +64,7 @@ export const isValidStringArray = (value: string[]): boolean => {
   return Array.isArray(value) && value.every(item => typeof item === 'string' && isNonEmptyString(item))
 }
 
-// Tag validation guards
-export const isValidTag = (value: string): boolean => {
-  if (!isNonEmptyString(value)) return false
-  const trimmed = value.trim()
-  return trimmed.length <= 50 && /^[a-zA-Z0-9\-_\s]+$/.test(trimmed)
-}
-
-export const isValidTagList = (tags: string[]): boolean => {
-  if (!Array.isArray(tags)) return false
-  if (tags.length > 20) return false
-  return tags.every(isValidTag) && hasUniqueValues(tags.map(tag => tag.trim().toLowerCase()))
-}
-
-// Document validation guards
-export const isValidDocumentTitle = (value: string): boolean => {
-  return isNonEmptyString(value) && value.trim().length <= 255
-}
-
-export const isValidDocumentDescription = (value: string | undefined): boolean => {
-  if (value === undefined) return true
-  return typeof value === 'string' && value.length <= 1000
-}
-
-// Permission validation guards
-export const isValidPermissionLevel = (value: string): boolean => {
-  return ['read', 'write', 'admin'].includes(value)
-}
-
-export const isValidUserRole = (value: string): boolean => {
-  return ['ADMIN', 'USER'].includes(value)
-}
-
-// Token validation guards
-export const isValidToken = (value: string): boolean => {
-  return isNonEmptyString(value) && value.length >= 32
-}
-
-// Schema-based guards using Effect Schema
+// Schema-based guards
 export const isString = (value: unknown): value is string => {
   return S.is(S.String)(value)
 }
@@ -119,7 +81,7 @@ export const isDate = (value: unknown): value is Date => {
   return S.is(S.Date)(value)
 }
 
-// Composite validation functions
+// Validation helpers
 export const validateRequired = <T>(value: T | null | undefined, fieldName: string): T => {
   if (value == null) {
     throw new ValidationError(`${fieldName} is required`, fieldName, value)

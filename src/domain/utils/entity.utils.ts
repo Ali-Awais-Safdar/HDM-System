@@ -2,15 +2,6 @@ import { Effect, Schema as S } from "effect"
 import { ValidationError } from "../errors/domain.errors"
 
 /**
- * Standardized entity creation utilities that ensure consistency across all domain entities.
- * This module implements the key lessons for domain design:
- * - Effect-based creation with typed errors
- * - Schema-based validation as single source of truth
- * - Private constructors with factory methods
- * - Proper error handling and composability
- */
-
-/**
  * Creates an Effect-based entity from unknown input using a schema.
  * This is the standard pattern for all entity creation from external data.
  */
@@ -79,6 +70,15 @@ export interface EntityFactory<TEntity, TProps, TCreateProps = unknown> {
 }
 
 /**
+ * Base entity interface that all entity interfaces should extend.
+ * Provides foundational entity properties and behavior.
+ */
+export interface IEntity {
+  readonly id: string
+  readonly createdAt: Date
+}
+
+/**
  * Standard entity interface that all entities should implement.
  * This ensures consistent behavior across all domain entities.
  */
@@ -92,6 +92,11 @@ export interface Entity<TProps> {
    * Returns a plain object representation (for APIs)
    */
   toPlainObject: () => Record<string, any>
+  
+  /**
+   * Returns the serialized representation (Effect-based)
+   */
+  serialized?: () => TProps
 }
 
 /**

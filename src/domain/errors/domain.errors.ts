@@ -1,7 +1,6 @@
 import { Schema as S } from "effect"
 
 /**
- * Base domain error class with structured error information.
  * All domain errors should extend this class for consistent error handling.
  */
 export abstract class DomainError extends Error {
@@ -99,54 +98,13 @@ export class ConflictError extends DomainError {
   }
 }
 
-// Specific domain errors for different entities
-export class UserError extends DomainError {
-  readonly _tag = "UserError" as const
-  readonly code = "USER_ERROR"
-  
-  constructor(message: string, details?: Record<string, unknown>) {
-    super(message, details)
-  }
-}
-
-export class DocumentError extends DomainError {
-  readonly _tag = "DocumentError" as const
-  readonly code = "DOCUMENT_ERROR"
-  
-  constructor(message: string, details?: Record<string, unknown>) {
-    super(message, details)
-  }
-}
-
-export class AccessPolicyError extends DomainError {
-  readonly _tag = "AccessPolicyError" as const
-  readonly code = "ACCESS_POLICY_ERROR"
-  
-  constructor(message: string, details?: Record<string, unknown>) {
-    super(message, details)
-  }
-}
-
-export class DocumentAccessError extends DomainError {
-  readonly _tag = "DocumentAccessError" as const
-  readonly code = "DOCUMENT_ACCESS_ERROR"
-  
-  constructor(message: string, details?: Record<string, unknown>) {
-    super(message, details)
-  }
-}
-
-// Union type for all domain errors
+// Union type for common/base domain errors
 export type DomainErrorType = 
   | ValidationError
   | EntityNotFoundError
   | BusinessRuleViolationError
   | PermissionDeniedError
   | ConflictError
-  | UserError
-  | DocumentError
-  | AccessPolicyError
-  | DocumentAccessError
 
 // Schema for domain errors (useful for serialization)
 export const DomainErrorSchema = S.Union(

@@ -1,40 +1,39 @@
 import { Result, ok, err } from "../../shared/result/result";
 import { UserId, DocumentId } from "../value-objects/id.vo";
-import { DownloadToken } from "../entities/download-token.entity";
+import { DownloadTokenEntity } from "../entities/download-token.entity";
 
 /**
  * Domain service interface for download token management.
- * Defines the contract for download token persistence operations.
  */
 export interface DownloadTokenRepository {
   /**
    * Saves a download token to the persistence layer.
    */
-  save(token: DownloadToken): Promise<Result<DownloadToken, DownloadTokenRepositoryError>>;
+  save(token: DownloadTokenEntity): Promise<Result<DownloadTokenEntity, DownloadTokenRepositoryError>>;
 
   /**
    * Finds a download token by its token string.
    */
-  findByToken(token: string): Promise<Result<DownloadToken | null, DownloadTokenRepositoryError>>;
+  findByToken(token: string): Promise<Result<DownloadTokenEntity | null, DownloadTokenRepositoryError>>;
 
   /**
    * Finds all download tokens for a specific document.
    */
   findByDocument(
     documentId: DocumentId
-  ): Promise<Result<DownloadToken[], DownloadTokenRepositoryError>>;
+  ): Promise<Result<DownloadTokenEntity[], DownloadTokenRepositoryError>>;
 
   /**
    * Finds all download tokens issued to a specific user.
    */
   findByUser(
     userId: UserId
-  ): Promise<Result<DownloadToken[], DownloadTokenRepositoryError>>;
+  ): Promise<Result<DownloadTokenEntity[], DownloadTokenRepositoryError>>;
 
   /**
    * Updates a download token (typically to mark as used).
    */
-  update(token: DownloadToken): Promise<Result<DownloadToken, DownloadTokenRepositoryError>>;
+  update(token: DownloadTokenEntity): Promise<Result<DownloadTokenEntity, DownloadTokenRepositoryError>>;
 
   /**
    * Removes expired tokens from the database.
@@ -86,11 +85,15 @@ export class DownloadTokenService {
     documentId: DocumentId,
     issuedTo: UserId,
     expiresAt?: Date
-  ): Promise<Result<DownloadToken, DownloadTokenServiceError>> {
+  ): Promise<Result<DownloadTokenEntity, DownloadTokenServiceError>> {
     try {
-      const token = expiresAt 
-        ? DownloadToken.create({ documentId, issuedTo, expiresAt })
-        : DownloadToken.createWithDefaultExpiry({ documentId, issuedTo });
+      const tokenEffect = expiresAt 
+        ? DownloadTokenEntity.createNew({ documentId, issuedTo, expiresAt })
+        : DownloadTokenEntity.createWithDefaultExpiry({ documentId, issuedTo });
+
+      // Run the Effect to get the token entity
+      const { Effect } = await import("effect");
+      const token = await Effect.runPromise(tokenEffect);
 
       const saveResult = await this.tokenRepository.save(token);
 
@@ -118,7 +121,7 @@ export class DownloadTokenService {
    */
   async consumeDownloadToken(
     tokenString: string
-  ): Promise<Result<DownloadToken, DownloadTokenServiceError>> {
+  ): Promise<Result<DownloadTokenEntity, DownloadTokenServiceError>> {
     try {
       // Find the token
       const findResult = await this.tokenRepository.findByToken(tokenString);
@@ -156,7 +159,12 @@ export class DownloadTokenService {
       }
 
       // Mark token as used
-      const usedToken = token.markAsUsed();
+      const usedTokenEffect = token.markAsUsed();
+      
+      // Run the Effect to get the used token entity
+      const { Effect } = await import("effect");
+      const usedToken = await Effect.runPromise(usedTokenEffect);
+      
       const updateResult = await this.tokenRepository.update(usedToken);
 
       if (!updateResult.ok) {
@@ -207,7 +215,7 @@ export class DownloadTokenService {
    */
   async getActiveTokensForDocument(
     documentId: DocumentId
-  ): Promise<Result<DownloadToken[], DownloadTokenServiceError>> {
+  ): Promise<Result<DownloadTokenEntity[], DownloadTokenServiceError>> {
     try {
       const result = await this.tokenRepository.findByDocument(documentId);
 

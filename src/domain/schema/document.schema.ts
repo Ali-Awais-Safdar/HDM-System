@@ -1,15 +1,13 @@
 import { Schema as S } from "effect"
 import { DocumentId, UserId, DocumentVersionId } from "../value-objects/id.vo"
 import { DateTime } from "../value-objects/datetime.vo"
-import { isValidDocumentTitle, isValidDocumentDescription, isValidTagList } from "../guards/domain.guards"
+import { isValidDocumentTitle, isValidDocumentDescription, isValidDocumentTagList } from "../guards/document.guards"
 import { fromNullable } from "../utils/option.utils"
 
-// Helper: a normalized, non-empty, deduped tag list with embedded guards
 const Tags = S.Array(S.String).pipe(
-  S.filter((tags: readonly string[]) => isValidTagList(tags as string[]), { message: () => "Invalid tag list: duplicate tags or too many tags" })
+  S.filter((tags: readonly string[]) => isValidDocumentTagList(tags as string[]), { message: () => "Invalid tag list: duplicate tags or too many tags" })
 )
 
-// Domain schema with embedded guards
 export const Document = S.Struct({
   id: DocumentId,
   ownerId: UserId,
@@ -22,11 +20,10 @@ export const Document = S.Struct({
   tags: S.Option(Tags),
   currentVersionId: DocumentVersionId,
   createdAt: DateTime,
-  updatedAt: S.Option(DateTime) // Option<Date> in domain
+  updatedAt: S.Option(DateTime)
 })
 export type Document = S.Schema.Type<typeof Document>
 
-// Persistence row (snake_case + nullable updated_at) - wire format
 export const DocumentRow = S.Struct({
   id: S.String,
   owner_id: S.String,
@@ -39,7 +36,6 @@ export const DocumentRow = S.Struct({
 })
 export type DocumentRow = S.Schema.Type<typeof DocumentRow>
 
-// Transform Row <-> Domain (normalize at boundaries: null <-> Option)
 export const DocumentCodec = S.transform(DocumentRow, Document, {
   decode: (r) => ({
     id: r.id as any,
@@ -64,6 +60,5 @@ export const DocumentCodec = S.transform(DocumentRow, Document, {
   strict: false
 })
 
-// Factory functions for creating from unknown input using Effect pipeline
 export const makeDocument = (input: unknown) => S.decodeUnknown(Document)(input)
 export const makeDocumentRow = (input: unknown) => S.decodeUnknown(DocumentRow)(input)

@@ -1,7 +1,7 @@
 import { Effect, Schema as S } from "effect"
 import { UserEntity } from "../entities/user.entity";
 import { Role } from "../schema/access-policy.schema";
-import { Email } from "../value-objects/email.vo";
+import { EmailAddress } from "../value-objects/email.vo";
 import { Password } from "../value-objects/password.vo";
 import { UserId } from "../value-objects/id.vo";
 import { randomUUID } from "crypto"
@@ -17,7 +17,7 @@ export class AuthService {
   ) {}
 
   signup(
-    email: Email, 
+    email: EmailAddress, 
     password: Password, 
     roles: readonly Role[] = ["USER" as Role]
   ): Effect.Effect<UserEntity, AuthError> {
@@ -25,7 +25,7 @@ export class AuthService {
     
     // Check if user already exists
     return Effect.tryPromise(() =>
-      userRepository.findByEmail(email.value)
+      userRepository.findByEmail(email)
     ).pipe(
       Effect.mapError(() => new AuthError("Failed to check existing user")),
       Effect.flatMap(existing => {
@@ -51,7 +51,7 @@ export class AuthService {
         // Create new user entity
         return UserEntity.createNew({
           id: userId,
-          email: email.value,
+          email: email,
           passwordHash: hashed,
           roles: roles as Role[]
         }).pipe(
@@ -68,14 +68,14 @@ export class AuthService {
   }
 
   login(
-    email: Email, 
+    email: EmailAddress, 
     password: Password
   ): Effect.Effect<UserEntity, AuthError> {
     const { userRepository, passwordHasher } = this;
     
     // Find user by email
     return Effect.tryPromise(() =>
-      userRepository.findByEmail(email.value)
+      userRepository.findByEmail(email)
     ).pipe(
       Effect.mapError(() => new AuthError("Authentication failed")),
       Effect.flatMap(user => {
@@ -100,7 +100,7 @@ export class AuthService {
   }
 
   createAdminUser(
-    email: Email,
+    email: EmailAddress,
     password: Password
   ): Effect.Effect<UserEntity, AuthError> {
     return this.signup(email, password, ["ADMIN" as Role]);
@@ -115,7 +115,7 @@ export interface PasswordHasher {
 
 export interface UserRepository {
   findById(id: UserId): Promise<UserEntity | null>;
-  findByEmail(email: import("../value-objects/email.vo").EmailAddress): Promise<UserEntity | null>;
+  findByEmail(email: EmailAddress): Promise<UserEntity | null>;
   save(user: UserEntity): Promise<UserEntity>;
   delete(id: UserId): Promise<void>;
 }

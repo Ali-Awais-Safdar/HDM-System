@@ -1,10 +1,13 @@
 import { Schema as S } from "effect"
 import { DownloadTokenId, UserId, DocumentId } from "../value-objects/id.vo"
 import { DateTime } from "../value-objects/datetime.vo"
-import { isValidToken, isFutureDate } from "../guards/domain.guards"
+import { isFutureDate } from "../guards/domain.guards"
 import { fromNullable } from "../utils/option.utils"
 
-// Domain schema with embedded guards
+const isValidToken = (value: string): boolean => {
+  return value.length >= 32
+}
+
 export const DownloadToken = S.Struct({
   id: DownloadTokenId,
   token: S.String.pipe(
@@ -21,7 +24,6 @@ export const DownloadToken = S.Struct({
 })
 export type DownloadToken = S.Schema.Type<typeof DownloadToken>
 
-// Persistence row (snake_case) - wire format
 export const DownloadTokenRow = S.Struct({
   id: S.String,
   token: S.String,
@@ -33,7 +35,6 @@ export const DownloadTokenRow = S.Struct({
 })
 export type DownloadTokenRow = S.Schema.Type<typeof DownloadTokenRow>
 
-// Transform Row <-> Domain (normalize at boundaries: null <-> Option)
 export const DownloadTokenCodec = S.transform(DownloadTokenRow, DownloadToken, {
   decode: (r) => ({
     id: r.id as any,
@@ -56,6 +57,5 @@ export const DownloadTokenCodec = S.transform(DownloadTokenRow, DownloadToken, {
   strict: false
 })
 
-// Factory functions for creating from unknown input using Effect pipeline
 export const makeDownloadToken = (input: unknown) => S.decodeUnknown(DownloadToken)(input)
 export const makeDownloadTokenRow = (input: unknown) => S.decodeUnknown(DownloadTokenRow)(input)

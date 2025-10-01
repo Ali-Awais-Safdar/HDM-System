@@ -18,15 +18,20 @@ export type DocumentVersionId = S.Schema.Type<typeof DocumentVersionId>
 export const UserId = UuidString.pipe(S.brand("UserId"))
 export type UserId = S.Schema.Type<typeof UserId>
 
-export const PermissionId = UuidString.pipe(S.brand("PermissionId"))
-export type PermissionId = S.Schema.Type<typeof PermissionId>
-
 export const DownloadTokenId = UuidString.pipe(S.brand("DownloadTokenId"))
 export type DownloadTokenId = S.Schema.Type<typeof DownloadTokenId>
 
-// Factory functions for creating IDs from unknown input using Effect pipeline
+export const WorkspaceId = UuidString.pipe(S.brand("WorkspaceId"))
+export type WorkspaceId = S.Schema.Type<typeof WorkspaceId>
+
 export const makeUserId = (input: unknown) => S.decodeUnknown(UserId)(input)
 export const makeDocumentId = (input: unknown) => S.decodeUnknown(DocumentId)(input)
-export const makePermissionId = (input: unknown) => S.decodeUnknown(PermissionId)(input)
 export const makeDownloadTokenId = (input: unknown) => S.decodeUnknown(DownloadTokenId)(input)
 export const makeDocumentVersionId = (input: unknown) => S.decodeUnknown(DocumentVersionId)(input)
+export const makeWorkspaceId = (input: unknown) => S.decodeUnknown(WorkspaceId)(input)
+
+export const makeUserIdSync = (input: unknown) => S.decodeUnknownSync(UserId)(input)
+export const makeDocumentIdSync = (input: unknown) => S.decodeUnknownSync(DocumentId)(input)
+export const makeDownloadTokenIdSync = (input: unknown) => S.decodeUnknownSync(DownloadTokenId)(input)
+export const makeDocumentVersionIdSync = (input: unknown) => S.decodeUnknownSync(DocumentVersionId)(input)
+export const makeWorkspaceIdSync = (input: unknown) => S.decodeUnknownSync(WorkspaceId)(input)
