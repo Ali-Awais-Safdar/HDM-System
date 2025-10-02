@@ -41,11 +41,18 @@ export class DocumentEntity implements Entity<S.Schema.Type<typeof Document>, Se
     currentVersionId: DocumentVersionId;
   }): Effect.Effect<DocumentEntity, ValidationError> => {
     const documentData = {
-      ...props,
-      description: fromNullable(props.description),
-      tags: fromNullable(props.tags),
-      createdAt: new Date(),
-      updatedAt: Option.none()
+      id: props.id,
+      ownerId: props.ownerId,
+      title: props.title,
+      description: props.description 
+        ? { _tag: "Some" as const, value: props.description }
+        : { _tag: "None" as const },
+      tags: props.tags
+        ? { _tag: "Some" as const, value: props.tags }
+        : { _tag: "None" as const },
+      currentVersionId: props.currentVersionId,
+      createdAt: new Date().toISOString(),
+      updatedAt: { _tag: "None" as const }
     }
     return S.decodeUnknown(Document)(documentData).pipe(
       Effect.map((validated) => new DocumentEntity(validated)),

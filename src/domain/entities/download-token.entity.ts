@@ -40,9 +40,11 @@ export class DownloadTokenEntity implements Entity<S.Schema.Type<typeof Download
     const tokenData = {
       id: makeDownloadTokenIdSync(crypto.randomUUID()),
       token,
-      ...props,
-      usedAt: Option.none(),
-      createdAt: new Date()
+      documentId: props.documentId,
+      issuedTo: props.issuedTo,
+      expiresAt: props.expiresAt.toISOString(),
+      usedAt: { _tag: "None" as const },
+      createdAt: new Date().toISOString()
     }
     return S.decodeUnknown(DownloadTokenSchema)(tokenData).pipe(
       Effect.map((validated) => new DownloadTokenEntity(validated)),

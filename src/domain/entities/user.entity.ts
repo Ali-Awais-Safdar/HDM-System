@@ -6,7 +6,7 @@ import { ValidationError } from "../errors/domain.errors"
 import { UserId } from "../value-objects/id.vo"
 import { EmailAddress } from "../value-objects/email.vo"
 import { createEntityFactory, type Entity, type IEntity } from "../utils/entity.utils"
-import { toNullable, fromNullable, isSome } from "../utils/option.utils"
+import { toNullable, isSome } from "../utils/option.utils"
 
 export type { Role }
 
@@ -39,9 +39,14 @@ export class UserEntity implements Entity<S.Schema.Type<typeof UserSchema>, Seri
     workspaceId?: WorkspaceId | null;
   }): Effect.Effect<UserEntity, ValidationError> => {
     const userData = {
-      ...props,
-      workspaceId: fromNullable(props.workspaceId),
-      createdAt: new Date()
+      id: props.id,
+      email: props.email,
+      passwordHash: props.passwordHash,
+      roles: props.roles,
+      workspaceId: props.workspaceId 
+        ? { _tag: "Some" as const, value: props.workspaceId }
+        : { _tag: "None" as const },
+      createdAt: new Date().toISOString()
     }
     return S.decodeUnknown(UserSchema)(userData).pipe(
       Effect.map((validated) => new UserEntity(validated)),
