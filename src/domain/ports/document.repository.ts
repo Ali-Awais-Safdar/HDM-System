@@ -1,19 +1,46 @@
-import { DocumentEntity } from "../entities/document.entity";
-import { DocumentId, UserId } from "../value-objects/id.vo";
+import { Effect, Option } from "effect"
+import { DocumentEntity } from "../entities/document.entity"
+import { DocumentId, UserId } from "../value-objects/id.vo"
+import { 
+  DocumentNotFoundError,
+  DocumentValidationError
+} from "../errors/document.errors"
+import { ValidationError } from "../errors/domain.errors"
+import { Paginated, PaginationOptions } from "../types/pagination"
 
 export interface DocumentSearchFilters {
-  query?: string;
-  tags?: string[];
-  metadata?: Record<string, unknown>;
-  ownerId?: UserId;
-  limit?: number;
-  offset?: number;
+  readonly query?: string
+  readonly tags?: readonly string[]
+  readonly ownerId?: UserId
+  readonly paginationOptions?: PaginationOptions
 }
 
-export interface DocumentRepository {
-  findById(id: DocumentId): Promise<DocumentEntity | null>;
-  findByOwner(ownerId: UserId): Promise<readonly DocumentEntity[]>;
-  search(filters: DocumentSearchFilters): Promise<readonly DocumentEntity[]>;
-  save(document: DocumentEntity): Promise<DocumentEntity>;
-  delete(id: DocumentId): Promise<void>;
+/**
+ * Document repository interface with Effect-based signatures and typed errors.
+ */
+export abstract class DocumentRepository {
+
+  abstract findById(
+    id: DocumentId
+  ): Effect.Effect<Option.Option<DocumentEntity>, DocumentNotFoundError | ValidationError>
+
+  abstract findByOwner(
+    ownerId: UserId
+  ): Effect.Effect<readonly DocumentEntity[], DocumentNotFoundError | ValidationError>
+
+  abstract search(
+    filters: DocumentSearchFilters
+  ): Effect.Effect<Paginated<DocumentEntity>, DocumentNotFoundError | ValidationError>
+
+  abstract exists(
+    id: DocumentId
+  ): Effect.Effect<boolean, DocumentNotFoundError>
+
+  abstract save(
+    document: DocumentEntity
+  ): Effect.Effect<DocumentEntity, DocumentValidationError | ValidationError>
+
+  abstract delete(
+    id: DocumentId
+  ): Effect.Effect<boolean, DocumentNotFoundError>
 }

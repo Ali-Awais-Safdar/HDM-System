@@ -1,34 +1,31 @@
 import bcrypt from "bcrypt";
-import { Result, ok, err } from "../../shared/result/result";
-import { PasswordHasher } from "../../domain/services/auth.service";
+import { PasswordHasherPort } from "../../domain/ports/password-hasher.port";
 import { env } from "../../env/env";
 
 /**
- * Bcrypt implementation of the password hasher.
- * Uses configurable salt rounds for security.
+ * Bcrypt implementation of the password hasher port.
  */
-export class BcryptPasswordHasher implements PasswordHasher {
+export class BcryptPasswordHasher extends PasswordHasherPort {
   private readonly saltRounds: number;
 
   constructor(saltRounds: number = env.BCRYPT_SALT_ROUNDS) {
+    super();
     this.saltRounds = saltRounds;
   }
 
-  async hash(password: string): Promise<Result<string, Error>> {
+  async hash(password: string): Promise<string> {
     try {
-      const hash = await bcrypt.hash(password, this.saltRounds);
-      return ok(hash);
+      return await bcrypt.hash(password, this.saltRounds);
     } catch {
-      return err(new Error("Failed to hash password"));
+      throw new Error("Failed to hash password");
     }
   }
 
-  async verify(password: string, hash: string): Promise<Result<boolean, Error>> {
+  async verify(password: string, hash: string): Promise<boolean> {
     try {
-      const isValid = await bcrypt.compare(password, hash);
-      return ok(isValid);
+      return await bcrypt.compare(password, hash);
     } catch {
-      return err(new Error("Failed to verify password"));
+      throw new Error("Failed to verify password");
     }
   }
 }

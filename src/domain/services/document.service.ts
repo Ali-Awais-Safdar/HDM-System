@@ -1,287 +1,211 @@
 import { Effect } from "effect"
-import { DocumentEntity } from "../entities/document.entity";
-import { DocumentAccessPolicy, DocumentAccessContext } from "../policies/document-access.policy";
-import { AccessPolicyEntity } from "../entities/access-policy.entity";
-import { DocumentId, UserId } from "../value-objects/id.vo";
-import { MimeType } from "../value-objects/file-ref.vo";
-import { Role } from "../schema/access-policy.schema";
-import { createServiceLogger, logPerformance } from "../../shared/logging/logger";
-import { Result } from "../../shared/result/result";
+import { DocumentEntity } from "../entities/document.entity"
+import { DocumentAccessPolicy, DocumentAccessContext } from "../policies/document-access.policy"
+import { AccessPolicyEntity } from "../entities/access-policy.entity"
+import { DocumentId, UserId } from "../value-objects/id.vo"
+import { Role } from "../schema/access-policy.schema"
+import { DocumentRepository } from "../ports/document.repository"
+import { DocumentNotFoundError, DocumentValidationError } from "../errors/document.errors"
+import { ValidationError, BusinessRuleViolationError, DomainError } from "../errors/domain.errors"
 
-/**
- * Domain service for document business logic.
- * Handles document creation, updates, and business rule enforcement with transaction support.
- */
-export class DocumentService {
-  private readonly logger = createServiceLogger('DocumentService');
+export type DocumentServiceErrorCode = 
+  | "ACCESS_DENIED" 
+  | "NOT_FOUND" 
+  | "STORAGE_ERROR" 
+  | "UNKNOWN_ERROR"
 
+export class DocumentServiceError extends DomainError {
+  readonly _tag = "DocumentServiceError" as const
+  
   constructor(
-    private readonly documentRepository: DocumentRepository,
-    private readonly fileStorage: FileStorage
+    message: string,
+    public readonly code: DocumentServiceErrorCode = "UNKNOWN_ERROR",
+    details?: Record<string, unknown>
+  ) {
+    super(message, { code, ...details })
+  }
+}
+
+export class DocumentService {
+  constructor(
+    private readonly documentRepository: DocumentRepository
   ) {}
 
-  async createDocument(
+  createDocument(
     ownerId: UserId,
     title: string,
-    mimeType: MimeType,
-    fileData: Buffer,
-    _metadata: Record<string, unknown> = {},
-    tags: string[] = []
-  ): Promise<Effect.Effect<DocumentEntity, DocumentError>> {
-    const startTime = Date.now();
+    currentVersionId: any,
+    description?: string | null,
+    tags?: string[] | null
+  ): Effect.Effect<
+    DocumentEntity, 
+    DocumentValidationError | ValidationError
+  > {
+    const docData: any = {
+      id: crypto.randomUUID(),
+      ownerId,
+      title,
+      currentVersionId
+    }
     
-    try {
-      this.logger.info({
-        ownerId,
-        title,
-        mimeType,
-        fileSize: fileData.length,
-        tagCount: tags.length
-      }, "Starting document creation");
+    if (description !== undefined && description !== null) {
+      docData.description = description
+    }
+    
+    if (tags !== undefined && tags !== null) {
+      docData.tags = tags
+    }
+    
+    return DocumentEntity.createNew(docData).pipe(
+      Effect.flatMap(document => this.documentRepository.save(document))
+    )
+  }
 
-      // Generate document ID and storage key
-      const { makeDocumentIdSync } = await import("../value-objects/id.vo");
-      const documentId = makeDocumentIdSync(crypto.randomUUID());
-      const storageKey = this.generateStorageKey(documentId, mimeType);
-      
-      // Create document entity
-      const document = (await DocumentEntity.createNew({
-        id: documentId,
-        ownerId,
-        title,
-        currentVersionId: documentId as any
-      }).pipe(Effect.mapError((e) => new DocumentError(e.message)))) as any;
-
-      // Execute file storage and database write in a transaction-like manner
-      // Since file storage is external, we handle it with proper cleanup
-      let fileStored = false;
-      let cleanupRequired = false;
-
-      const result = await this.documentRepository.executeInTransaction(async (tx) => {
-        try {
-          this.logger.debug({ documentId, storageKey }, "Storing file");
-          
-          // First, store the file
-          const storeResult = await this.fileStorage.store(storageKey, fileData);
-          if (!storeResult.ok) {
-            this.logger.error({ 
-              documentId, 
-              storageKey, 
-              error: storeResult.error.message 
-            }, "Failed to store file");
-            throw new DocumentError("Failed to store file");
-          }
-          
-          fileStored = true;
-          cleanupRequired = true;
-          this.logger.debug({ documentId, storageKey }, "File stored successfully");
-
-          // Then save to database within transaction
-          this.logger.debug({ documentId }, "Saving document to database");
-          const saved = await this.documentRepository.saveInTransaction(document, tx);
-          if (!saved) {
-            this.logger.error({ 
-              documentId, 
-              error: "Unknown error" 
-            }, "Failed to save document to database");
-            throw new DocumentError("Failed to save document to database");
-          }
-
-          // If we reach here, both operations succeeded
-          cleanupRequired = false;
-          this.logger.debug({ documentId }, "Document saved successfully");
-          return saved;
-          
-        } catch (error) {
-          this.logger.error({ 
-            documentId, 
-            error: error instanceof Error ? error.message : 'Unknown error' 
-          }, "Error during document creation transaction");
-          // Any error here will trigger transaction rollback
-          throw error;
-        } finally {
-          // Cleanup file if transaction failed but file was stored
-          if (cleanupRequired && fileStored) {
-            this.logger.warn({ documentId, storageKey }, "Cleaning up file after transaction failure");
-            try {
-              await this.fileStorage.delete(storageKey);
-              this.logger.info({ documentId, storageKey }, "File cleanup successful");
-            } catch (cleanupError) {
-              this.logger.error({ 
-                documentId, 
-                storageKey, 
-                cleanupError: cleanupError instanceof Error ? cleanupError.message : 'Unknown error'
-              }, "Failed to cleanup file after transaction failure");
-            }
-          }
+  getDocument(
+    documentId: DocumentId,
+    userId: UserId,
+    roles: readonly Role[],
+    userPolicies: readonly AccessPolicyEntity[]
+  ): Effect.Effect<
+    DocumentEntity,
+    DocumentNotFoundError | DocumentServiceError | ValidationError
+  > {
+    return this.documentRepository.findById(documentId).pipe(
+      Effect.flatMap(documentOption => {
+        if (documentOption._tag === "None") {
+          return Effect.fail(
+            new DocumentServiceError("Document not found", "NOT_FOUND")
+          )
         }
-      });
 
-      // Log performance and result
-      if (result) {
-        logPerformance(this.logger, 'create_document', startTime, {
-          documentId: (result as any).id,
-          ownerId,
-          fileSize: fileData.length,
-          tagCount: tags.length
-        });
-        
-        this.logger.info({ 
-          documentId: (result as any).id, 
-          title,
-          fileSize: fileData.length 
-        }, "Document created successfully");
+        const document = documentOption.value
+        const canRead = this.checkDocumentAccess(
+          documentId,
+          document.ownerId,
+          userId,
+          roles,
+          "read",
+          userPolicies
+        )
+
+        if (!canRead) {
+          return Effect.fail(
+            new DocumentServiceError("Insufficient permissions to access document", "ACCESS_DENIED")
+          )
+        }
+
+        return Effect.succeed(document)
+      })
+    )
+  }
+
+  updateDocument(
+    documentId: DocumentId,
+    userId: UserId,
+    roles: readonly Role[],
+    userPolicies: readonly AccessPolicyEntity[],
+    updates: {
+      title?: string
+      description?: string | null
+      tags?: string[]
+    }
+  ): Effect.Effect<
+    DocumentEntity,
+    DocumentNotFoundError | DocumentServiceError | DocumentValidationError | ValidationError | BusinessRuleViolationError
+  > {
+    return this.documentRepository.findById(documentId).pipe(
+      Effect.flatMap(documentOption => {
+        if (documentOption._tag === "None") {
+          return Effect.fail(
+            new DocumentServiceError("Document not found", "NOT_FOUND")
+          )
+        }
+
+        const document = documentOption.value
+        const canWrite = this.checkDocumentAccess(
+          documentId,
+          document.ownerId,
+          userId,
+          roles,
+          "write",
+          userPolicies
+        )
+
+        if (!canWrite) {
+          return Effect.fail(
+            new DocumentServiceError("Insufficient permissions to update document", "ACCESS_DENIED")
+          )
+        }
+
+        return Effect.succeed(document)
+      }),
+      Effect.flatMap(document => 
+        Effect.gen(this, function* () {
+          let updatedDocument = document
+
+          if (updates.title) {
+            updatedDocument = yield* updatedDocument.rename(updates.title)
+          }
+
+          if (updates.description !== undefined) {
+            updatedDocument = yield* updatedDocument.updateDescription(updates.description)
+          }
+
+          if (updates.tags) {
+            updatedDocument = yield* updatedDocument.addTags(updates.tags)
+          }
+
+          return yield* this.documentRepository.save(updatedDocument)
+        })
+      )
+    )
+  }
+
+  deleteDocument(
+    documentId: DocumentId,
+    userId: UserId,
+    roles: readonly Role[],
+    userPolicies: readonly AccessPolicyEntity[]
+  ): Effect.Effect<
+    boolean,
+    DocumentNotFoundError | DocumentServiceError | ValidationError
+  > {
+    return Effect.gen(this, function* () {
+      const documentOption = yield* this.documentRepository.findById(documentId)
+      
+      if (documentOption._tag === "None") {
+        return yield* Effect.fail(
+          new DocumentServiceError("Document not found", "NOT_FOUND")
+        )
       }
 
-      return Effect.succeed(result as any);
+      const document = documentOption.value
+      const canDelete = this.checkDocumentAccess(
+        documentId,
+        document.ownerId,
+        userId,
+        roles,
+        "admin",
+        userPolicies
+      )
 
-    } catch (error) {
-      this.logger.error({ 
-        ownerId,
-        title,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        duration: Date.now() - startTime
-      }, "Unexpected error during document creation");
-      
-      return Effect.fail(new DocumentError(
-        `Failed to create document: ${error instanceof Error ? error.message : 'Unknown error'}`
-      ));
-    }
+      if (!canDelete) {
+        return yield* Effect.fail(
+          new DocumentServiceError("Insufficient permissions to delete document", "ACCESS_DENIED")
+        )
+      }
+
+      return yield* this.documentRepository.delete(documentId)
+    })
   }
 
-  async updateMetadata(
-    documentId: DocumentId,
-    userId: UserId,
-    roles: readonly Role[],
-    _metadata: Record<string, unknown>,
-    userPolicies: AccessPolicyEntity[]
-  ): Promise<Effect.Effect<DocumentEntity, DocumentError>> {
-    // Get existing document
-    const documentResult = await this.documentRepository.findById(documentId);
-    if (!documentResult.ok || !documentResult.value) {
-      return Effect.fail(new DocumentError("Document not found"));
-    }
-
-    const document = documentResult.value;
-
-    // Check permissions using new system
-    const canWrite = this.checkDocumentAccess(
-      documentId,
-      document.ownerId,
-      userId,
-      roles,
-      "write",
-      userPolicies
-    );
-
-    if (!canWrite) return Effect.fail(new DocumentError("Insufficient permissions to update document"));
-
-    // Note: metadata update functionality needs to be implemented in DocumentEntity
-    // For now, we'll just return the document as-is
-    const updatedDocument = document;
-
-    // Save updated document
-    const savedResult = await this.documentRepository.save(updatedDocument);
-    if (!savedResult.ok) {
-      return Effect.fail(new DocumentError("Failed to save updated document"));
-    }
-    
-    return Effect.succeed(savedResult.value);
-  }
-
-  async deleteDocument(
-    documentId: DocumentId,
-    userId: UserId,
-    roles: readonly Role[],
-    userPolicies: AccessPolicyEntity[]
-  ): Promise<Effect.Effect<void, DocumentError>> {
-    // Get existing document
-    const documentResult = await this.documentRepository.findById(documentId);
-    if (!documentResult.ok || !documentResult.value) {
-      return Effect.fail(new DocumentError("Document not found"));
-    }
-
-    const document = documentResult.value;
-
-    // Check permissions using new system
-    const canDelete = this.checkDocumentAccess(
-      documentId,
-      document.ownerId,
-      userId,
-      roles,
-      "admin", // Delete requires admin level access
-      userPolicies
-    );
-
-    if (!canDelete) return Effect.fail(new DocumentError("Insufficient permissions to delete document"));
-
-    // Delete from storage first
-    const storageKey = this.generateStorageKey(documentId, "application/octet-stream" as any);
-    await this.fileStorage.delete(storageKey);
-
-    // Delete from repository
-    await this.documentRepository.delete(documentId);
-    return Effect.succeed(undefined);
-  }
-
-  async getDocument(
-    documentId: DocumentId,
-    userId: UserId,
-    roles: readonly Role[],
-    userPolicies: AccessPolicyEntity[]
-  ): Promise<Effect.Effect<DocumentEntity, DocumentError>> {
-    // Get document
-    const documentResult = await this.documentRepository.findById(documentId);
-    if (!documentResult.ok || !documentResult.value) {
-      return Effect.fail(new DocumentError("Document not found"));
-    }
-
-    const document = documentResult.value;
-
-    // Check permissions using new system
-    const canRead = this.checkDocumentAccess(
-      documentId,
-      document.ownerId,
-      userId,
-      roles,
-      "read",
-      userPolicies
-    );
-
-    if (!canRead) return Effect.fail(new DocumentError("Insufficient permissions to access document"));
-    return Effect.succeed(document);
-  }
-
-  private generateStorageKey(documentId: DocumentId, mimeType: MimeType): string {
-    const extension = this.getFileExtension(mimeType);
-    return `documents/${documentId}${extension}`;
-  }
-
-  private getFileExtension(mimeType: MimeType): string {
-    const mimeTypeMap: Record<string, string> = {
-      'application/pdf': '.pdf',
-      'image/jpeg': '.jpg',
-      'image/png': '.png',
-      'text/plain': '.txt',
-      'application/msword': '.doc',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
-      'application/vnd.ms-excel': '.xls',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
-    };
-
-    return mimeTypeMap[mimeType] || '';
-  }
-
-  /**
-   * Helper method to check document access using the new permission system.
-   */
   private checkDocumentAccess(
     documentId: DocumentId,
     documentOwnerId: UserId,
     userId: UserId,
     roles: readonly Role[],
     requiredLevel: "read" | "write" | "admin",
-    userPolicies: AccessPolicyEntity[]
+    userPolicies: readonly AccessPolicyEntity[]
   ): boolean {
     const context: DocumentAccessContext = {
       userId,
@@ -289,47 +213,9 @@ export class DocumentService {
       documentId,
       documentOwnerId,
       userPolicies,
-    };
+    }
 
-    const accessResult = DocumentAccessPolicy.canAccess(context, requiredLevel);
-    return accessResult.granted;
-  }
-}
-
-// Domain interfaces (ports)
-export interface DocumentRepository {
-  findById(id: DocumentId): Promise<Result<DocumentEntity | null, Error>>;
-  findByOwner(ownerId: UserId): Promise<Result<DocumentEntity[], Error>>;
-  search(filters: DocumentSearchFilters): Promise<Result<DocumentEntity[], Error>>;
-  save(document: DocumentEntity): Promise<Result<DocumentEntity, Error>>;
-  delete(id: DocumentId): Promise<Result<void, Error>>;
-  
-  // Transaction support
-  saveInTransaction(document: DocumentEntity, tx: import("../../lib/db/connection").DatabaseTransaction): Promise<Result<DocumentEntity, Error>>;
-  deleteInTransaction(id: DocumentId, tx: import("../../lib/db/connection").DatabaseTransaction): Promise<Result<void, Error>>;
-  executeInTransaction<T>(operation: (tx: import("../../lib/db/connection").DatabaseTransaction) => Promise<Result<T, Error>>): Promise<Result<T, Error>>;
-}
-
-export interface DocumentSearchFilters {
-  query?: string;
-  tags?: string[];
-  metadata?: Record<string, unknown>;
-  ownerId?: UserId;
-  limit?: number;
-  offset?: number;
-}
-
-export interface FileStorage {
-  store(key: string, data: Buffer): Promise<Result<string, Error>>;
-  retrieve(key: string): Promise<Result<Buffer, Error>>;
-  delete(key: string): Promise<Result<void, Error>>;
-  exists(key: string): Promise<Result<boolean, Error>>;
-}
-
-// Domain errors
-export class DocumentError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "DocumentError";
+    const accessResult = DocumentAccessPolicy.canAccess(context, requiredLevel)
+    return accessResult.granted
   }
 }
