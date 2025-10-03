@@ -3,7 +3,7 @@ import { Effect, Option } from "effect";
 import { AuthService, AuthError } from "../../../src/domain/services/auth.service";
 import { UserEntity } from "../../../src/domain/entities/user.entity";
 import { UserRepository } from "../../../src/domain/ports/user.repository";
-import { PasswordHasherPort } from "../../../src/domain/ports/password-hasher.port";
+import { PasswordHasherPort, PasswordHashError } from "../../../src/domain/ports/password-hasher.port";
 import { Role } from "../../../src/domain/schema/access-policy.schema";
 import { faker } from "@faker-js/faker";
 import { TestPatterns } from "../../utils/test.helpers";
@@ -16,12 +16,8 @@ const authServiceGenerators = {
   
   password: () => faker.internet.password({ length: 12 }),
   
-  /**
-   * Generate valid bcrypt hash (exactly 60 characters)
-   */
   passwordHash: (password: string) => {
-    // Bcrypt format: $2b$10$[22 chars salt][31 chars hash] = 60 total
-    const mockSalt = "N9qo8uLOickgx2ZMRZoMyE"; // exactly 22 chars
+    const mockSalt = "N9qo8uLOickgx2ZMRZoMyE"
     const passwordCode = Buffer.from(password)
       .toString('base64')
       .replace(/[^A-Za-z0-9]/g, '0')
@@ -33,9 +29,6 @@ const authServiceGenerators = {
   userId: () => crypto.randomUUID(),
 };
 
-/**
- * Mock UserRepository for testing
- */
 class MockUserRepository implements UserRepository {
   private users: Map<string, UserEntity> = new Map();
 
@@ -82,18 +75,14 @@ class MockUserRepository implements UserRepository {
   }
 }
 
-/**
- * Mock PasswordHasher for testing
- * Generates valid bcrypt-like hashes (60 characters minimum)
- */
-class MockPasswordHasher implements PasswordHasherPort {
-  async hash(password: string): Promise<string> {
-    return authServiceGenerators.passwordHash(password);
+class MockPasswordHasher extends PasswordHasherPort {
+  hash(password: string) {
+    return Effect.succeed(authServiceGenerators.passwordHash(password));
   }
 
-  async verify(password: string, hash: string): Promise<boolean> {
-    const expectedHash = await this.hash(password);
-    return hash === expectedHash;
+  verify(password: string, hash: string) {
+    const expectedHash = authServiceGenerators.passwordHash(password);
+    return Effect.succeed(hash === expectedHash);
   }
 }
 
@@ -114,12 +103,12 @@ describe("AuthService - Domain Service Tests", () => {
     });
 
     it("should accept custom password hasher implementation", () => {
-      class CustomHasher implements PasswordHasherPort {
-        async hash(password: string): Promise<string> {
-          return `custom_${password}`.padEnd(60, '0');
+      class CustomHasher extends PasswordHasherPort {
+        hash(password: string) {
+          return Effect.succeed(`custom_${password}`.padEnd(60, '0'));
         }
-        async verify(_password: string, hash: string): Promise<boolean> {
-          return hash.startsWith('custom_');
+        verify(_password: string, hash: string) {
+          return Effect.succeed(hash.startsWith('custom_'));
         }
       }
 
@@ -499,12 +488,12 @@ describe("AuthService - Domain Service Tests", () => {
     });
 
     it("should handle password hasher failures", async () => {
-      class FailingHasher implements PasswordHasherPort {
-        async hash(): Promise<string> {
-          throw new Error("Hashing failed");
+      class FailingHasher extends PasswordHasherPort {
+        hash() {
+          return Effect.fail(new PasswordHashError("Hashing failed", "HASH"));
         }
-        async verify(): Promise<boolean> {
-          return false;
+        verify() {
+          return Effect.succeed(false);
         }
       }
 

@@ -30,9 +30,6 @@ const downloadTokenGenerators = {
   createdAt: () => faker.date.recent().toISOString(),
 };
 
-/**
- * Base factory function for generating test download token data (encoded format with Options)
- */
 export const generateTestDownloadToken = (
   overrides: Partial<SerializedDownloadToken> = {}
 ): SerializedDownloadToken => {
@@ -52,16 +49,10 @@ export const generateTestDownloadToken = (
   };
 };
 
-/**
- * Generate multiple test download tokens
- */
 export const generateTestDownloadTokens = (count: number): SerializedDownloadToken[] => {
   return Array.from({ length: count }, () => generateTestDownloadToken());
 };
 
-/**
- * Scenario: Unused token (valid and not used)
- */
 export const createUnusedToken = (overrides: Partial<SerializedDownloadToken> = {}): SerializedDownloadToken => {
   return {
     ...generateTestDownloadToken(),
@@ -72,41 +63,35 @@ export const createUnusedToken = (overrides: Partial<SerializedDownloadToken> = 
   };
 };
 
-/**
- * Scenario: Used token
- */
 export const createUsedToken = (overrides: Partial<SerializedDownloadToken> = {}): SerializedDownloadToken => {
-  const createdAt = faker.date.past({ years: 1 });
-  const usedAt = new Date(createdAt.getTime() + 2 * 60 * 1000);
+  const now = new Date();
+  const createdAt = new Date(now.getTime() - 3 * 60 * 1000); // 3 minutes ago
+  const usedAt = new Date(createdAt.getTime() + 2 * 60 * 1000); // 2 minutes after creation
+  const expiresAt = new Date(now.getTime() + 2 * 60 * 1000); // Still valid, expires in 2 minutes
 
   return {
     ...generateTestDownloadToken(),
     createdAt: createdAt.toISOString(),
     usedAt: { _tag: "Some" as const, value: usedAt.toISOString() },
-    expiresAt: new Date(createdAt.getTime() + 5 * 60 * 1000).toISOString(),
+    expiresAt: expiresAt.toISOString(), // Future date to pass validation
     ...overrides,
   };
 };
 
-/**
- * Scenario: Expired token
- */
 export const createExpiredToken = (overrides: Partial<SerializedDownloadToken> = {}): SerializedDownloadToken => {
-  const createdAt = faker.date.past({ years: 1 });
-  const expiresAt = new Date(createdAt.getTime() + 5 * 60 * 1000);
+  const now = new Date();
+  const createdAt = new Date(now.getTime() - 10 * 60 * 1000); // 10 minutes ago
+  const expiresAt = overrides.expiresAt || new Date(now.getTime() - 5 * 60 * 1000).toISOString(); // 5 minutes ago (already expired)
 
   return {
     ...generateTestDownloadToken(),
     createdAt: createdAt.toISOString(),
-    expiresAt: expiresAt.toISOString(),
+    expiresAt,
     usedAt: { _tag: "None" as const },
     ...overrides,
   };
 };
 
-/**
- * Scenario: Token expiring soon (< 1 minute remaining)
- */
 export const createExpiringSoonToken = (overrides: Partial<SerializedDownloadToken> = {}): SerializedDownloadToken => {
   return {
     ...generateTestDownloadToken(),
@@ -117,9 +102,6 @@ export const createExpiringSoonToken = (overrides: Partial<SerializedDownloadTok
   };
 };
 
-/**
- * Scenario: Token with long expiry (1 hour)
- */
 export const createLongExpiryToken = (overrides: Partial<SerializedDownloadToken> = {}): SerializedDownloadToken => {
   return {
     ...generateTestDownloadToken(),
@@ -130,9 +112,6 @@ export const createLongExpiryToken = (overrides: Partial<SerializedDownloadToken
   };
 };
 
-/**
- * Scenario: Token for specific user and document
- */
 export const createTokenForUserAndDocument = (
   issuedTo: string,
   documentId: string,
@@ -148,22 +127,22 @@ export const createTokenForUserAndDocument = (
   };
 };
 
-/**
- * Create a test DownloadToken entity from generated data
- */
 export const createTestDownloadTokenEntity = (
-  overrides: Partial<SerializedDownloadToken> = {}
+  overrides: Partial<SerializedDownloadToken> = {},
+  useUnsafe: boolean = false
 ): E.Effect<DownloadTokenEntity, Error> => {
   const tokenData = generateTestDownloadToken(overrides);
+
+  if (useUnsafe) {
+    const entity = DownloadTokenEntity.unsafe(tokenData);
+    return E.succeed(entity);
+  }
 
   return DownloadTokenEntity.create(tokenData).pipe(
     E.mapError((error) => new Error(`Failed to create test download token entity: ${error.message}`))
   ) as E.Effect<DownloadTokenEntity, Error>;
 };
 
-/**
- * Create multiple test DownloadToken entities
- */
 export const createTestDownloadTokenEntities = (
   count: number,
   overrides: Partial<SerializedDownloadToken> = {}
@@ -175,9 +154,6 @@ export const createTestDownloadTokenEntities = (
   ) as E.Effect<DownloadTokenEntity[], Error>;
 };
 
-/**
- * Fast-check arbitrary for property-based testing
- */
 export const downloadTokenArbitrary = fc.record({
   id: fc.uuid(),
   token: fc.string({ minLength: 32 }),

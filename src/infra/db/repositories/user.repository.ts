@@ -41,7 +41,9 @@ export class UserDrizzleRepository extends UserRepository {
       email: row.email,
       passwordHash: row.passwordHash,
       roles: row.roles,
-      workspaceId: row.workspaceId ?? null,
+      workspaceId: row.workspaceId
+        ? { _tag: "Some" as const, value: row.workspaceId }
+        : { _tag: "None" as const },
       createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt
     })
   }
@@ -207,14 +209,20 @@ export class UserDrizzleRepository extends UserRepository {
     id: UserId
   ): E.Effect<boolean, UserNotFoundError, never> {
     return pipe(
-      this.ensureExists(id),
-      E.flatMap(() =>
-        E.tryPromise({
-          try: () => this.db.delete(users).where(eq(users.id, id)),
-          catch: () => new UserNotFoundError(id)
+      this.exists(id),
+      E.flatMap((exists) =>
+        E.if(exists, {
+          onTrue: () =>
+            pipe(
+              E.tryPromise({
+                try: () => this.db.delete(users).where(eq(users.id, id)),
+                catch: () => new UserNotFoundError(id)
+              }),
+              E.as(true)
+            ),
+          onFalse: () => E.succeed(false)
         })
-      ),
-      E.as(true)
+      )
     )
   }
 }

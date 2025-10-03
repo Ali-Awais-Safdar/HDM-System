@@ -41,11 +41,17 @@ export class DocumentDrizzleRepository extends DocumentRepository {
       id: row.id,
       ownerId: row.ownerId,
       title: row.title,
-      description: row.description ?? null,
-      tags: row.tags ?? null,
+      description: row.description
+        ? { _tag: "Some" as const, value: row.description }
+        : { _tag: "None" as const },
+      tags: row.tags && row.tags.length > 0
+        ? { _tag: "Some" as const, value: row.tags }
+        : { _tag: "None" as const },
       currentVersionId: row.currentVersionId,
       createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt,
-      updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : (row.updatedAt ?? null)
+      updatedAt: row.updatedAt 
+        ? { _tag: "Some" as const, value: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : row.updatedAt }
+        : { _tag: "None" as const }
     })
   }
 
@@ -285,14 +291,20 @@ export class DocumentDrizzleRepository extends DocumentRepository {
     id: DocumentId
   ): E.Effect<boolean, DocumentNotFoundError, never> {
     return pipe(
-      this.ensureExists(id),
-      E.flatMap(() =>
-        E.tryPromise({
-          try: () => this.db.delete(documents).where(eq(documents.id, id)),
-          catch: () => new DocumentNotFoundError(id)
+      this.exists(id),
+      E.flatMap((exists) =>
+        E.if(exists, {
+          onTrue: () =>
+            pipe(
+              E.tryPromise({
+                try: () => this.db.delete(documents).where(eq(documents.id, id)),
+                catch: () => new DocumentNotFoundError(id)
+              }),
+              E.as(true)
+            ),
+          onFalse: () => E.succeed(false)
         })
-      ),
-      E.as(true)
+      )
     )
   }
 }

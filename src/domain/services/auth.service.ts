@@ -47,10 +47,9 @@ export class AuthService {
           return Effect.fail(new AuthError("User already exists with this email"))
         }
         
-        return Effect.tryPromise({
-          try: () => passwordHasher.hash(password as unknown as string),
-          catch: () => new AuthError("Failed to process password")
-        })
+        return passwordHasher
+          .hash(password as unknown as string)
+          .pipe(Effect.mapError(() => new AuthError("Failed to process password")))
       }),
       Effect.flatMap(hashed =>
         S.decodeUnknown(UserId)(randomUUID()).pipe(
@@ -93,17 +92,17 @@ export class AuthService {
         
         const user = userOption.value
         
-        return Effect.tryPromise({
-          try: () => passwordHasher.verify(password as unknown as string, user.passwordHash),
-          catch: () => new AuthError("Authentication failed")
-        }).pipe(
-          Effect.flatMap(isValid => {
-            if (!isValid) {
-              return Effect.fail(new AuthError("Invalid credentials"))
-            }
-            return Effect.succeed(user)
-          })
-        )
+        return passwordHasher
+          .verify(password as unknown as string, user.passwordHash)
+          .pipe(
+            Effect.mapError(() => new AuthError("Authentication failed")),
+            Effect.flatMap(isValid => {
+              if (!isValid) {
+                return Effect.fail(new AuthError("Invalid credentials"))
+              }
+              return Effect.succeed(user)
+            })
+          )
       })
     )
   }

@@ -275,14 +275,20 @@ export class AccessPolicyDrizzleRepository extends AccessPolicyRepository {
     id: string
   ): E.Effect<boolean, AccessPolicyNotFoundError, never> {
     return pipe(
-      this.ensureExists(id),
-      E.flatMap(() =>
-        E.tryPromise({
-          try: () => this.db.delete(accessPolicies).where(eq(accessPolicies.id, id)),
-          catch: () => new AccessPolicyNotFoundError(id)
+      this.exists(id),
+      E.flatMap((exists) =>
+        E.if(exists, {
+          onTrue: () =>
+            pipe(
+              E.tryPromise({
+                try: () => this.db.delete(accessPolicies).where(eq(accessPolicies.id, id)),
+                catch: () => new AccessPolicyNotFoundError(id)
+              }),
+              E.as(true)
+            ),
+          onFalse: () => E.succeed(false)
         })
-      ),
-      E.as(true)
+      )
     )
   }
 

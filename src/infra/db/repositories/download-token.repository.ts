@@ -40,7 +40,9 @@ export class DownloadTokenDrizzleRepository extends DownloadTokenRepository {
       documentId: row.documentId,
       issuedTo: row.issuedTo,
       expiresAt: row.expiresAt instanceof Date ? row.expiresAt.toISOString() : row.expiresAt,
-      usedAt: row.usedAt instanceof Date ? row.usedAt.toISOString() : (row.usedAt ?? null),
+      usedAt: row.usedAt 
+        ? { _tag: "Some" as const, value: row.usedAt instanceof Date ? row.usedAt.toISOString() : row.usedAt }
+        : { _tag: "None" as const },
       createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt
     })
   }
@@ -300,14 +302,20 @@ export class DownloadTokenDrizzleRepository extends DownloadTokenRepository {
     id: DownloadTokenId
   ): E.Effect<boolean, DownloadTokenNotFoundError, never> {
     return pipe(
-      this.ensureExists(id),
-      E.flatMap(() =>
-        E.tryPromise({
-          try: () => this.db.delete(downloadTokens).where(eq(downloadTokens.id, id)),
-          catch: () => new DownloadTokenNotFoundError(id)
+      this.exists(id),
+      E.flatMap((exists) =>
+        E.if(exists, {
+          onTrue: () =>
+            pipe(
+              E.tryPromise({
+                try: () => this.db.delete(downloadTokens).where(eq(downloadTokens.id, id)),
+                catch: () => new DownloadTokenNotFoundError(id)
+              }),
+              E.as(true)
+            ),
+          onFalse: () => E.succeed(false)
         })
-      ),
-      E.as(true)
+      )
     )
   }
 

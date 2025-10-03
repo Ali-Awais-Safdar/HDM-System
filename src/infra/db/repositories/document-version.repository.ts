@@ -45,7 +45,7 @@ export class DocumentVersionDrizzleRepository extends DocumentVersionRepository 
       mimeType: row.mimeType,
       size: row.size,
       createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt,
-      createdBy: row.createdBy ?? null
+      createdBy: row.createdBy ? { _tag: "Some" as const, value: row.createdBy } : { _tag: "None" as const }
     })
   }
 
@@ -283,14 +283,20 @@ export class DocumentVersionDrizzleRepository extends DocumentVersionRepository 
     id: DocumentVersionId
   ): E.Effect<boolean, DocumentVersionNotFoundError, never> {
     return pipe(
-      this.ensureExists(id),
-      E.flatMap(() =>
-        E.tryPromise({
-          try: () => this.db.delete(documentVersions).where(eq(documentVersions.id, id)),
-          catch: () => new DocumentVersionNotFoundError(id)
+      this.exists(id),
+      E.flatMap((exists) =>
+        E.if(exists, {
+          onTrue: () =>
+            pipe(
+              E.tryPromise({
+                try: () => this.db.delete(documentVersions).where(eq(documentVersions.id, id)),
+                catch: () => new DocumentVersionNotFoundError(id)
+              }),
+              E.as(true)
+            ),
+          onFalse: () => E.succeed(false)
         })
-      ),
-      E.as(true)
+      )
     )
   }
 }
