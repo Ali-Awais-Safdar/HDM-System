@@ -1,53 +1,57 @@
-import { describe, it, expect, afterAll } from "vitest";
-import { LocalFileStorage } from "../../../src/infra/storage/local-file-storage";
-import { mkdtempSync, rmSync } from "fs";
-import { join } from "path";
-import os from "os";
+import { describe, it, expect, afterAll } from "vitest"
+import { Effect } from "effect"
+import { LocalFileStorage } from "../../../src/infra/storage/local-file-storage"
+import { mkdtempSync, rmSync } from "fs"
+import { join } from "path"
+import os from "os"
 
 describe("LocalFileStorage", () => {
-  const tmpDir = mkdtempSync(join(os.tmpdir(), "dms-storage-"));
-  const storage = new LocalFileStorage(tmpDir);
+  const tmpDir = mkdtempSync(join(os.tmpdir(), "dms-storage-"))
+  const storage = new LocalFileStorage(tmpDir)
 
   afterAll(() => {
     // Cleanup the whole temp tree
-    rmSync(tmpDir, { recursive: true, force: true });
-  });
+    rmSync(tmpDir, { recursive: true, force: true })
+  })
 
   it("initialize() ensures base directory exists", async () => {
-    const res = await storage.initialize();
-    expect(res.ok).toBe(true);
-  });
+    await storage.initialize()
+    // If it doesn't throw, initialization succeeded
+    expect(true).toBe(true)
+  })
 
   it("store → exists → retrieve → getStats → delete flow", async () => {
-    const key = "documents/sub/hello.txt";
-    const data = Buffer.from("hello world");
+    const key = "documents/sub/hello.txt"
+    const data = Buffer.from("hello world")
 
-    const s1 = await storage.store(key, data);
-    expect(s1.ok).toBe(true);
+    // Store file
+    const filePath = await Effect.runPromise(storage.store(key, data))
+    expect(filePath).toBeDefined()
 
-    const ex = await storage.exists(key);
-    expect(ex.ok && ex.value).toBe(true);
+    // Check existence
+    const exists1 = await Effect.runPromise(storage.exists(key))
+    expect(exists1).toBe(true)
 
-    const ret = await storage.retrieve(key);
-    expect(ret.ok).toBe(true);
-    if (ret.ok) expect(ret.value.equals(data)).toBe(true);
+    // Retrieve file
+    const retrieved = await Effect.runPromise(storage.retrieve(key))
+    expect(retrieved.equals(data)).toBe(true)
 
-    const stats = await storage.getStats(key);
-    expect(stats.ok).toBe(true);
-    if (stats.ok) {
-      expect(stats.value.size).toBe(data.length);
-      expect(stats.value.createdAt).toBeInstanceOf(Date);
-      expect(stats.value.modifiedAt).toBeInstanceOf(Date);
-    }
+    // Get stats
+    const stats = await storage.getStats(key)
+    expect(stats.size).toBe(data.length)
+    expect(stats.createdAt).toBeInstanceOf(Date)
+    expect(stats.modifiedAt).toBeInstanceOf(Date)
 
-    const del = await storage.delete(key);
-    expect(del.ok).toBe(true);
+    // Delete file
+    await Effect.runPromise(storage.delete(key))
 
-    const ex2 = await storage.exists(key);
-    expect(ex2.ok && ex2.value).toBe(false);
+    // Verify deletion
+    const exists2 = await Effect.runPromise(storage.exists(key))
+    expect(exists2).toBe(false)
 
-    // deleting non-existent file is ok
-    const del2 = await storage.delete(key);
-    expect(del2.ok).toBe(true);
-  });
-});
+    // Deleting non-existent file is ok
+    await Effect.runPromise(storage.delete(key))
+    // If it doesn't throw, deletion succeeded
+    expect(true).toBe(true)
+  })
+})

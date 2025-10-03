@@ -8,6 +8,13 @@
       "when": 1759410043769,
       "tag": "0000_sturdy_purple_man",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1759486899876,
+      "tag": "0001_open_mercury",
+      "breakpoints": true
     }
   ]
 }

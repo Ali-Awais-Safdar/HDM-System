@@ -1,0 +1,1 @@
+CREATE INDEX "documents_tags_gin_idx" ON "documents" USING gin (("tags"::jsonb));
