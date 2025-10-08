@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { DownloadTokenEntity } from "../../../src/domain/entities/download-token.entity";
-import { ValidationError, BusinessRuleViolationError } from "../../../src/domain/errors/domain.errors";
+import { DownloadTokenEntity } from "../../../src/app/domain/downloadToken/download-token.entity";
+import { ValidationError, BusinessRuleViolationError } from "../../../src/app/domain/utils/domain.errors";
 import { 
   generateTestDownloadToken,
   createUnusedToken,
@@ -193,4 +193,3 @@ describe("DownloadTokenEntity", () => {
     });
   });
 });
-

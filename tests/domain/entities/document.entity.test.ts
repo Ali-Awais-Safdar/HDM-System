@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { DocumentEntity } from "../../../src/domain/entities/document.entity";
-import { ValidationError } from "../../../src/domain/errors/domain.errors";
+import { DocumentEntity } from "../../../src/app/domain/document/document.entity";
+import { ValidationError } from "../../../src/app/domain/utils/domain.errors";
 import { 
   generateTestDocument, 
   createCompleteDocument, 
@@ -355,4 +355,3 @@ describe("DocumentEntity - Comprehensive Tests", () => {
     });
   });
 });
-

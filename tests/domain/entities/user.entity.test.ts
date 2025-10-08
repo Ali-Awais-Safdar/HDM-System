@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { UserEntity } from "../../../src/domain/entities/user.entity";
-import { ValidationError } from "../../../src/domain/errors/domain.errors";
+import { UserEntity } from "../../../src/app/domain/user/user.entity";
+import { ValidationError } from "../../../src/app/domain/utils/domain.errors";
 import { 
   generateTestUser, 
   createAdminUser,
@@ -101,4 +101,3 @@ describe("UserEntity", () => {
     });
   });
 });
-

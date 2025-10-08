@@ -1,10 +1,13 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import { Effect, Option } from "effect";
-import { AuthService, AuthError } from "../../../src/domain/services/auth.service";
-import { UserEntity } from "../../../src/domain/entities/user.entity";
-import { UserRepository } from "../../../src/domain/ports/user.repository";
-import { PasswordHasherPort, PasswordHashError } from "../../../src/domain/ports/password-hasher.port";
-import { Role } from "../../../src/domain/schema/access-policy.schema";
+import { AuthService, AuthError } from "../../../src/app/domain/services/auth.service";
+import { UserEntity } from "../../../src/app/domain/user/user.entity";
+import { UserRepository } from "../../../src/app/domain/user/user.repository";
+import { PasswordHasherPort } from "../../../src/app/application/services/ports/password-hasher.port";
+import { PasswordHashError } from "../../../src/app/application/services/ports/password-hasher.port";
+import { Role } from "../../../src/app/domain/accessPolicy/access-policy.schema";
+import { EmailAddress } from "../../../src/app/domain/value-objects/email.vo";
+import { UserId } from "../../../src/app/domain/value-objects/id.vo";
 import { faker } from "@faker-js/faker";
 import { TestPatterns } from "../../utils/test.helpers";
 
@@ -30,32 +33,34 @@ const authServiceGenerators = {
 };
 
 class MockUserRepository implements UserRepository {
-  private users: Map<string, UserEntity> = new Map();
+  private readonly usersByEmail: Map<EmailAddress, UserEntity> = new Map();
+  private readonly usersById: Map<UserId, UserEntity> = new Map();
 
   save(user: UserEntity): Effect.Effect<UserEntity, never> {
-    this.users.set(user.email, user);
+    this.usersByEmail.set(user.email, user);
+    this.usersById.set(user.id, user);
     return Effect.succeed(user);
   }
 
-  findByEmail(email: string): Effect.Effect<Option.Option<UserEntity>, never> {
-    const user = this.users.get(email);
+  findByEmail(email: EmailAddress): Effect.Effect<Option.Option<UserEntity>, never> {
+    const user = this.usersByEmail.get(email);
     return Effect.succeed(user ? Option.some(user) : Option.none());
   }
 
-  findById(id: string): Effect.Effect<Option.Option<UserEntity>, never> {
-    const user = Array.from(this.users.values()).find(u => u.id === id);
+  findById(id: UserId): Effect.Effect<Option.Option<UserEntity>, never> {
+    const user = this.usersById.get(id);
     return Effect.succeed(user ? Option.some(user) : Option.none());
   }
 
-  exists(id: string): Effect.Effect<boolean, never> {
-    const user = Array.from(this.users.values()).find(u => u.id === id);
-    return Effect.succeed(!!user);
+  exists(id: UserId): Effect.Effect<boolean, never> {
+    return Effect.succeed(this.usersById.has(id));
   }
 
-  delete(id: string): Effect.Effect<boolean, never> {
-    const user = Array.from(this.users.values()).find(u => u.id === id);
+  delete(id: UserId): Effect.Effect<boolean, never> {
+    const user = this.usersById.get(id);
     if (user) {
-      this.users.delete(user.email);
+      this.usersById.delete(id);
+      this.usersByEmail.delete(user.email);
       return Effect.succeed(true);
     }
     return Effect.succeed(false);
@@ -63,15 +68,17 @@ class MockUserRepository implements UserRepository {
 
   // Test helpers
   seedUser(user: UserEntity): void {
-    this.users.set(user.email, user);
+    this.usersByEmail.set(user.email, user);
+    this.usersById.set(user.id, user);
   }
 
   clear(): void {
-    this.users.clear();
+    this.usersByEmail.clear();
+    this.usersById.clear();
   }
 
   getUserCount(): number {
-    return this.users.size;
+    return this.usersById.size;
   }
 }
 

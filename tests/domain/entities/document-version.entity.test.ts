@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { DocumentVersionEntity } from "../../../src/domain/entities/document-version.entity";
-import { ValidationError } from "../../../src/domain/errors/domain.errors";
+import { DocumentVersionEntity } from "../../../src/app/domain/documentVersion/document-version.entity";
+import { ValidationError } from "../../../src/app/domain/utils/domain.errors";
 import { 
   generateTestDocumentVersion,
   createFirstVersion,
@@ -83,4 +83,3 @@ describe("DocumentVersionEntity", () => {
     });
   });
 });
-

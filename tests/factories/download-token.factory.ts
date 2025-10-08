@@ -1,4 +1,4 @@
-import { DownloadTokenEntity, SerializedDownloadToken } from "../../src/domain/entities/download-token.entity";
+import { DownloadTokenEntity, SerializedDownloadToken } from "../../src/app/domain/downloadToken/download-token.entity";
 import { faker } from "@faker-js/faker";
 import { Effect as E } from "effect";
 import * as fc from "fast-check";

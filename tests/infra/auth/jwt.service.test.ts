@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from "vitest"
 import { Effect } from "effect"
-import { JwtServiceImpl } from "../../../src/infra/auth/jwt.service"
-import { asUserId } from "../../../src/shared/types/brand"
+import { JwtServiceImpl } from "@infra/services/jwt.service"
+import { asUserId } from "@shared/types/brand"
 
 describe("JwtServiceImpl", () => {
   const secret = "test-secret-key-that-is-32-characters-long"

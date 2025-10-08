@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, beforeAll, afterAll } from "vitest";
 import { Effect as E, Option as O, Exit } from "effect";
 import { eq, sql } from "drizzle-orm";
-import { DownloadTokenDrizzleRepository } from "../../../../src/infra/db/repositories/download-token.repository";
+import { DownloadTokenDrizzleRepository } from "@infra/repositories/download-token.repository";
 import { setupTestDatabase, cleanupDatabase, createTestUser, createTestDocument, TestDatabase } from "../../../setup/database";
 import { createTestDownloadTokenEntity, createUnusedToken, createUsedToken } from "../../../factories/download-token.factory";
 import { createDownloadTokenId, createUserId, createDocumentId } from "../../../utils/test-id-helpers";

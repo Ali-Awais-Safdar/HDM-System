@@ -1,6 +1,6 @@
 import { describe, it, expect, afterAll } from "vitest"
 import { Effect } from "effect"
-import { LocalFileStorage } from "../../../src/infra/storage/local-file-storage"
+import { LocalFileStorage } from "@infra/services/local-file-storage"
 import { mkdtempSync, rmSync } from "fs"
 import { join } from "path"
 import os from "os"

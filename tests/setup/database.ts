@@ -2,8 +2,8 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import * as pg from "pg";
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import * as schema from "../../src/lib/db/schema";
-import type { DatabaseInterface } from "../../src/lib/db/interfaces";
+import * as schema from "@infra/services/db/schema";
+import type { DatabaseInterface } from "@infra/services/db/interfaces";
 import { sql } from "drizzle-orm";
 
 /**

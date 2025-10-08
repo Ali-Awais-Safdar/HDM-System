@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, beforeAll, afterAll } from "vitest";
 import { Effect as E, Option as O } from "effect";
 import { eq, sql } from "drizzle-orm";
-import { AccessPolicyDrizzleRepository } from "../../../../src/infra/db/repositories/access-policy.repository";
+import { AccessPolicyDrizzleRepository } from "@infra/repositories/access-policy.repository";
 import { setupTestDatabase, cleanupDatabase, createTestUser, createTestDocument, TestDatabase } from "../../../setup/database";
 import { createTestAccessPolicyEntity, createUserReadPolicy, createUserWritePolicy, createRolePolicy } from "../../../factories/access-policy.factory";
 import { createDocumentId } from "../../../utils/test-id-helpers";

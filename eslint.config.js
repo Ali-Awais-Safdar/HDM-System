@@ -22,7 +22,7 @@ export default [
   },
   {
     // Domain layer specific rules - disable no-redeclare for Effect Schema patterns
-    files: ["src/domain/**/*.ts"],
+    files: ["src/app/domain/**/*.ts"],
     rules: {
       "no-redeclare": "off", // Allow schema/type name pairs in Effect Schema pattern
     },

@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, beforeAll, afterAll } from "vitest";
 import { Effect as E, Option as O } from "effect";
-import { UserDrizzleRepository } from "../../src/infra/db/repositories/user.repository";
-import { DocumentDrizzleRepository } from "../../src/infra/db/repositories/document.repository";
-import { DocumentVersionDrizzleRepository } from "../../src/infra/db/repositories/document-version.repository";
-import { AccessPolicyDrizzleRepository } from "../../src/infra/db/repositories/access-policy.repository";
+import { UserDrizzleRepository } from "@infra/repositories/user.repository";
+import { DocumentDrizzleRepository } from "@infra/repositories/document.repository";
+import { DocumentVersionDrizzleRepository } from "@infra/repositories/document-version.repository";
+import { AccessPolicyDrizzleRepository } from "@infra/repositories/access-policy.repository";
 import { setupTestDatabase, cleanupDatabase, TestDatabase } from "../setup/database";
 import { createTestUserEntity } from "../factories/user.factory";
 import { createTestDocumentEntity } from "../factories/document.factory";

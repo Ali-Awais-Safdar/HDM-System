@@ -1,0 +1,47 @@
+import express from "express";
+import { useSecurity } from "./middleware/cors-helmet";
+import { errorHandler } from "./middleware/error-handler";
+import { RequestLogger } from "./middleware/logger-mw";
+import { ParseAuthHeader, VerifyJWT, AttachUser } from "./middleware/jwt-mw";
+import { healthRouter } from "./routes/health";
+import { authRouter } from "./routes/auth.routes";
+import { documentRouter } from "./routes/document.routes";
+import { searchRouter } from "./routes/search.routes";
+import { publicDownloadRouter } from "./routes/public-download.routes";
+import { JwtServiceImpl } from "../../app/infra/services/jwt.service";
+import { env } from "../../app/infra/config/env";
+
+export function buildApp() {
+  const app = express();
+  app.use(express.json({ limit: "2mb" }));
+
+  useSecurity(app);
+
+  // Global Chain of Responsibility assembly for authentication
+  // This runs on all routes: parse → verify → attach (but doesn't enforce)
+  const jwtService = new JwtServiceImpl(env.JWT_SECRET, env.JWT_EXPIRES_IN);
+  
+  const logger = new RequestLogger();
+  const parseAuth = new ParseAuthHeader();
+  const verifyJwt = new VerifyJWT(jwtService);
+  const attachUser = new AttachUser();
+
+  // Chain: logger → parseAuth → verifyJwt → attachUser
+  logger.setNext(parseAuth);
+  parseAuth.setNext(verifyJwt);
+  verifyJwt.setNext(attachUser);
+
+  app.use((req, res, next) => logger.handle(req, res, next));
+
+  // Routes
+  app.use("/", healthRouter);
+  app.use("/auth", authRouter);
+  app.use("/documents", documentRouter);
+  app.use("/search", searchRouter);
+  app.use("/downloads", publicDownloadRouter); // Public download endpoint
+
+  // Error handler last
+  app.use(errorHandler);
+
+  return app;
+}

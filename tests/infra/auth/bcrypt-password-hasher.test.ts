@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { Effect } from "effect"
-import { BcryptPasswordHasher } from "../../../src/infra/auth/bcrypt-password-hasher"
+import { BcryptPasswordHasher } from "@infra/services/bcrypt-password-hasher"
 
 describe("BcryptPasswordHasher", () => {
   const passwordHasher = new BcryptPasswordHasher(4) // Use lower salt rounds for testing speed

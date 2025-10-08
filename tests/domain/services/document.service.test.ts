@@ -1,11 +1,12 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import { Effect, Option } from "effect";
-import { DocumentService, DocumentServiceError } from "../../../src/domain/services/document.service";
-import { DocumentEntity } from "../../../src/domain/entities/document.entity";
-import { AccessPolicyEntity } from "../../../src/domain/entities/access-policy.entity";
-import { DocumentRepository, DocumentSearchFilters } from "../../../src/domain/ports/document.repository";
-import { Paginated } from "../../../src/domain/types/pagination";
-import { Role } from "../../../src/domain/schema/access-policy.schema";
+import { DocumentService, DocumentServiceError } from "../../../src/app/domain/services/document.service";
+import { DocumentEntity } from "../../../src/app/domain/document/document.entity";
+import { AccessPolicyEntity } from "../../../src/app/domain/accessPolicy/access-policy.entity";
+import { DocumentRepository, DocumentSearchFilters } from "../../../src/app/domain/document/document.repository";
+import { Paginated } from "../../../src/app/domain/utils/pagination";
+import { Role } from "../../../src/app/domain/accessPolicy/access-policy.schema";
+import { DocumentId, UserId } from "../../../src/app/domain/value-objects/id.vo";
 import { faker } from "@faker-js/faker";
 import { 
   createUserReadPolicy,
@@ -48,19 +49,19 @@ const documentServiceGenerators = {
  * Mock DocumentRepository for testing
  */
 class MockDocumentRepository implements DocumentRepository {
-  private documents: Map<string, DocumentEntity> = new Map();
+  private readonly documents: Map<DocumentId, DocumentEntity> = new Map();
 
   save(document: DocumentEntity): Effect.Effect<DocumentEntity, never> {
     this.documents.set(document.id, document);
     return Effect.succeed(document);
   }
 
-  findById(id: string): Effect.Effect<Option.Option<DocumentEntity>, never> {
+  findById(id: DocumentId): Effect.Effect<Option.Option<DocumentEntity>, never> {
     const doc = this.documents.get(id);
     return Effect.succeed(doc ? Option.some(doc) : Option.none());
   }
 
-  findByOwner(ownerId: string): Effect.Effect<readonly DocumentEntity[], never> {
+  findByOwner(ownerId: UserId): Effect.Effect<readonly DocumentEntity[], never> {
     const docs = Array.from(this.documents.values()).filter(d => d.ownerId === ownerId);
     return Effect.succeed(docs);
   }
@@ -77,11 +78,11 @@ class MockDocumentRepository implements DocumentRepository {
     return Effect.succeed(paginated);
   }
 
-  exists(id: string): Effect.Effect<boolean, never> {
+  exists(id: DocumentId): Effect.Effect<boolean, never> {
     return Effect.succeed(this.documents.has(id));
   }
 
-  delete(id: string): Effect.Effect<boolean, never> {
+  delete(id: DocumentId): Effect.Effect<boolean, never> {
     const existed = this.documents.has(id);
     this.documents.delete(id);
     return Effect.succeed(existed);
@@ -861,4 +862,3 @@ describe("DocumentService - Domain Service Tests", () => {
     });
   });
 });
-

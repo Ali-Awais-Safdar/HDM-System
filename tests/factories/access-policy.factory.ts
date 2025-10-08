@@ -1,5 +1,5 @@
-import { AccessPolicyEntity, SerializedAccessPolicy } from "../../src/domain/entities/access-policy.entity";
-import { PermissionAction, Role, SubjectType, PermissionLevel } from "../../src/domain/schema/access-policy.schema";
+import { AccessPolicyEntity, SerializedAccessPolicy } from "../../src/app/domain/accessPolicy/access-policy.entity";
+import { PermissionAction, Role, SubjectType, PermissionLevel } from "../../src/app/domain/accessPolicy/access-policy.schema";
 import { faker } from "@faker-js/faker";
 import { Effect as E } from "effect";
 import * as fc from "fast-check";

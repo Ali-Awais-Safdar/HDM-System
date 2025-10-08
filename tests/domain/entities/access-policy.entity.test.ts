@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AccessPolicyEntity } from "../../../src/domain/entities/access-policy.entity";
+import { AccessPolicyEntity } from "../../../src/app/domain/accessPolicy/access-policy.entity";
 import { 
   generateTestAccessPolicy,
   createUserReadPolicy,
@@ -160,4 +160,3 @@ describe("AccessPolicyEntity", () => {
     });
   });
 });
-

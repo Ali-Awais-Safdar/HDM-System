@@ -23,10 +23,10 @@
     "baseUrl": "./src",
     "paths": {
       "@/*": ["*"],
-      "@domain/*": ["domain/*"],
-      "@application/*": ["application/*"],
-      "@infra/*": ["infra/*"],
-      "@web/*": ["web/*"],
+      "@domain/*": ["app/domain/*"],
+      "@application/*": ["app/application/*"],
+      "@infra/*": ["app/infra/*"],
+      "@presentation/*": ["presentation/*"],
       "@shared/*": ["shared/*"]
     }
   },

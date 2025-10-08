@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, beforeAll, afterAll } from "vitest";
 import { Effect as E, Option as O, Exit } from "effect";
-import { UserDrizzleRepository } from "../../../../src/infra/db/repositories/user.repository";
+import { UserDrizzleRepository } from "@infra/repositories/user.repository";
 import { setupTestDatabase, cleanupDatabase, TestDatabase } from "../../../setup/database";
 import { createTestUserEntity } from "../../../factories/user.factory";
 import { createUserId } from "../../../utils/test-id-helpers";

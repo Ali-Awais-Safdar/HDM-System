@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { DocumentAccessPolicy, DocumentAccessContext } from "../../../src/domain/policies/document-access.policy";
-import { AccessPolicyEntity } from "../../../src/domain/entities/access-policy.entity";
+import { DocumentAccessPolicy, DocumentAccessContext } from "../../../src/app/domain/accessPolicy/document-access.policy";
+import { AccessPolicyEntity } from "../../../src/app/domain/accessPolicy/access-policy.entity";
 import { createUserReadPolicy, createUserWritePolicy, createUserAdminPolicy, createRolePolicy } from "../../factories/access-policy.factory";
 import { TestPatterns } from "../../utils/test.helpers";
 
@@ -215,4 +215,3 @@ describe("DocumentAccessPolicy", () => {
     });
   });
 });
-

@@ -1,4 +1,4 @@
-import { DocumentEntity, SerializedDocument } from "../../src/domain/entities/document.entity";
+import { DocumentEntity, SerializedDocument } from "../../src/app/domain/document/document.entity";
 import { faker } from "@faker-js/faker";
 import { Effect as E } from "effect";
 import * as fc from "fast-check";

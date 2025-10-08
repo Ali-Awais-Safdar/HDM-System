@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, beforeAll, afterAll } from "vitest";
 import { Effect as E, Option as O, Exit } from "effect";
 import { eq } from "drizzle-orm";
-import { DocumentVersionDrizzleRepository } from "../../../../src/infra/db/repositories/document-version.repository";
+import { DocumentVersionDrizzleRepository } from "@infra/repositories/document-version.repository";
 import { setupTestDatabase, cleanupDatabase, createTestUser, createTestDocument, TestDatabase } from "../../../setup/database";
 import { createTestDocumentVersionEntity } from "../../../factories/document-version.factory";
 import { createDocumentVersionId, createDocumentId } from "../../../utils/test-id-helpers";

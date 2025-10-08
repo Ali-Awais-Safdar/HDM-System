@@ -1,5 +1,5 @@
-import { UserEntity, SerializedUser } from "../../src/domain/entities/user.entity";
-import { Role } from "../../src/domain/schema/access-policy.schema";
+import { UserEntity, SerializedUser } from "../../src/app/domain/user/user.entity";
+import { Role } from "../../src/app/domain/accessPolicy/access-policy.schema";
 import { faker } from "@faker-js/faker";
 import { Effect as E } from "effect";
 import * as fc from "fast-check";

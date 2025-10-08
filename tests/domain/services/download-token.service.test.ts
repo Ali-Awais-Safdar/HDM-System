@@ -1,8 +1,9 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import { Effect, Option } from "effect";
-import { DownloadTokenService, DownloadTokenServiceError } from "../../../src/domain/services/download-token.service";
-import { DownloadTokenEntity } from "../../../src/domain/entities/download-token.entity";
-import { DownloadTokenRepository } from "../../../src/domain/ports/download-token.repository";
+import { DownloadTokenService, DownloadTokenServiceError } from "../../../src/app/domain/services/download-token.service";
+import { DownloadTokenEntity, SerializedDownloadToken } from "../../../src/app/domain/downloadToken/download-token.entity";
+import { DownloadTokenRepository } from "../../../src/app/domain/downloadToken/download-token.repository";
+import { DownloadTokenId, DocumentId, UserId } from "../../../src/app/domain/value-objects/id.vo";
 import { 
   createUnusedToken,
   createUsedToken,
@@ -10,7 +11,6 @@ import {
   createLongExpiryToken
 } from "../../factories/download-token.factory";
 import { TestPatterns } from "../../utils/test.helpers";
-import type { SerializedDownloadToken } from "../../../src/domain/entities/download-token.entity";
 
 /**
  * Helper to convert serialized token data to internal format for unsafe() usage
@@ -28,8 +28,8 @@ const toInternalFormat = (serialized: SerializedDownloadToken): any => ({
  * Mock DownloadTokenRepository for testing
  */
 class MockDownloadTokenRepository implements DownloadTokenRepository {
-  private tokens: Map<string, DownloadTokenEntity> = new Map();
-  private tokensByString: Map<string, DownloadTokenEntity> = new Map();
+  private readonly tokens: Map<DownloadTokenId, DownloadTokenEntity> = new Map();
+  private readonly tokensByString: Map<string, DownloadTokenEntity> = new Map();
 
   save(token: DownloadTokenEntity): Effect.Effect<DownloadTokenEntity, never> {
     this.tokens.set(token.id, token);
@@ -37,7 +37,7 @@ class MockDownloadTokenRepository implements DownloadTokenRepository {
     return Effect.succeed(token);
   }
 
-  findById(id: string): Effect.Effect<Option.Option<DownloadTokenEntity>, never> {
+  findById(id: DownloadTokenId): Effect.Effect<Option.Option<DownloadTokenEntity>, never> {
     const token = this.tokens.get(id);
     return Effect.succeed(token ? Option.some(token) : Option.none());
   }
@@ -47,24 +47,24 @@ class MockDownloadTokenRepository implements DownloadTokenRepository {
     return Effect.succeed(token ? Option.some(token) : Option.none());
   }
 
-  findByUserId(userId: string): Effect.Effect<readonly DownloadTokenEntity[], never> {
+  findByUserId(userId: UserId): Effect.Effect<readonly DownloadTokenEntity[], never> {
     const tokens = Array.from(this.tokens.values()).filter(t => t.issuedTo === userId);
     return Effect.succeed(tokens);
   }
 
-  findByDocumentId(documentId: string): Effect.Effect<readonly DownloadTokenEntity[], never> {
+  findByDocumentId(documentId: DocumentId): Effect.Effect<readonly DownloadTokenEntity[], never> {
     const tokens = Array.from(this.tokens.values()).filter(t => t.documentId === documentId);
     return Effect.succeed(tokens);
   }
 
-  findValidTokens(documentId: string, userId: string): Effect.Effect<readonly DownloadTokenEntity[], never> {
+  findValidTokens(documentId: DocumentId, userId: UserId): Effect.Effect<readonly DownloadTokenEntity[], never> {
     const tokens = Array.from(this.tokens.values()).filter(
       t => t.documentId === documentId && t.issuedTo === userId && t.isValid()
     );
     return Effect.succeed(tokens);
   }
 
-  exists(id: string): Effect.Effect<boolean, never> {
+  exists(id: DownloadTokenId): Effect.Effect<boolean, never> {
     return Effect.succeed(this.tokens.has(id));
   }
 
@@ -79,7 +79,7 @@ class MockDownloadTokenRepository implements DownloadTokenRepository {
     ) as Effect.Effect<DownloadTokenEntity, never>;
   }
 
-  delete(id: string): Effect.Effect<boolean, never> {
+  delete(id: DownloadTokenId): Effect.Effect<boolean, never> {
     const token = this.tokens.get(id);
     if (token) {
       this.tokens.delete(id);
@@ -104,7 +104,7 @@ class MockDownloadTokenRepository implements DownloadTokenRepository {
     return Effect.succeed(deletedCount);
   }
 
-  deleteByDocumentId(documentId: string): Effect.Effect<number, never> {
+  deleteByDocumentId(documentId: DocumentId): Effect.Effect<number, never> {
     const tokensToDelete = Array.from(this.tokens.values()).filter(
       t => t.documentId === documentId
     );
@@ -865,4 +865,3 @@ describe("DownloadTokenService - Domain Service Tests", () => {
     });
   });
 });
-
