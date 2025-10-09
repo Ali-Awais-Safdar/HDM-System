@@ -1,5 +1,10 @@
 import { Schema as S } from "effect"
-import { MimeType, FileSize, makeMimeTypeSync, makeFileSizeSync } from "./file-ref.vo"
+import {
+  MimeType,
+  FileSize,
+  makeMimeTypeSync,
+  makeFileSizeSync
+} from "@domain/refined/file-reference"
 
 export interface FileUploadData {
   readonly originalName: string;

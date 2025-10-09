@@ -1,20 +1,19 @@
 import { Schema as S, Option } from "effect"
 import { RoleSchema } from "@domain/accessPolicy/access-policy.schema"
-import { isValidUserRole } from "@domain/utils/domain.guards"
-import { DateTime } from "@domain/value-objects/datetime.vo"
-import { EmailAddress } from "@domain/value-objects/email.vo"
-import { HashedPassword } from "@domain/value-objects/hashed-password.vo"
-import { UserId, WorkspaceId } from "@domain/value-objects/id.vo"
+import { UserGuards } from "@domain/user/user.guards"
+import { Optional } from "@domain/utils/schema.utils"
+import { toNullable } from "@domain/utils/option.utils"
+import { DateTime } from "@domain/refined/date-time"
+import { EmailAddress } from "@domain/refined/email"
+import { HashedPassword } from "@domain/refined/hashed-password"
+import { UserId, WorkspaceId } from "@domain/refined/ids"
 
 export const UserSchema = S.Struct({
   id: UserId,
   email: EmailAddress,
   passwordHash: HashedPassword,
-  roles: S.Array(RoleSchema).pipe(
-    S.filter(roles => roles.length > 0, { message: () => "User must have at least one role" }),
-    S.filter(roles => roles.every(isValidUserRole), { message: () => "Invalid user role" })
-  ),
-  workspaceId: S.Option(WorkspaceId),
+  roles: S.Array(RoleSchema).pipe(UserGuards.ValidRoles),
+  workspaceId: Optional(WorkspaceId), // Accepts null/undefined and transforms to Option<WorkspaceId>
   createdAt: DateTime
 })
 export type User = S.Schema.Type<typeof UserSchema>
@@ -43,7 +42,7 @@ export const UserCodec = S.transform(UserRowSchema, UserSchema, {
     email: d.email,
     password_hash: d.passwordHash,
     roles: d.roles,
-    workspace_id: d.workspaceId._tag === "Some" ? d.workspaceId.value : null,
+    workspace_id: toNullable(d.workspaceId as any),
     created_at: d.createdAt
   }),
   strict: false

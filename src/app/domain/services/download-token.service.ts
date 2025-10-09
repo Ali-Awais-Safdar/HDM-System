@@ -4,8 +4,8 @@ import {
   DownloadTokenNotFoundError,
   DownloadTokenRepository,
 } from "@domain/downloadToken/download-token.repository"
-import { BusinessRuleViolationError, DomainError, ValidationError } from "@domain/utils/domain.errors"
-import { DocumentId, DownloadTokenId, UserId } from "@domain/value-objects/id.vo"
+import { BusinessRuleViolationError, DomainError, ValidationError } from "@domain/utils/base.errors"
+import { DocumentId, DownloadTokenId, UserId } from "@domain/refined/ids"
 
 export type DownloadTokenServiceErrorCode =
   | "REPOSITORY_ERROR"
@@ -118,7 +118,7 @@ export class DownloadTokenService {
 
   revokeToken(
     tokenId: DownloadTokenId
-  ): Effect.Effect<boolean, DownloadTokenNotFoundError> {
+  ): Effect.Effect<boolean, DownloadTokenNotFoundError | ValidationError> {
     return this.tokenRepository.delete(tokenId)
   }
 }

@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { Role } from "@domain/accessPolicy/access-policy.schema"
-import { Jwt } from "@domain/value-objects/jwt.vo"
+import { Jwt } from "@application/services/jwt.vo"
 import { UserId } from "@shared/types/brand"
 
 export interface TokenPayload {

@@ -1,4 +1,4 @@
-import { DomainError } from "@domain/utils/domain.errors"
+import { DomainError } from "@domain/utils/base.errors"
 
 /**
  * DocumentAccess-specific domain errors.

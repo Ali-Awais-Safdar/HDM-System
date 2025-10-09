@@ -1,24 +1,25 @@
 import { Schema as S } from "effect"
-import { fromNullable } from "@domain/utils/option.utils"
-import { isPositiveNumber } from "@domain/utils/domain.guards"
-import { DateTime } from "@domain/value-objects/datetime.vo"
-import { Sha256 } from "@domain/value-objects/checksum.vo"
-import { FileKey, FileSize, MimeType } from "@domain/value-objects/file-ref.vo"
-import { DocumentId, DocumentVersionId, UserId } from "@domain/value-objects/id.vo"
+import { fromNullable, toNullable } from "@domain/utils/option.utils"
+import { Optional } from "@domain/utils/schema.utils"
+import { DateTime } from "@domain/refined/date-time"
+import { Sha256 } from "@domain/refined/checksum"
+import { FileKey, FileSize, MimeType } from "@domain/refined/file-reference"
+import { DocumentId, DocumentVersionId, UserId } from "@domain/refined/ids"
+import { DocumentVersionGuards } from "@domain/documentVersion/document-version.guards"
 
 export const DocumentVersion = S.Struct({
   id: DocumentVersionId,
   documentId: DocumentId,
   version: S.Number.pipe(
     S.int(), 
-    S.filter(isPositiveNumber, { message: () => "Version must be a positive integer" })
+    DocumentVersionGuards.ValidVersion // Guards integrated into schema
   ),
-  checksum: Sha256,
+  checksum: Sha256.pipe(DocumentVersionGuards.ValidChecksum), // Guards integrated into schema
   fileKey: FileKey,
-  mimeType: MimeType,
-  size: FileSize,
+  mimeType: MimeType.pipe(DocumentVersionGuards.ValidMimeType), // Guards integrated into schema
+  size: FileSize.pipe(DocumentVersionGuards.ValidFileSize), // Guards integrated into schema
   createdAt: DateTime,
-  createdBy: S.Option(UserId)
+  createdBy: Optional(UserId) // Accepts null/undefined and transforms to Option<UserId>
 })
 export type DocumentVersion = S.Schema.Type<typeof DocumentVersion>
 
@@ -56,7 +57,7 @@ export const DocumentVersionCodec = S.transform(DocumentVersionRow, DocumentVers
     mime_type: d.mimeType,
     size: d.size,
     created_at: d.createdAt,
-    created_by: d.createdBy._tag === "Some" ? d.createdBy.value : null
+    created_by: toNullable(d.createdBy as any)
   }),
   strict: false
 })

@@ -1,7 +1,7 @@
 import jwt from "jsonwebtoken"
 import { Effect } from "effect"
 import { JwtService, TokenPayload, JwtError } from "@application/services/jwt.service"
-import { Jwt, JwtPayload } from "@domain/value-objects/jwt.vo"
+import { Jwt, JwtPayload } from "@application/services/jwt.vo"
 
 export class JwtServiceImpl extends JwtService {
   constructor(

@@ -1,6 +1,6 @@
 import { AccessPolicyEntity } from "@domain/accessPolicy/access-policy.entity"
 import { PermissionLevel, Role } from "@domain/accessPolicy/access-policy.schema"
-import { DocumentId, UserId } from "@domain/value-objects/id.vo"
+import { DocumentId, UserId } from "@domain/refined/ids"
 
 export interface DocumentAccessContext {
   userId: UserId;

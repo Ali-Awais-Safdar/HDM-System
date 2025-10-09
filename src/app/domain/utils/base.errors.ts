@@ -36,16 +36,54 @@ export class ValidationError extends DomainError {
 /**
  * Entity not found error.
  */
-export class EntityNotFoundError extends DomainError {
-  readonly _tag = "EntityNotFoundError" as const
-  readonly code = "ENTITY_NOT_FOUND"
-  
+export class NotFoundError extends DomainError {
+  readonly _tag = "NotFoundError" as const
+  readonly code = "NOT_FOUND"
+
+  constructor(
+    resource: string,
+    public readonly identifier?: string,
+    details?: Record<string, unknown>
+  ) {
+    super(
+      identifier ? `${resource} '${identifier}' not found` : `${resource} not found`,
+      { resource, identifier, ...details }
+    )
+  }
+}
+
+/**
+ * Entity not found error.
+ * Extends NotFoundError with entity-specific semantics.
+ */
+export class EntityNotFoundError extends NotFoundError {
   constructor(
     entityType: string,
     public readonly id: string,
     details?: Record<string, unknown>
   ) {
-    super(`${entityType} with id '${id}' not found`, { entityType, id, ...details })
+    super(entityType, id, { entityType, id, ...details })
+  }
+}
+
+/**
+ * Already exists error for duplicate entities.
+ */
+export class AlreadyExistsError extends DomainError {
+  readonly _tag = "AlreadyExistsError" as const
+  readonly code = "ALREADY_EXISTS"
+
+  constructor(
+    resource: string,
+    public readonly identifier?: string,
+    details?: Record<string, unknown>
+  ) {
+    super(
+      identifier
+        ? `${resource} '${identifier}' already exists`
+        : `${resource} already exists`,
+      { resource, identifier, ...details }
+    )
   }
 }
 
@@ -101,7 +139,9 @@ export class ConflictError extends DomainError {
 // Union type for common/base domain errors
 export type DomainErrorType = 
   | ValidationError
+  | NotFoundError
   | EntityNotFoundError
+  | AlreadyExistsError
   | BusinessRuleViolationError
   | PermissionDeniedError
   | ConflictError
@@ -117,11 +157,27 @@ export const DomainErrorSchema = S.Union(
     details: S.optional(S.Record({ key: S.String, value: S.Unknown }))
   }),
   S.Struct({
+    _tag: S.Literal("NotFoundError"),
+    code: S.Literal("NOT_FOUND"),
+    message: S.String,
+    resource: S.String,
+    identifier: S.optional(S.String),
+    details: S.optional(S.Record({ key: S.String, value: S.Unknown }))
+  }),
+  S.Struct({
     _tag: S.Literal("EntityNotFoundError"),
     code: S.Literal("ENTITY_NOT_FOUND"),
     message: S.String,
     entityType: S.String,
     id: S.String,
+    details: S.optional(S.Record({ key: S.String, value: S.Unknown }))
+  }),
+  S.Struct({
+    _tag: S.Literal("AlreadyExistsError"),
+    code: S.Literal("ALREADY_EXISTS"),
+    message: S.String,
+    resource: S.String,
+    identifier: S.optional(S.String),
     details: S.optional(S.Record({ key: S.String, value: S.Unknown }))
   }),
   S.Struct({

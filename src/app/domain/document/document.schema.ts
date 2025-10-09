@@ -1,30 +1,21 @@
 import { Schema as S } from "effect"
-import { fromNullable } from "@domain/utils/option.utils"
-import { DateTime } from "@domain/value-objects/datetime.vo"
-import { DocumentId, DocumentVersionId, UserId } from "@domain/value-objects/id.vo"
-import {
-  isValidDocumentDescription,
-  isValidDocumentTagList,
-  isValidDocumentTitle,
-} from "./document.guards"
+import { DocumentGuards } from "@domain/document/document.guards"
+import { Optional } from "@domain/utils/schema.utils"
+import { fromNullable, toNullable } from "@domain/utils/option.utils"
+import { DateTime } from "@domain/refined/date-time"
+import { DocumentId, DocumentVersionId, UserId } from "@domain/refined/ids"
 
-const Tags = S.Array(S.String).pipe(
-  S.filter((tags: readonly string[]) => isValidDocumentTagList(tags as string[]), { message: () => "Invalid tag list: duplicate tags or too many tags" })
-)
+const Tags = S.Array(S.String).pipe(DocumentGuards.ValidTagList)
 
 export const Document = S.Struct({
   id: DocumentId,
   ownerId: UserId,
-  title: S.String.pipe(
-    S.filter(isValidDocumentTitle, { message: () => "Title is required and cannot exceed 255 characters" })
-  ),
-  description: S.Option(S.String.pipe(
-    S.filter(isValidDocumentDescription, { message: () => "Description cannot exceed 1000 characters" })
-  )),
-  tags: S.Option(Tags),
+  title: S.String.pipe(DocumentGuards.ValidTitle), // Validation logic integrated into schema
+  description: Optional(S.String.pipe(DocumentGuards.ValidDescription)), // Accepts null/undefined and transforms to Option<string>
+  tags: Optional(Tags), // Accepts null/undefined and transforms to Option<readonly string[]>
   currentVersionId: DocumentVersionId,
   createdAt: DateTime,
-  updatedAt: S.Option(DateTime)
+  updatedAt: Optional(DateTime) // Accepts null/undefined and transforms to Option<Date>
 })
 export type Document = S.Schema.Type<typeof Document>
 
@@ -55,11 +46,11 @@ export const DocumentCodec = S.transform(DocumentRow, Document, {
     id: d.id,
     owner_id: d.ownerId,
     title: d.title,
-    description: d.description._tag === "Some" ? d.description.value : null,
-    tags: d.tags._tag === "Some" ? d.tags.value : null,
+    description: toNullable(d.description as any),
+    tags: toNullable(d.tags as any),
     current_version_id: d.currentVersionId,
     created_at: d.createdAt,
-    updated_at: d.updatedAt._tag === "Some" ? d.updatedAt.value : null
+    updated_at: toNullable(d.updatedAt as any)
   }),
   strict: false
 })

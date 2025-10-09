@@ -1,6 +1,6 @@
 import { Schema as S } from "effect"
 import { Role, RoleSchema } from "@domain/accessPolicy/access-policy.schema"
-import { UserId } from "@domain/value-objects/id.vo"
+import { UserId } from "@domain/refined/ids"
 
 
 /**
@@ -66,3 +66,5 @@ export class Jwt {
     return Math.max(0, this._payload.exp * 1000 - currentTime);
   }
 }
+
+

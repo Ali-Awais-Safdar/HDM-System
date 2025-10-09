@@ -1,8 +1,9 @@
-import { DomainError } from "@domain/utils/domain.errors"
+import { DomainError } from "@domain/utils/base.errors"
 
 /**
  * Document-specific domain errors.
  * Provides fine-grained error handling for document-related operations.
+ * All errors follow consistent pattern: field, value, optional details.
  */
 
 export class DocumentNotFoundError extends DomainError {
@@ -10,10 +11,14 @@ export class DocumentNotFoundError extends DomainError {
   readonly code = "DOCUMENT_NOT_FOUND"
   
   constructor(
-    public readonly documentId: string,
-    details?: Record<string, unknown>
+    public readonly field: string,
+    public readonly value: unknown,
+    details?: string
   ) {
-    super(`Document with id '${documentId}' not found`, { documentId, ...details })
+    super(
+      `Document not found for ${field}: ${value}${details ? ` - ${details}` : ""}`,
+      { field, value }
+    )
   }
 }
 
@@ -22,10 +27,14 @@ export class DocumentVersionNotFoundError extends DomainError {
   readonly code = "DOCUMENT_VERSION_NOT_FOUND"
   
   constructor(
-    public readonly versionId: string,
-    details?: Record<string, unknown>
+    public readonly field: string,
+    public readonly value: unknown,
+    details?: string
   ) {
-    super(`Document version with id '${versionId}' not found`, { versionId, ...details })
+    super(
+      `Document version not found for ${field}: ${value}${details ? ` - ${details}` : ""}`,
+      { field, value }
+    )
   }
 }
 
@@ -34,12 +43,14 @@ export class DocumentValidationError extends DomainError {
   readonly code = "DOCUMENT_VALIDATION_ERROR"
   
   constructor(
-    message: string,
-    public readonly field?: string,
-    public readonly value?: unknown,
-    details?: Record<string, unknown>
+    public readonly field: string,
+    public readonly value: unknown,
+    details?: string
   ) {
-    super(message, { field, value, ...details })
+    super(
+      `Document validation failed for ${field}: ${value}${details ? ` - ${details}` : ""}`,
+      { field, value }
+    )
   }
 }
 
@@ -48,10 +59,14 @@ export class DocumentTitleInvalidError extends DomainError {
   readonly code = "DOCUMENT_TITLE_INVALID"
   
   constructor(
-    public readonly title: string,
-    details?: Record<string, unknown>
+    public readonly field: string,
+    public readonly value: unknown,
+    details?: string
   ) {
-    super(`Invalid document title: '${title}'`, { title, ...details })
+    super(
+      `Invalid document title for ${field}: ${value}${details ? ` - ${details}` : ""}`,
+      { field, value }
+    )
   }
 }
 
@@ -60,11 +75,14 @@ export class DocumentTagsInvalidError extends DomainError {
   readonly code = "DOCUMENT_TAGS_INVALID"
   
   constructor(
-    message: string,
-    public readonly tags: string[],
-    details?: Record<string, unknown>
+    public readonly field: string,
+    public readonly value: unknown,
+    details?: string
   ) {
-    super(message, { tags, ...details })
+    super(
+      `Invalid document tags for ${field}: ${value}${details ? ` - ${details}` : ""}`,
+      { field, value }
+    )
   }
 }
 
@@ -73,14 +91,13 @@ export class DocumentVersionMismatchError extends DomainError {
   readonly code = "DOCUMENT_VERSION_MISMATCH"
   
   constructor(
-    public readonly documentId: string,
-    public readonly expectedVersion: number,
-    public readonly actualVersion: number,
-    details?: Record<string, unknown>
+    public readonly field: string,
+    public readonly value: unknown,
+    details?: string
   ) {
     super(
-      `Version mismatch for document '${documentId}': expected ${expectedVersion}, got ${actualVersion}`,
-      { documentId, expectedVersion, actualVersion, ...details }
+      `Document version mismatch for ${field}: ${value}${details ? ` - ${details}` : ""}`,
+      { field, value }
     )
   }
 }
@@ -90,11 +107,14 @@ export class DocumentStorageError extends DomainError {
   readonly code = "DOCUMENT_STORAGE_ERROR"
   
   constructor(
-    message: string,
-    public readonly documentId?: string,
-    details?: Record<string, unknown>
+    public readonly field: string,
+    public readonly value: unknown,
+    details?: string
   ) {
-    super(message, { documentId, ...details })
+    super(
+      `Document storage error for ${field}: ${value}${details ? ` - ${details}` : ""}`,
+      { field, value }
+    )
   }
 }
 
@@ -103,14 +123,13 @@ export class DocumentChecksumMismatchError extends DomainError {
   readonly code = "DOCUMENT_CHECKSUM_MISMATCH"
   
   constructor(
-    public readonly documentId: string,
-    public readonly expectedChecksum: string,
-    public readonly actualChecksum: string,
-    details?: Record<string, unknown>
+    public readonly field: string,
+    public readonly value: unknown,
+    details?: string
   ) {
     super(
-      `Checksum mismatch for document '${documentId}': expected ${expectedChecksum}, got ${actualChecksum}`,
-      { documentId, expectedChecksum, actualChecksum, ...details }
+      `Document checksum mismatch for ${field}: ${value}${details ? ` - ${details}` : ""}`,
+      { field, value }
     )
   }
 }

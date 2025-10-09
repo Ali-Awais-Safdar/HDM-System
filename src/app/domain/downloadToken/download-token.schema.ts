@@ -1,25 +1,22 @@
 import { Schema as S } from "effect"
 import { fromNullable } from "@domain/utils/option.utils"
-import { isFutureDate } from "@domain/utils/domain.guards"
-import { DateTime } from "@domain/value-objects/datetime.vo"
-import { DocumentId, DownloadTokenId, UserId } from "@domain/value-objects/id.vo"
-
-const isValidToken = (value: string): boolean => {
-  return value.length >= 32
-}
+import { Optional } from "@domain/utils/schema.utils"
+import { DateTime } from "@domain/refined/date-time"
+import { DocumentId, DownloadTokenId, UserId } from "@domain/refined/ids"
+import { DownloadTokenGuards } from "@domain/downloadToken/download-token.guards"
 
 export const DownloadToken = S.Struct({
   id: DownloadTokenId,
   token: S.String.pipe(
     S.filter(s => s.trim().length > 0, { message: () => "Token cannot be empty" }),
-    S.filter(isValidToken, { message: () => "Token must be at least 32 characters" })
+    DownloadTokenGuards.ValidToken // Guards integrated into schema
   ),
   documentId: DocumentId,
   issuedTo: UserId,
   expiresAt: DateTime.pipe(
-    S.filter(isFutureDate, { message: () => "Expiration date must be in the future" })
+    DownloadTokenGuards.ValidExpiryDate // Guards integrated into schema
   ),
-  usedAt: S.Option(DateTime),
+  usedAt: Optional(DateTime.pipe(DownloadTokenGuards.ValidUsedDate)), // Guards integrated into schema
   createdAt: DateTime
 })
 export type DownloadToken = S.Schema.Type<typeof DownloadToken>

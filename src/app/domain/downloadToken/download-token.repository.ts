@@ -1,7 +1,8 @@
 import { Effect, Option } from "effect"
 import { DownloadTokenEntity } from "./download-token.entity"
-import { BusinessRuleViolationError, DomainError, ValidationError } from "@domain/utils/domain.errors"
-import { DownloadTokenId, DocumentId, UserId } from "@domain/value-objects/id.vo"
+import { BusinessRuleViolationError, DomainError, ValidationError } from "@domain/utils/base.errors"
+import { BaseRepository, type RepositoryEffect } from "@domain/utils/base.repository"
+import { DownloadTokenId, DocumentId, UserId } from "@domain/refined/ids"
 
 /**
  * Download token-specific repository errors.
@@ -49,7 +50,15 @@ export class DownloadTokenAlreadyUsedError extends DomainError {
 /**
  * Download token repository interface with Effect-based signatures and typed errors.
  */
-export abstract class DownloadTokenRepository {
+export abstract class DownloadTokenRepository extends BaseRepository<DownloadTokenEntity> {
+
+  protected readonly entityName = "DownloadToken"
+
+  // Standardized CRUD per BaseRepository
+  abstract insert(token: DownloadTokenEntity): RepositoryEffect<DownloadTokenEntity, ValidationError | BusinessRuleViolationError>
+  abstract update(token: DownloadTokenEntity): RepositoryEffect<DownloadTokenEntity, ValidationError | BusinessRuleViolationError>
+  abstract fetchById(id: DownloadTokenId): RepositoryEffect<Option.Option<DownloadTokenEntity>, DownloadTokenNotFoundError>
+  abstract list(): RepositoryEffect<readonly DownloadTokenEntity[], DownloadTokenNotFoundError>
 
   abstract findById(
     id: DownloadTokenId
@@ -72,9 +81,8 @@ export abstract class DownloadTokenRepository {
     userId: UserId
   ): Effect.Effect<readonly DownloadTokenEntity[], DownloadTokenNotFoundError | ValidationError>
 
-  abstract exists(
-    id: DownloadTokenId
-  ): Effect.Effect<boolean, DownloadTokenNotFoundError>
+  // Standardized exists/delete per BaseRepository
+  abstract exists(id: DownloadTokenId): RepositoryEffect<boolean, DownloadTokenNotFoundError>
 
   abstract save(
     token: DownloadTokenEntity
@@ -84,9 +92,7 @@ export abstract class DownloadTokenRepository {
     token: string
   ): Effect.Effect<DownloadTokenEntity, DownloadTokenNotFoundError | DownloadTokenAlreadyUsedError | ValidationError>
 
-  abstract delete(
-    id: DownloadTokenId
-  ): Effect.Effect<boolean, DownloadTokenNotFoundError>
+  abstract delete(id: DownloadTokenId): RepositoryEffect<boolean, DownloadTokenNotFoundError>
 
   abstract deleteExpiredTokens(): Effect.Effect<number, never>
 

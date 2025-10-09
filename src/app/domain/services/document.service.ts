@@ -6,9 +6,9 @@ import { DocumentRepository } from "@domain/document/document.repository"
 import {
   DocumentNotFoundError,
   DocumentValidationError,
-} from "@domain/document/document.errors"
-import { BusinessRuleViolationError, DomainError, ValidationError } from "@domain/utils/domain.errors"
-import { DocumentId, UserId } from "@domain/value-objects/id.vo"
+} from "@domain/document/document.error"
+import { BusinessRuleViolationError, DomainError, ValidationError } from "@domain/utils/base.errors"
+import { DocumentId, UserId } from "@domain/refined/ids"
 import { Role } from "@domain/accessPolicy/access-policy.schema"
 
 export type DocumentServiceErrorCode = 

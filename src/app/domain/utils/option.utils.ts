@@ -1,4 +1,31 @@
-import { Option } from "effect"
+import { Option, ParseResult } from "effect"
+
+/**
+ * Flexible type alias that represents any optional payload accepted at the domain boundary.
+ * Mirrors the Maybe<T> concept from the best practices guide.
+ */
+export type Maybe<T> = T | Option.Option<T> | null | undefined
+
+/**
+ * Normalize Maybe<T> to Option<T>.
+ * Used when constructing entities to ensure consistent optional handling.
+ */
+export const normalizeMaybe = <T>(value: Maybe<T>): Option.Option<T> => {
+  if (value === null || value === undefined) {
+    return Option.none()
+  }
+  if (Option.isOption(value)) {
+    return value
+  }
+  return Option.some(value)
+}
+
+/**
+ * Convert an Option<T> back to Maybe<T> for serialization/transport.
+ */
+export const optionToMaybe = <T>(option: Option.Option<T>): Maybe<T> => {
+  return Option.getOrNull(option)
+}
 
 /**
  * Converts a nullable value to an Option<T>.
@@ -6,7 +33,7 @@ import { Option } from "effect"
  * This is the primary normalization function for incoming data.
  */
 export const fromNullable = <T>(value: T | null | undefined): Option.Option<T> => {
-  return value != null ? Option.some(value) : Option.none()
+  return normalizeMaybe(value)
 }
 
 /**
@@ -167,4 +194,15 @@ export const normalizeToOption = <T>(value: T | null | undefined): Option.Option
  */
 export const denormalizeFromOption = <T>(option: Option.Option<T>): T | null => {
   return toNullable(option)
+}
+
+/**
+ * Helper to map ParseResult.ParseError to a string message, used when reporting serialization issues.
+ */
+export const formatParseError = (error: ParseResult.ParseError): string => {
+  // Extract error message from ParseResult.ParseError
+  if (error && typeof error === 'object' && 'message' in error) {
+    return String(error.message)
+  }
+  return String(error)
 }

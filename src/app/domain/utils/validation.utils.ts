@@ -1,5 +1,10 @@
 import { Schema as S } from "effect"
-import { ValidationError } from "@domain/utils/domain.errors"
+import { ValidationError } from "@domain/utils/base.errors"
+
+export const createNotEmptyFilter = (message = "Value cannot be empty") =>
+  S.filter((value: string) => value.trim().length > 0, {
+    message: () => message
+  })
 
 // String validation guards
 export const isNonEmptyString = (value: string): boolean => {

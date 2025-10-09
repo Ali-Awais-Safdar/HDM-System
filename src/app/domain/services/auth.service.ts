@@ -7,13 +7,13 @@ import {
   UserAlreadyExistsError,
   UserNotFoundError,
   UserValidationError,
-} from "@domain/user/user.errors"
-import { DomainError, ValidationError } from "@domain/utils/domain.errors"
+} from "@domain/user/user.error"
+import { DomainError, ValidationError } from "@domain/utils/base.errors"
 import { PasswordHasherPort } from "@application/services/ports/password-hasher.port"
-import { EmailAddress } from "@domain/value-objects/email.vo"
-import { HashedPassword } from "@domain/value-objects/hashed-password.vo"
-import { UserId } from "@domain/value-objects/id.vo"
-import { Password } from "@domain/value-objects/password.vo"
+import { EmailAddress } from "@domain/refined/email"
+import { HashedPassword } from "@domain/refined/hashed-password"
+import { UserId } from "@domain/refined/ids"
+import { Password } from "@domain/refined/password"
 
 /**
  * Authentication service error for auth-related failures.

@@ -1,104 +1,155 @@
-/**
- * DocumentVersion-specific guards for domain validation.
- */
+import { Schema as S } from "effect"
 
 /**
- * Validates version number (must be a positive integer).
+ * DocumentVersion validation guards.
+ * Centralizes validation logic for document version operations.
+ * Provides both schema-integrated guards and standalone validation functions.
  */
-export const isValidVersionNumber = (version: number): boolean => {
-  return typeof version === 'number' && 
-         Number.isInteger(version) && 
-         version > 0 && 
-         Number.isFinite(version)
+export class DocumentVersionGuards {
+  /**
+   * Validates that a version number is positive.
+   * Used in DocumentVersion schema to ensure data integrity at the schema level.
+   */
+  static readonly ValidVersion = S.filter(
+    (version: number) => Number.isInteger(version) && version > 0,
+    { message: () => "Version must be a positive integer" }
+  )
+
+  /**
+   * Validates that a file size is within reasonable bounds.
+   * Used in DocumentVersion schema to ensure data integrity at the schema level.
+   */
+  static readonly ValidFileSize = S.filter(
+    (size: number) => size > 0 && size <= 100 * 1024 * 1024, // Max 100MB
+    { message: () => "File size must be between 1 byte and 100MB" }
+  )
+
+  /**
+   * Validates that a MIME type is supported.
+   * Used in DocumentVersion schema to ensure data integrity at the schema level.
+   */
+  static readonly ValidMimeType = S.filter(
+    (mimeType: string) => {
+      const supportedTypes = [
+        'application/pdf',
+        'text/plain',
+        'text/markdown',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'image/jpeg',
+        'image/png',
+        'image/gif',
+        'image/webp'
+      ]
+      return supportedTypes.includes(mimeType)
+    },
+    { message: () => "MIME type must be supported" }
+  )
+
+  /**
+   * Validates that a checksum is a valid SHA-256 hash.
+   * Used in DocumentVersion schema to ensure data integrity at the schema level.
+   */
+  static readonly ValidChecksum = S.filter(
+    (checksum: string) => /^[a-f0-9]{64}$/i.test(checksum),
+    { message: () => "Checksum must be a valid SHA-256 hash" }
+  )
+
+  // ========== Standalone Validation Functions ==========
+  // These functions are used for imperative validation in domain logic
+
+  /**
+   * Validates a version number.
+   */
+  static isValidVersion(version: number): boolean {
+    return Number.isInteger(version) && version > 0
+  }
+
+  /**
+   * Validates a file size.
+   */
+  static isValidFileSize(size: number): boolean {
+    return size > 0 && size <= 100 * 1024 * 1024 // Max 100MB
+  }
+
+  /**
+   * Validates a MIME type.
+   */
+  static isValidMimeType(mimeType: string): boolean {
+    const supportedTypes = [
+      'application/pdf',
+      'text/plain',
+      'text/markdown',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'image/jpeg',
+      'image/png',
+      'image/gif',
+      'image/webp'
+    ]
+    return supportedTypes.includes(mimeType)
+  }
+
+  /**
+   * Validates a SHA-256 checksum.
+   */
+  static isValidChecksum(checksum: string): boolean {
+    return /^[a-f0-9]{64}$/i.test(checksum)
+  }
+
+  /**
+   * Validates that a version is newer than another.
+   */
+  static isNewerVersion(currentVersion: number, otherVersion: number): boolean {
+    return currentVersion > otherVersion
+  }
+
+  /**
+   * Validates that a version is older than another.
+   */
+  static isOlderVersion(currentVersion: number, otherVersion: number): boolean {
+    return currentVersion < otherVersion
+  }
+
+  /**
+   * Validates that a version is the first version.
+   */
+  static isFirstVersion(version: number): boolean {
+    return version === 1
+  }
+
+  /**
+   * Validates that a file size is within a specific range.
+   */
+  static isFileSizeInRange(size: number, minBytes: number, maxBytes: number): boolean {
+    return size >= minBytes && size <= maxBytes
+  }
+
+  /**
+   * Validates that a MIME type is an image.
+   */
+  static isImageMimeType(mimeType: string): boolean {
+    return mimeType.startsWith('image/')
+  }
+
+  /**
+   * Validates that a MIME type is a document.
+   */
+  static isDocumentMimeType(mimeType: string): boolean {
+    return mimeType.startsWith('application/') || mimeType.startsWith('text/')
+  }
 }
 
-/**
- * Validates version number is sequential (next version).
- */
-export const isSequentialVersion = (currentVersion: number, newVersion: number): boolean => {
-  return isValidVersionNumber(currentVersion) && 
-         isValidVersionNumber(newVersion) && 
-         newVersion === currentVersion + 1
-}
+// ========== Convenience Exports ==========
+// Export individual functions for backward compatibility
 
-/**
- * Validates file checksum format (SHA-256).
- */
-export const isValidChecksum = (checksum: string): boolean => {
-  if (typeof checksum !== 'string') return false
-  const sha256Regex = /^[a-f0-9]{64}$/i
-  return sha256Regex.test(checksum)
-}
-
-/**
- * Validates file size (must be positive and within limits).
- */
-export const isValidFileSize = (size: number, maxSize: number = 50 * 1024 * 1024): boolean => {
-  return typeof size === 'number' && 
-         Number.isInteger(size) && 
-         size > 0 && 
-         size <= maxSize && 
-         Number.isFinite(size)
-}
-
-/**
- * Validates MIME type format.
- */
-export const isValidMimeType = (mimeType: string): boolean => {
-  if (typeof mimeType !== 'string') return false
-  return mimeType.includes('/') && !mimeType.endsWith('/')
-}
-
-/**
- * Validates file key format (storage path).
- */
-export const isValidFileKey = (fileKey: string): boolean => {
-  if (typeof fileKey !== 'string') return false
-  const trimmed = fileKey.trim()
-  return trimmed.length > 0 && trimmed.length <= 1024
-}
-
-/**
- * Checks if version is newer than another.
- */
-export const isNewerVersion = (version: number, olderVersion: number): boolean => {
-  return isValidVersionNumber(version) && 
-         isValidVersionNumber(olderVersion) && 
-         version > olderVersion
-}
-
-/**
- * Checks if version is the first version.
- */
-export const isFirstVersion = (version: number): boolean => {
-  return version === 1
-}
-
-/**
- * Validates version creation date.
- */
-export const isValidVersionCreationDate = (createdAt: Date): boolean => {
-  if (!(createdAt instanceof Date)) return false
-  if (isNaN(createdAt.getTime())) return false
-  // Version must be created in the past or now
-  return createdAt.getTime() <= Date.now()
-}
-
-/**
- * Checks if two versions belong to the same document.
- */
-export const isSameDocument = (documentId1: string, documentId2: string): boolean => {
-  return typeof documentId1 === 'string' && 
-         typeof documentId2 === 'string' && 
-         documentId1 === documentId2
-}
-
-/**
- * Validates version gap (versions should be continuous).
- */
-export const hasValidVersionGap = (version1: number, version2: number): boolean => {
-  if (!isValidVersionNumber(version1) || !isValidVersionNumber(version2)) return false
-  const gap = Math.abs(version2 - version1)
-  return gap === 1 // Versions should be continuous
-}
-
+export const isValidVersion = DocumentVersionGuards.isValidVersion
+export const isValidFileSize = DocumentVersionGuards.isValidFileSize
+export const isValidMimeType = DocumentVersionGuards.isValidMimeType
+export const isValidChecksum = DocumentVersionGuards.isValidChecksum
+export const isNewerVersion = DocumentVersionGuards.isNewerVersion
+export const isOlderVersion = DocumentVersionGuards.isOlderVersion
+export const isFirstVersion = DocumentVersionGuards.isFirstVersion
+export const isFileSizeInRange = DocumentVersionGuards.isFileSizeInRange
+export const isImageMimeType = DocumentVersionGuards.isImageMimeType
+export const isDocumentMimeType = DocumentVersionGuards.isDocumentMimeType

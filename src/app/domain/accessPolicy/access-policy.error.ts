@@ -1,8 +1,9 @@
-import { DomainError } from "@domain/utils/domain.errors"
+import { DomainError } from "@domain/utils/base.errors"
 
 /**
  * AccessPolicy-specific domain errors.
  * Provides fine-grained error handling for access policy operations.
+ * All errors follow consistent pattern: field, value, optional details.
  */
 
 export class AccessPolicyNotFoundError extends DomainError {
@@ -10,10 +11,14 @@ export class AccessPolicyNotFoundError extends DomainError {
   readonly code = "ACCESS_POLICY_NOT_FOUND"
   
   constructor(
-    public readonly policyId: string,
-    details?: Record<string, unknown>
+    public readonly field: string,
+    public readonly value: unknown,
+    details?: string
   ) {
-    super(`Access policy with id '${policyId}' not found`, { policyId, ...details })
+    super(
+      `Access policy not found for ${field}: ${value}${details ? ` - ${details}` : ""}`,
+      { field, value }
+    )
   }
 }
 
@@ -24,10 +29,9 @@ export class AccessPolicyValidationError extends DomainError {
   constructor(
     message: string,
     public readonly field?: string,
-    public readonly value?: unknown,
-    details?: Record<string, unknown>
+    public readonly value?: unknown
   ) {
-    super(message, { field, value, ...details })
+    super(message, { field, value })
   }
 }
 
@@ -36,12 +40,14 @@ export class AccessPolicyConflictError extends DomainError {
   readonly code = "ACCESS_POLICY_CONFLICT"
   
   constructor(
-    message: string,
-    public readonly resourceId: string,
-    public readonly subjectId: string,
-    details?: Record<string, unknown>
+    public readonly field: string,
+    public readonly value: unknown,
+    details?: string
   ) {
-    super(message, { resourceId, subjectId, ...details })
+    super(
+      `Access policy conflict for ${field}: ${value}${details ? ` - ${details}` : ""}`,
+      { field, value }
+    )
   }
 }
 
@@ -50,10 +56,14 @@ export class AccessPolicySubjectTypeInvalidError extends DomainError {
   readonly code = "ACCESS_POLICY_SUBJECT_TYPE_INVALID"
   
   constructor(
-    public readonly subjectType: string,
-    details?: Record<string, unknown>
+    public readonly field: string,
+    public readonly value: unknown,
+    details?: string
   ) {
-    super(`Invalid access policy subject type: '${subjectType}'`, { subjectType, ...details })
+    super(
+      `Invalid access policy subject type for ${field}: ${value}${details ? ` - ${details}` : ""}`,
+      { field, value }
+    )
   }
 }
 
@@ -62,10 +72,14 @@ export class AccessPolicyActionInvalidError extends DomainError {
   readonly code = "ACCESS_POLICY_ACTION_INVALID"
   
   constructor(
-    public readonly action: string,
-    details?: Record<string, unknown>
+    public readonly field: string,
+    public readonly value: unknown,
+    details?: string
   ) {
-    super(`Invalid access policy action: '${action}'`, { action, ...details })
+    super(
+      `Invalid access policy action for ${field}: ${value}${details ? ` - ${details}` : ""}`,
+      { field, value }
+    )
   }
 }
 
@@ -74,10 +88,14 @@ export class AccessPolicyRoleInvalidError extends DomainError {
   readonly code = "ACCESS_POLICY_ROLE_INVALID"
   
   constructor(
-    public readonly role: string,
-    details?: Record<string, unknown>
+    public readonly field: string,
+    public readonly value: unknown,
+    details?: string
   ) {
-    super(`Invalid role in access policy: '${role}'`, { role, ...details })
+    super(
+      `Invalid role in access policy for ${field}: ${value}${details ? ` - ${details}` : ""}`,
+      { field, value }
+    )
   }
 }
 

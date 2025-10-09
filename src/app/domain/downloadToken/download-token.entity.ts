@@ -1,12 +1,17 @@
 import { Effect, Schema as S, Option, ParseResult } from "effect"
-import { randomBytes } from "crypto"
+import { randomBytes, randomUUID } from "crypto"
 import { DownloadToken as DownloadTokenSchema } from "@domain/downloadToken/download-token.schema"
-import { createEntityFactory, type Entity, type IEntity } from "@domain/utils/entity.utils"
-import { BusinessRuleViolationError, ValidationError } from "@domain/utils/domain.errors"
-import { isSome, toNullable } from "@domain/utils/option.utils"
-import { DownloadTokenId, DocumentId, UserId, makeDownloadTokenIdSync } from "@domain/value-objects/id.vo"
+import { BaseEntity, type IEntity } from "@domain/utils/base.entity"
+import { BusinessRuleViolationError, ValidationError } from "@domain/utils/base.errors"
+import { formatParseError, optionToMaybe } from "@domain/utils/option.utils"
+import {
+  DownloadTokenId,
+  DocumentId,
+  UserId,
+  makeDownloadTokenIdSync
+} from "@domain/refined/ids"
 
-export interface IDownloadToken extends IEntity {
+export interface IDownloadToken extends IEntity<DownloadTokenId> {
   readonly id: DownloadTokenId
   readonly token: string
   readonly documentId: DocumentId
@@ -17,48 +22,112 @@ export interface IDownloadToken extends IEntity {
 }
 
 /**
+ * Runtime type derived from schema.
+ * Represents the validated DownloadToken type with Option<T> for optional fields.
+ */
+export type DownloadTokenType = S.Schema.Type<typeof DownloadTokenSchema>
+
+/**
  * Serialized DownloadToken type derived from schema encoding.
+ * Represents the external format for APIs and persistence.
  */
 export type SerializedDownloadToken = S.Schema.Encoded<typeof DownloadTokenSchema>
 
-export class DownloadTokenEntity implements Entity<S.Schema.Type<typeof DownloadTokenSchema>, SerializedDownloadToken>, IDownloadToken {
-  // ========== Static Factory Methods ==========
+/**
+ * Download Token Entity
+ * 
+ * Represents a secure download token for document access.
+ * Follows immutable entity pattern - all updates return new instances.
+ */
+export class DownloadTokenEntity
+  extends BaseEntity<IDownloadToken, typeof DownloadTokenSchema>
+  implements IDownloadToken
+{
+  // ========== Direct Readonly Properties ==========
+  // Properties cannot be reassigned after construction
+  // Optional values are explicitly handled with Option
   
-  static create = createEntityFactory(
-    DownloadTokenSchema,
-    (props) => new DownloadTokenEntity(props),
-    "DownloadToken"
-  ).create
+  readonly token: string
+  readonly documentId: DocumentId
+  readonly issuedTo: UserId
+  readonly expiresAt: Date
+  readonly usedAt: Option.Option<Date> // Explicit optionality with Option type
+  // ========== Static Factory Methods ==========
 
-  static createNew = (props: {
+  private static toRuntime(data: DownloadTokenType): IDownloadToken {
+    return {
+      id: data.id,
+      token: data.token,
+      documentId: data.documentId,
+      issuedTo: data.issuedTo,
+      expiresAt: data.expiresAt,
+      usedAt: data.usedAt,
+      createdAt: data.createdAt,
+      updatedAt: optionToMaybe(data.usedAt)
+    }
+  }
+
+  /**
+   * Creates a DownloadToken entity from external/unknown data.
+   * Validates input using schema and returns Effect with proper error handling.
+   * This is the primary factory method for creating tokens from external sources.
+   */
+  static create(input: unknown): Effect.Effect<DownloadTokenEntity, ValidationError, never> {
+    return S.decodeUnknown(DownloadTokenSchema)(input).pipe(
+      Effect.map((validated) =>
+        new DownloadTokenEntity(DownloadTokenEntity.toRuntime(validated))
+      ),
+      Effect.mapError((error) => 
+        new ValidationError(
+          `Invalid download token data: ${formatParseError(error)}`,
+          undefined,
+          input
+        )
+      )
+    ) as Effect.Effect<DownloadTokenEntity, ValidationError, never>
+  }
+
+  /**
+   * Creates a new DownloadToken entity with business logic validation.
+   * Use this for creating new tokens in the domain (not from persistence).
+   */
+  static createNew(props: {
     documentId: DocumentId;
     issuedTo: UserId;
     expiresAt: Date;
-  }): Effect.Effect<DownloadTokenEntity, ValidationError> => {
+  }): Effect.Effect<DownloadTokenEntity, ValidationError, never> {
     const token = DownloadTokenEntity.generateSecureToken()
     const tokenData = {
-      id: makeDownloadTokenIdSync(crypto.randomUUID()),
+      id: makeDownloadTokenIdSync(randomUUID()),
       token,
       documentId: props.documentId,
       issuedTo: props.issuedTo,
-      expiresAt: props.expiresAt.toISOString(),
-      usedAt: { _tag: "None" as const },
-      createdAt: new Date().toISOString()
+      expiresAt: props.expiresAt,
+      usedAt: null, // Pass null directly, schema will handle conversion
+      createdAt: new Date()
     }
+    
     return S.decodeUnknown(DownloadTokenSchema)(tokenData).pipe(
-      Effect.map((validated) => new DownloadTokenEntity(validated)),
-      Effect.mapError((error) => new ValidationError(
-        `Invalid download token data: ${error instanceof Error ? error.message : String(error)}`,
-        undefined,
-        tokenData
-      ))
-    )
+      Effect.map((validated) =>
+        new DownloadTokenEntity(DownloadTokenEntity.toRuntime(validated))
+      ),
+      Effect.mapError((error) => 
+        new ValidationError(
+          `Invalid download token data: ${formatParseError(error)}`,
+          undefined,
+          tokenData
+        )
+      )
+    ) as Effect.Effect<DownloadTokenEntity, ValidationError, never>
   }
 
-  static createWithDefaultExpiry = (props: {
+  /**
+   * Creates a token with default 5-minute expiry.
+   */
+  static createWithDefaultExpiry(props: {
     documentId: DocumentId;
     issuedTo: UserId;
-  }): Effect.Effect<DownloadTokenEntity, ValidationError> => {
+  }): Effect.Effect<DownloadTokenEntity, ValidationError, never> {
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000) // 5 minutes from now
     return DownloadTokenEntity.createNew({
       ...props,
@@ -66,17 +135,21 @@ export class DownloadTokenEntity implements Entity<S.Schema.Type<typeof Download
     })
   }
 
-  static fromPersistence = createEntityFactory(
-    DownloadTokenSchema,
-    (props) => new DownloadTokenEntity(props),
-    "DownloadToken"
-  ).fromPersistence
+  /**
+   * Creates entity from persistence layer data.
+   * Alias for create() for semantic clarity.
+   */
+  static fromPersistence(input: unknown): Effect.Effect<DownloadTokenEntity, ValidationError, never> {
+    return DownloadTokenEntity.create(input)
+  }
 
-  static unsafe = createEntityFactory(
-    DownloadTokenSchema,
-    (props) => new DownloadTokenEntity(props),
-    "DownloadToken"
-  ).unsafe
+  /**
+   * Unsafe constructor for when data is already validated.
+   * Use only in controlled contexts (e.g., tests, after validation).
+   */
+  static unsafe(data: DownloadTokenType): DownloadTokenEntity {
+    return new DownloadTokenEntity(DownloadTokenEntity.toRuntime(data))
+  }
 
   /**
    * Generates a cryptographically secure random token.
@@ -90,22 +163,23 @@ export class DownloadTokenEntity implements Entity<S.Schema.Type<typeof Download
       .replace(/=/g, '') // Remove padding for URL safety
   }
 
-  // ========== Constructor ==========
-
-  private constructor(readonly props: Readonly<S.Schema.Type<typeof DownloadTokenSchema>>) {}
+  // ========== Constructor (Private) ==========
+  // Constructor receives pre-validated data
+  // All validation happens in factory methods before construction
+  
+  private constructor(runtime: Readonly<IDownloadToken>) {
+    super(DownloadTokenSchema, runtime)
+    this.token = runtime.token
+    this.documentId = runtime.documentId
+    this.issuedTo = runtime.issuedTo
+    this.expiresAt = runtime.expiresAt
+    this.usedAt = runtime.usedAt // Already Option<Date> from schema
+  }
 
   // ========== Getters & Computed Properties ==========
   
-  get id() { return this.props.id }
-  get token() { return this.props.token }
-  get documentId() { return this.props.documentId }
-  get issuedTo() { return this.props.issuedTo }
-  get expiresAt() { return this.props.expiresAt }
-  get usedAt() { return this.props.usedAt }
-  get createdAt() { return this.props.createdAt }
-
   get hasBeenUsed(): boolean {
-    return isSome(this.usedAt)
+    return Option.isSome(this.usedAt)
   }
 
   get hasExpired(): boolean {
@@ -125,22 +199,34 @@ export class DownloadTokenEntity implements Entity<S.Schema.Type<typeof Download
     return Math.floor(this.millisecondsUntilExpiry / 1000)
   }
 
-  // Public Domain Methods
+  // ========== Public Domain Methods ==========
   
+  /**
+   * Checks if the token is valid (not expired and not used).
+   */
   isValid(clockSkewToleranceMs: number = 0): boolean {
     return !this.isExpired(clockSkewToleranceMs) && !this.hasBeenUsed
   }
 
+  /**
+   * Checks if the token has expired.
+   */
   isExpired(clockSkewToleranceMs: number = 0): boolean {
     const now = new Date()
     const adjustedExpiryTime = new Date(this.expiresAt.getTime() + clockSkewToleranceMs)
     return now > adjustedExpiryTime
   }
 
+  /**
+   * Checks if the token has been used.
+   */
   isUsed(): boolean {
     return this.hasBeenUsed
   }
 
+  /**
+   * Checks if the token belongs to the specified user.
+   */
   belongsToUser(userId: UserId): boolean {
     return this.issuedTo === userId
   }
@@ -157,7 +243,11 @@ export class DownloadTokenEntity implements Entity<S.Schema.Type<typeof Download
     return Math.max(0, timeLeft)
   }
 
-  markAsUsed = (): Effect.Effect<DownloadTokenEntity, ValidationError | BusinessRuleViolationError> => {
+  /**
+   * Marks the token as used.
+   * Returns new entity instance with usedAt set to current time (immutable update pattern).
+   */
+  markAsUsed(): Effect.Effect<DownloadTokenEntity, ValidationError | BusinessRuleViolationError, never> {
     // Check if already used
     if (this.hasBeenUsed) {
       return Effect.fail(new BusinessRuleViolationError(
@@ -178,15 +268,28 @@ export class DownloadTokenEntity implements Entity<S.Schema.Type<typeof Download
 
     // Construct new entity directly with usedAt set to now
     const usedAt = new Date()
-    const updated = new DownloadTokenEntity({
-      ...this.props,
-      usedAt: Option.some(usedAt)
-    })
-
-    return Effect.succeed(updated)
+    return this.serialized().pipe(
+      Effect.mapError((error) =>
+        new ValidationError(
+          `Failed to prepare download token for usage: ${formatParseError(error)}`,
+          "usedAt",
+          usedAt
+        )
+      ),
+      Effect.flatMap((currentSerialized) =>
+        DownloadTokenEntity.create({
+          ...currentSerialized,
+          usedAt: usedAt // Pass Date directly, schema will handle conversion
+        })
+      )
+    )
   }
 
-  validateForUse = (userId: UserId, clockSkewToleranceMs: number = 0): Effect.Effect<DownloadTokenEntity, BusinessRuleViolationError> => {
+  /**
+   * Validates the token for use by a specific user.
+   * Checks ownership, usage status, and expiration.
+   */
+  validateForUse(userId: UserId, clockSkewToleranceMs: number = 0): Effect.Effect<DownloadTokenEntity, BusinessRuleViolationError, never> {
     // Check if token belongs to user
     if (!this.belongsToUser(userId)) {
       return Effect.fail(new BusinessRuleViolationError(
@@ -220,25 +323,43 @@ export class DownloadTokenEntity implements Entity<S.Schema.Type<typeof Download
 
   // ========== Serialization Methods ==========
 
-  toWireFormat = (): S.Schema.Type<typeof DownloadTokenSchema> => {
-    return this.props
+  /**
+   * Returns wire format (validated runtime type).
+   * Used for internal domain operations.
+   */
+  toWireFormat(): IDownloadToken {
+    return {
+      id: this.id,
+      token: this.token,
+      documentId: this.documentId,
+      issuedTo: this.issuedTo,
+      expiresAt: this.expiresAt,
+      usedAt: this.usedAt,
+      createdAt: this.createdAt,
+      updatedAt: this.updatedAt
+    }
   }
 
   /**
    * Serializes the entity using Effect Schema encoding.
    * Properly transforms Option<T> fields to nullable values for external systems.
+   * This is automatic serialization with type safety.
    */
-  serialized = (): Effect.Effect<SerializedDownloadToken, ParseResult.ParseError, never> => {
-    return S.encode(DownloadTokenSchema)(this.props)
+  serialized(): Effect.Effect<SerializedDownloadToken, ParseResult.ParseError, never> {
+    return S.encode(DownloadTokenSchema)(this.props as any) as Effect.Effect<SerializedDownloadToken, ParseResult.ParseError, never>
   }
 
-  toPlainObject = (clockSkewToleranceMs: number = 0) => {
+  /**
+   * Converts to plain object for APIs.
+   * Includes computed properties for convenience.
+   */
+  toPlainObject(clockSkewToleranceMs: number = 0) {
     return {
       id: this.id,
       documentId: this.documentId,
       issuedTo: this.issuedTo,
       expiresAt: this.expiresAt,
-      usedAt: toNullable(this.usedAt),
+      usedAt: optionToMaybe(this.usedAt),
       createdAt: this.createdAt,
       isValid: this.isValid(clockSkewToleranceMs),
       isExpired: this.isExpired(clockSkewToleranceMs),

@@ -3,10 +3,11 @@ import { DocumentEntity } from "./document.entity"
 import {
   DocumentNotFoundError,
   DocumentValidationError,
-} from "./document.errors"
-import { ValidationError } from "@domain/utils/domain.errors"
+} from "./document.error"
+import { ValidationError } from "@domain/utils/base.errors"
 import { Paginated, PaginationOptions } from "@domain/utils/pagination"
-import { DocumentId, UserId } from "@domain/value-objects/id.vo"
+import { BaseRepository, type RepositoryEffect } from "@domain/utils/base.repository"
+import { DocumentId, UserId } from "@domain/refined/ids"
 
 export interface DocumentSearchFilters {
   readonly query?: string
@@ -18,7 +19,15 @@ export interface DocumentSearchFilters {
 /**
  * Document repository interface with Effect-based signatures and typed errors.
  */
-export abstract class DocumentRepository {
+export abstract class DocumentRepository extends BaseRepository<DocumentEntity> {
+
+  protected readonly entityName = "Document"
+
+  // Standardized CRUD per BaseRepository
+  abstract insert(document: DocumentEntity): RepositoryEffect<DocumentEntity, DocumentValidationError>
+  abstract update(document: DocumentEntity): RepositoryEffect<DocumentEntity, DocumentValidationError>
+  abstract fetchById(id: DocumentId): RepositoryEffect<Option.Option<DocumentEntity>, DocumentNotFoundError>
+  abstract list(): RepositoryEffect<readonly DocumentEntity[], DocumentNotFoundError>
 
   abstract findById(
     id: DocumentId
@@ -32,15 +41,12 @@ export abstract class DocumentRepository {
     filters: DocumentSearchFilters
   ): Effect.Effect<Paginated<DocumentEntity>, DocumentNotFoundError | ValidationError>
 
-  abstract exists(
-    id: DocumentId
-  ): Effect.Effect<boolean, DocumentNotFoundError>
+  // Standardized exists/delete per BaseRepository
+  abstract exists(id: DocumentId): RepositoryEffect<boolean, DocumentNotFoundError>
 
   abstract save(
     document: DocumentEntity
   ): Effect.Effect<DocumentEntity, DocumentValidationError | ValidationError>
 
-  abstract delete(
-    id: DocumentId
-  ): Effect.Effect<boolean, DocumentNotFoundError>
+  abstract delete(id: DocumentId): RepositoryEffect<boolean, DocumentNotFoundError>
 }
