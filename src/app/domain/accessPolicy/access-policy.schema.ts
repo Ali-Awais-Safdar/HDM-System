@@ -1,6 +1,7 @@
 import { Schema as S } from "effect"
 import { Optional } from "@domain/utils/schema.utils"
 import { DateTimeFromAny } from "@domain/refined/date-time"
+import { AccessPolicyId, DocumentId, UserId } from "@domain/refined/ids"
 
 export const PermissionActionSchema = S.Union(
   S.Literal("read"),
@@ -31,11 +32,11 @@ export const PermissionLevelSchema = S.Union(
 export type PermissionLevel = S.Schema.Type<typeof PermissionLevelSchema>
 
 export const AccessPolicySchema = S.Struct({
-  id: S.String,
+  id: AccessPolicyId,
   resourceType: S.Literal("document"),
-  resourceId: S.String,
+  resourceId: DocumentId,
   subjectType: SubjectTypeSchema,
-  subjectId: Optional(S.String), // Accepts null/undefined and transforms to Option<string>
+  subjectId: Optional(UserId), // Accepts null/undefined and transforms to Option<UserId>
   role: Optional(RoleSchema), // Accepts null/undefined and transforms to Option<Role>
   actions: S.Array(PermissionActionSchema),
   effect: S.Literal("allow"),

@@ -50,7 +50,7 @@ export const DownloadTokenCodec = S.transform(DownloadTokenRow, DownloadToken, {
     document_id: d.documentId,
     issued_to: d.issuedTo,
     expires_at: d.expiresAt,
-    used_at: d.usedAt._tag === "Some" ? d.usedAt.value : null,
+    used_at: Option.getOrNull(d.usedAt),
     created_at: d.createdAt,
     updated_at: Option.getOrNull(d.updatedAt as any)
   }),

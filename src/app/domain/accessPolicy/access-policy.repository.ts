@@ -5,9 +5,8 @@ import {
   AccessPolicyNotFoundError,
   AccessPolicyValidationError,
 } from "@domain/accessPolicy/access-policy.error"
-import { ValidationError } from "@domain/utils/base.errors"
 import { BaseRepository, type RepositoryEffect } from "@domain/utils/base.repository"
-import { DocumentId, UserId } from "@domain/refined/ids"
+import { AccessPolicyId, DocumentId, UserId } from "@domain/refined/ids"
 
 /**
  * Access policy repository interface with Effect-based signatures and typed errors.
@@ -19,36 +18,36 @@ export abstract class AccessPolicyRepository extends BaseRepository<AccessPolicy
   // Standardized CRUD per BaseRepository
   abstract insert(policy: AccessPolicyEntity): RepositoryEffect<AccessPolicyEntity, AccessPolicyValidationError | AccessPolicyConflictError>
   abstract update(policy: AccessPolicyEntity): RepositoryEffect<AccessPolicyEntity, AccessPolicyValidationError | AccessPolicyConflictError>
-  abstract fetchById(id: string): RepositoryEffect<Option.Option<AccessPolicyEntity>, AccessPolicyNotFoundError>
+  abstract fetchById(id: AccessPolicyId): RepositoryEffect<Option.Option<AccessPolicyEntity>, AccessPolicyNotFoundError>
   abstract list(): RepositoryEffect<readonly AccessPolicyEntity[], AccessPolicyNotFoundError>
 
   abstract findById(
-    id: string
-  ): Effect.Effect<Option.Option<AccessPolicyEntity>, AccessPolicyNotFoundError | ValidationError>
+    id: AccessPolicyId
+  ): Effect.Effect<Option.Option<AccessPolicyEntity>, AccessPolicyNotFoundError | AccessPolicyValidationError>
 
   abstract findByResourceId(
     resourceId: DocumentId
-  ): Effect.Effect<readonly AccessPolicyEntity[], AccessPolicyNotFoundError | ValidationError>
+  ): Effect.Effect<readonly AccessPolicyEntity[], AccessPolicyNotFoundError | AccessPolicyValidationError>
 
   abstract findBySubject(
     subjectType: SubjectType,
     subjectId?: UserId,
     role?: Role
-  ): Effect.Effect<readonly AccessPolicyEntity[], AccessPolicyNotFoundError | ValidationError>
+  ): Effect.Effect<readonly AccessPolicyEntity[], AccessPolicyNotFoundError | AccessPolicyValidationError>
 
   abstract findByUserAndResource(
     userId: UserId,
     resourceId: DocumentId
-  ): Effect.Effect<readonly AccessPolicyEntity[], AccessPolicyNotFoundError | ValidationError>
+  ): Effect.Effect<readonly AccessPolicyEntity[], AccessPolicyNotFoundError | AccessPolicyValidationError>
 
   // Standardized exists/delete per BaseRepository
-  abstract exists(id: string): RepositoryEffect<boolean, AccessPolicyNotFoundError>
+  abstract exists(id: AccessPolicyId): RepositoryEffect<boolean, AccessPolicyNotFoundError>
 
   abstract save(
     policy: AccessPolicyEntity
-  ): Effect.Effect<AccessPolicyEntity, AccessPolicyConflictError | AccessPolicyValidationError | ValidationError>
+  ): Effect.Effect<AccessPolicyEntity, AccessPolicyConflictError | AccessPolicyValidationError>
 
-  abstract delete(id: string): RepositoryEffect<boolean, AccessPolicyNotFoundError>
+  abstract delete(id: AccessPolicyId): RepositoryEffect<boolean, AccessPolicyNotFoundError>
 
   abstract deleteByResourceId(
     resourceId: DocumentId

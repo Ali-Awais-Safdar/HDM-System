@@ -22,13 +22,6 @@ export abstract class BaseEntity<
     return this.runtime
   }
 
-  toWireFormat(): TRuntime {
-    return this.runtime
-  }
-
-  toPlainObject(): Record<string, unknown> {
-    return { ...(this.runtime as Record<string, unknown>) }
-  }
 
   serialized(): Effect.Effect<
     SerializedEntity<TSchema>,

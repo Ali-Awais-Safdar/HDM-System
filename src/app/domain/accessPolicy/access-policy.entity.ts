@@ -9,17 +9,18 @@ import {
 } from "@domain/accessPolicy/access-policy.schema"
 import { AccessPolicyGuards } from "@domain/accessPolicy/access-policy.guards"
 import { BaseEntity, type IEntity } from "@domain/utils/base.entity"
-import { BusinessRuleViolationError, ValidationError } from "@domain/utils/base.errors"
+import { BusinessRuleViolationError } from "@domain/utils/base.errors"
 import { formatParseError } from "@domain/utils/option.utils"
+import { AccessPolicyId, DocumentId, UserId } from "@domain/refined/ids"
 
 export type { PermissionLevel, PermissionAction, Role, SubjectType }
 
-export interface IAccessPolicy extends IEntity<string> {
-  readonly id: string
+export interface IAccessPolicy extends IEntity<AccessPolicyId> {
+  readonly id: AccessPolicyId
   readonly resourceType: "document"
-  readonly resourceId: string
+  readonly resourceId: DocumentId
   readonly subjectType: SubjectType
-  readonly subjectId: Option.Option<string>
+  readonly subjectId: Option.Option<UserId>
   readonly role: Option.Option<Role>
   readonly actions: readonly PermissionAction[]
   readonly effect: "allow"
@@ -40,7 +41,7 @@ export class AccessPolicyEntity
     input: SerializedAccessPolicy
   ): Effect.Effect<
     AccessPolicyEntity,
-    AccessPolicyValidationError | ValidationError,
+    AccessPolicyValidationError,
     never
   > {
     return S.decodeUnknown(AccessPolicySchema)(input).pipe(
@@ -56,13 +57,13 @@ export class AccessPolicyEntity
   private static toValidationError(
     error: unknown,
     input: SerializedAccessPolicy
-  ): AccessPolicyValidationError | ValidationError {
+  ): AccessPolicyValidationError {
     if (error instanceof AccessPolicyValidationError) {
       return error
     }
-    return new ValidationError(
-      `Invalid access policy data: ${formatParseError(error as ParseResult.ParseError)}`,
-      undefined,
+    return new AccessPolicyValidationError(
+      `AccessPolicy validation failed: ${formatParseError(error as ParseResult.ParseError)}`,
+      "accessPolicy",
       input
     )
   }
@@ -79,7 +80,7 @@ export class AccessPolicyEntity
     >
   }
 
-  get id(): string {
+  get id(): AccessPolicyId {
     return this.data.id
   }
 
@@ -87,7 +88,7 @@ export class AccessPolicyEntity
     return this.data.resourceType
   }
 
-  get resourceId(): string {
+  get resourceId(): DocumentId {
     return this.data.resourceId
   }
 
@@ -95,7 +96,7 @@ export class AccessPolicyEntity
     return this.data.subjectType
   }
 
-  get subjectId(): Option.Option<string> {
+  get subjectId(): Option.Option<UserId> {
     return this.data.subjectId
   }
 
@@ -154,7 +155,7 @@ export class AccessPolicyEntity
 
   appliesToSubject(
     subjectType: SubjectType,
-    subjectId?: string,
+    subjectId?: UserId,
     role?: Role
   ): boolean {
     if (this.subjectType !== subjectType) return false
@@ -162,7 +163,7 @@ export class AccessPolicyEntity
     if (subjectType === "user") {
       return Option.match(this.subjectId, {
         onNone: () => false,
-        onSome: (id: string) => id === subjectId
+        onSome: (id: UserId) => id === subjectId
       })
     }
 
@@ -176,7 +177,7 @@ export class AccessPolicyEntity
     return false
   }
 
-  appliesToResource(resourceType: string, resourceId: string): boolean {
+  appliesToResource(resourceType: string, resourceId: DocumentId): boolean {
     return this.resourceType === resourceType && this.resourceId === resourceId
   }
 
@@ -196,7 +197,7 @@ export class AccessPolicyEntity
     newActions: PermissionAction[]
   ): Effect.Effect<
     AccessPolicyEntity,
-    ValidationError | BusinessRuleViolationError,
+    AccessPolicyValidationError | BusinessRuleViolationError,
     never
   > {
     if (newActions.length === 0) {
@@ -211,7 +212,7 @@ export class AccessPolicyEntity
         this.serialized().pipe(
           Effect.mapError(
             (error) =>
-              new ValidationError(
+              new AccessPolicyValidationError(
                 `Failed to prepare access policy for action addition: ${formatParseError(error)}`,
                 "actions",
                 allActions
@@ -227,9 +228,13 @@ export class AccessPolicyEntity
         )
       ),
       Effect.mapError((error) =>
-        error instanceof ValidationError
+        error instanceof AccessPolicyValidationError
           ? error
-          : new ValidationError(error.message)
+          : new AccessPolicyValidationError(
+              String(error),
+              "actions",
+              newActions
+            )
       )
     )
   }
@@ -238,7 +243,7 @@ export class AccessPolicyEntity
     actionsToRemove: PermissionAction[]
   ): Effect.Effect<
     AccessPolicyEntity,
-    ValidationError | BusinessRuleViolationError,
+    AccessPolicyValidationError | BusinessRuleViolationError,
     never
   > {
     if (actionsToRemove.length === 0) {
@@ -253,7 +258,7 @@ export class AccessPolicyEntity
         this.serialized().pipe(
           Effect.mapError(
             (error) =>
-              new ValidationError(
+              new AccessPolicyValidationError(
                 `Failed to prepare access policy for action removal: ${formatParseError(error)}`,
                 "actions",
                 remainingActions
@@ -269,9 +274,13 @@ export class AccessPolicyEntity
         )
       ),
       Effect.mapError((error) =>
-        error instanceof ValidationError
+        error instanceof AccessPolicyValidationError
           ? error
-          : new ValidationError(error.message)
+          : new AccessPolicyValidationError(
+              String(error),
+              "actions",
+              actionsToRemove
+            )
       )
     )
   }
