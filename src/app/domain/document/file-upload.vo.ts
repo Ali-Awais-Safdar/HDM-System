@@ -1,10 +1,11 @@
-import { Schema as S } from "effect"
+import { Schema as S, Effect } from "effect"
 import {
   MimeType,
   FileSize,
   makeMimeTypeSync,
   makeFileSizeSync
 } from "@domain/refined/file-reference"
+import { ValidationError } from "@domain/utils/base.errors"
 
 export interface FileUploadData {
   readonly originalName: string;
@@ -97,33 +98,41 @@ export class FileUpload {
     mimeType: string,
     size: number,
     data: Buffer
-  ): FileUpload {
-    // Use schema validation instead of throwing errors
-    const validatedData = S.decodeUnknownSync(FileUploadSchema)({
-      originalName,
-      mimeType,
-      size,
-      data
-    });
-    
-    // Additional validation for size mismatch using schema
-    const sizeMismatchSchema = S.Struct({
-      size: S.Number,
-      dataLength: S.Number
+  ): Effect.Effect<FileUpload, ValidationError, never> {
+    return Effect.try(() => {
+      // Use schema validation instead of throwing errors
+      const validatedData = S.decodeUnknownSync(FileUploadSchema)({
+        originalName,
+        mimeType,
+        size,
+        data
+      });
+      
+      // Additional validation for size mismatch using schema
+      const sizeMismatchSchema = S.Struct({
+        size: S.Number,
+        dataLength: S.Number
+      }).pipe(
+        S.filter(
+          ({ size, dataLength }) => size === dataLength,
+          { message: () => "File size mismatch with actual data length" }
+        )
+      );
+      
+      S.decodeUnknownSync(sizeMismatchSchema)({ size: validatedData.size, dataLength: validatedData.data.length });
+      
+      return new FileUpload(
+        FileUpload.sanitizeFileName(validatedData.originalName),
+        makeMimeTypeSync(validatedData.mimeType),
+        makeFileSizeSync(validatedData.size),
+        validatedData.data
+      );
     }).pipe(
-      S.filter(
-        ({ size, dataLength }) => size === dataLength,
-        { message: () => "File size mismatch with actual data length" }
-      )
-    );
-    
-    S.decodeUnknownSync(sizeMismatchSchema)({ size: validatedData.size, dataLength: validatedData.data.length });
-    
-    return new FileUpload(
-      FileUpload.sanitizeFileName(validatedData.originalName),
-      makeMimeTypeSync(validatedData.mimeType),
-      makeFileSizeSync(validatedData.size),
-      validatedData.data
+      Effect.mapError(error => new ValidationError(
+        error instanceof Error ? error.message : "File upload validation failed",
+        "FileUpload.create",
+        { originalName, mimeType, size, dataLength: data.length }
+      ))
     );
   }
 

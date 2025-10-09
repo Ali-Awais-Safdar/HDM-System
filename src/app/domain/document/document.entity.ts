@@ -3,7 +3,7 @@ import { Document as DocumentSchema } from "@domain/document/document.schema"
 import { DocumentGuards } from "@domain/document/document.guards"
 import { BaseEntity, type IEntity } from "@domain/utils/base.entity"
 import { BusinessRuleViolationError, ValidationError } from "@domain/utils/base.errors"
-import { formatParseError, isSome } from "@domain/utils/option.utils"
+import { formatParseError } from "@domain/utils/option.utils"
 import { DocumentValidationError } from "@domain/document/document.error"
 import { DocumentId, DocumentVersionId, UserId } from "@domain/refined/ids"
 
@@ -53,13 +53,6 @@ export class DocumentEntity
     )
   }
 
-  serialized(): Effect.Effect<SerializedDocument, ParseResult.ParseError, never> {
-    return super.serialized() as Effect.Effect<
-      SerializedDocument,
-      ParseResult.ParseError,
-      never
-    >
-  }
 
   get id(): DocumentId {
     return this.data.id
@@ -94,12 +87,12 @@ export class DocumentEntity
   }
 
   get hasDescriptionValue(): boolean {
-    return isSome(this.description)
+    return Option.isSome(this.description)
   }
 
   get hasTagsValue(): boolean {
     return (
-      isSome(this.tags) && Option.getOrElse(this.tags, () => []).length > 0
+      Option.isSome(this.tags) && Option.getOrElse(this.tags, () => []).length > 0
     )
   }
 
@@ -151,7 +144,7 @@ export class DocumentEntity
         DocumentEntity.create({
           ...currentSerialized,
           title: newTitle,
-          updatedAt: new Date().toISOString()
+          updatedAt: new Date()
         })
       )
     )
@@ -175,7 +168,7 @@ export class DocumentEntity
         DocumentEntity.create({
           ...currentSerialized,
           description: nextDescription,
-          updatedAt: new Date().toISOString()
+          updatedAt: new Date()
         })
       )
     )
@@ -214,7 +207,7 @@ export class DocumentEntity
             DocumentEntity.create({
               ...currentSerialized,
               tags: uniqueTags,
-              updatedAt: new Date().toISOString()
+              updatedAt: new Date()
             })
           )
         )
@@ -260,7 +253,7 @@ export class DocumentEntity
             DocumentEntity.create({
               ...currentSerialized,
               tags: filteredTags.length > 0 ? filteredTags : null,
-              updatedAt: new Date().toISOString()
+              updatedAt: new Date()
             })
           )
         )
@@ -284,7 +277,7 @@ export class DocumentEntity
         DocumentEntity.create({
           ...currentSerialized,
           currentVersionId: newVersionId,
-          updatedAt: new Date().toISOString()
+          updatedAt: new Date()
         })
       )
     )

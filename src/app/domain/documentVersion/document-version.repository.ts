@@ -1,9 +1,9 @@
 import { Effect, Option } from "effect"
 import { DocumentVersionEntity } from "./document-version.entity"
-import {
-  DocumentValidationError,
+import { 
   DocumentVersionNotFoundError,
-} from "@domain/document/document.error"
+  DocumentVersionValidationError
+} from "./document-version.error"
 import { ValidationError } from "@domain/utils/base.errors"
 import { BaseRepository, type RepositoryEffect } from "@domain/utils/base.repository"
 import { DocumentId, DocumentVersionId } from "@domain/refined/ids"
@@ -16,8 +16,8 @@ export abstract class DocumentVersionRepository extends BaseRepository<DocumentV
   protected readonly entityName = "DocumentVersion"
 
   // Standardized CRUD per BaseRepository
-  abstract insert(version: DocumentVersionEntity): RepositoryEffect<DocumentVersionEntity, DocumentValidationError | ValidationError>
-  abstract update(version: DocumentVersionEntity): RepositoryEffect<DocumentVersionEntity, DocumentValidationError | ValidationError>
+  abstract insert(version: DocumentVersionEntity): RepositoryEffect<DocumentVersionEntity, DocumentVersionValidationError | ValidationError>
+  abstract update(version: DocumentVersionEntity): RepositoryEffect<DocumentVersionEntity, DocumentVersionValidationError | ValidationError>
   abstract fetchById(id: DocumentVersionId): RepositoryEffect<Option.Option<DocumentVersionEntity>, DocumentVersionNotFoundError>
   abstract list(): RepositoryEffect<readonly DocumentVersionEntity[], DocumentVersionNotFoundError>
 
@@ -47,7 +47,7 @@ export abstract class DocumentVersionRepository extends BaseRepository<DocumentV
 
   abstract save(
     version: DocumentVersionEntity
-  ): Effect.Effect<DocumentVersionEntity, DocumentValidationError | ValidationError>
+  ): Effect.Effect<DocumentVersionEntity, DocumentVersionValidationError | ValidationError>
 
   abstract delete(id: DocumentVersionId): RepositoryEffect<boolean, DocumentVersionNotFoundError>
 }

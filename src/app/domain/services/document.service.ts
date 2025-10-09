@@ -1,4 +1,5 @@
 import { Effect } from "effect"
+import { randomUUID } from "crypto"
 import { AccessPolicyEntity } from "@domain/accessPolicy/access-policy.entity"
 import { DocumentAccessContext, DocumentAccessPolicy } from "@domain/accessPolicy/document-access.policy"
 import { DocumentEntity, type SerializedDocument } from "@domain/document/document.entity"
@@ -45,13 +46,13 @@ export class DocumentService {
     DocumentValidationError | ValidationError
   > {
     const documentInput: SerializedDocument = {
-      id: crypto.randomUUID(),
+      id: randomUUID(),
       ownerId,
       title,
       description: description ?? null,
       tags: tags ?? null,
       currentVersionId,
-      createdAt: new Date().toISOString(),
+      createdAt: new Date(),
       updatedAt: null
     }
 

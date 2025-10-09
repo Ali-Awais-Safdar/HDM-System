@@ -92,7 +92,7 @@ export class DownloadTokenEntity
   }
 
   get updatedAt(): Date | null {
-    return Option.getOrNull(this.data.usedAt)
+    return Option.getOrNull(this.data.updatedAt)
   }
 
   get hasBeenUsed(): boolean {
@@ -168,20 +168,21 @@ export class DownloadTokenEntity
       )
     }
 
-    const usedAtIso = new Date().toISOString()
+    const usedAtDate = new Date()
     return this.serialized().pipe(
       Effect.mapError(
         (error) =>
           new DownloadTokenValidationError(
             `Failed to prepare download token for usage: ${formatParseError(error)}`,
             "usedAt",
-            usedAtIso
+            usedAtDate
           )
       ),
       Effect.flatMap((currentSerialized) =>
         DownloadTokenEntity.create({
           ...currentSerialized,
-          usedAt: usedAtIso
+          usedAt: usedAtDate,
+          updatedAt: usedAtDate
         })
       )
     )

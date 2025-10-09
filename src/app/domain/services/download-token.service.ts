@@ -4,11 +4,11 @@ import {
   DownloadTokenEntity,
   type SerializedDownloadToken
 } from "@domain/downloadToken/download-token.entity"
-import {
+import { DownloadTokenRepository } from "@domain/downloadToken/download-token.repository"
+import { 
   DownloadTokenNotFoundError,
-  DownloadTokenRepository,
-} from "@domain/downloadToken/download-token.repository"
-import { DownloadTokenValidationError } from "@domain/downloadToken/download-token.error"
+  DownloadTokenValidationError 
+} from "@domain/downloadToken/download-token.error"
 import { BusinessRuleViolationError, DomainError, ValidationError } from "@domain/utils/base.errors"
 import {
   DocumentId,
@@ -58,9 +58,10 @@ export class DownloadTokenService {
       token: randomBytes(32).toString("base64url"),
       documentId,
       issuedTo,
-      expiresAt: preparedExpiresAt.toISOString(),
+      expiresAt: preparedExpiresAt,
       usedAt: null,
-      createdAt: new Date().toISOString()
+      createdAt: new Date(),
+      updatedAt: null
     }
 
     return DownloadTokenEntity.create(serialized).pipe(

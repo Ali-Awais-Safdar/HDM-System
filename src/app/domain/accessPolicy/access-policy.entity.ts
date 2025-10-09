@@ -116,7 +116,7 @@ export class AccessPolicyEntity
   }
 
   get updatedAt(): Date | null {
-    return null
+    return Option.getOrNull(this.data.updatedAt)
   }
 
   get isUserSpecificPolicy(): boolean {
@@ -220,7 +220,8 @@ export class AccessPolicyEntity
           Effect.flatMap((currentSerialized) =>
             AccessPolicyEntity.create({
               ...currentSerialized,
-              actions: allActions
+              actions: allActions,
+              updatedAt: new Date()
             })
           )
         )
@@ -261,7 +262,8 @@ export class AccessPolicyEntity
           Effect.flatMap((currentSerialized) =>
             AccessPolicyEntity.create({
               ...currentSerialized,
-              actions: remainingActions
+              actions: remainingActions,
+              updatedAt: new Date()
             })
           )
         )

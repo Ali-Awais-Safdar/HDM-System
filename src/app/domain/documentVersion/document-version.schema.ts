@@ -1,7 +1,6 @@
-import { Schema as S } from "effect"
-import { fromNullable, toNullable } from "@domain/utils/option.utils"
+import { Schema as S, Option } from "effect"
 import { Optional } from "@domain/utils/schema.utils"
-import { DateTime } from "@domain/refined/date-time"
+import { DateTimeFromAny } from "@domain/refined/date-time"
 import { Sha256 } from "@domain/refined/checksum"
 import { FileKey, FileSize, MimeType } from "@domain/refined/file-reference"
 import { DocumentId, DocumentVersionId, UserId } from "@domain/refined/ids"
@@ -18,7 +17,8 @@ export const DocumentVersion = S.Struct({
   fileKey: FileKey,
   mimeType: MimeType.pipe(DocumentVersionGuards.ValidMimeType), // Guards integrated into schema
   size: FileSize.pipe(DocumentVersionGuards.ValidFileSize), // Guards integrated into schema
-  createdAt: DateTime,
+  createdAt: DateTimeFromAny,
+  updatedAt: Optional(DateTimeFromAny), // Accepts null/undefined and transforms to Option<Date>
   createdBy: Optional(UserId) // Accepts null/undefined and transforms to Option<UserId>
 })
 export type DocumentVersion = S.Schema.Type<typeof DocumentVersion>
@@ -32,21 +32,23 @@ export const DocumentVersionRow = S.Struct({
   mime_type: S.String,
   size: S.Number,
   created_at: S.Date,
+  updated_at: S.Union(S.Date, S.Null),
   created_by: S.Union(S.String, S.Null)
 })
 export type DocumentVersionRow = S.Schema.Type<typeof DocumentVersionRow>
 
 export const DocumentVersionCodec = S.transform(DocumentVersionRow, DocumentVersion, {
   decode: (r) => ({
-    id: r.id as any,
-    documentId: r.document_id as any,
+    id: S.decodeUnknownSync(DocumentVersionId)(r.id),
+    documentId: S.decodeUnknownSync(DocumentId)(r.document_id),
     version: r.version,
-    checksum: r.checksum as any,
-    fileKey: r.file_key as any,
-    mimeType: r.mime_type as any,
-    size: r.size as any,
+    checksum: S.decodeUnknownSync(Sha256)(r.checksum),
+    fileKey: S.decodeUnknownSync(FileKey)(r.file_key),
+    mimeType: S.decodeUnknownSync(MimeType)(r.mime_type),
+    size: S.decodeUnknownSync(FileSize)(r.size),
     createdAt: r.created_at,
-    createdBy: fromNullable(r.created_by as any)
+    updatedAt: Option.fromNullable(r.updated_at),
+    createdBy: Option.fromNullable(r.created_by != null ? S.decodeUnknownSync(UserId)(r.created_by) : null)
   }),
   encode: (d) => ({
     id: d.id,
@@ -57,7 +59,8 @@ export const DocumentVersionCodec = S.transform(DocumentVersionRow, DocumentVers
     mime_type: d.mimeType,
     size: d.size,
     created_at: d.createdAt,
-    created_by: toNullable(d.createdBy as any)
+    updated_at: Option.getOrNull(d.updatedAt as any),
+    created_by: Option.getOrNull(d.createdBy as any)
   }),
   strict: false
 })

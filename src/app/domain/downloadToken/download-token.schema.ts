@@ -1,7 +1,6 @@
-import { Schema as S } from "effect"
-import { fromNullable } from "@domain/utils/option.utils"
+import { Schema as S, Option } from "effect"
 import { Optional } from "@domain/utils/schema.utils"
-import { DateTime } from "@domain/refined/date-time"
+import { DateTimeFromAny } from "@domain/refined/date-time"
 import { DocumentId, DownloadTokenId, UserId } from "@domain/refined/ids"
 import { DownloadTokenGuards } from "@domain/downloadToken/download-token.guards"
 
@@ -13,11 +12,12 @@ export const DownloadToken = S.Struct({
   ),
   documentId: DocumentId,
   issuedTo: UserId,
-  expiresAt: DateTime.pipe(
+  expiresAt: DateTimeFromAny.pipe(
     DownloadTokenGuards.ValidExpiryDate // Guards integrated into schema
   ),
-  usedAt: Optional(DateTime.pipe(DownloadTokenGuards.ValidUsedDate)), // Guards integrated into schema
-  createdAt: DateTime
+  usedAt: Optional(DateTimeFromAny.pipe(DownloadTokenGuards.ValidUsedDate)), // Guards integrated into schema
+  createdAt: DateTimeFromAny,
+  updatedAt: Optional(DateTimeFromAny) // Accepts null/undefined and transforms to Option<Date>
 })
 export type DownloadToken = S.Schema.Type<typeof DownloadToken>
 
@@ -28,19 +28,21 @@ export const DownloadTokenRow = S.Struct({
   issued_to: S.String,
   expires_at: S.Date,
   used_at: S.Union(S.Date, S.Null),
-  created_at: S.Date
+  created_at: S.Date,
+  updated_at: S.Union(S.Date, S.Null)
 })
 export type DownloadTokenRow = S.Schema.Type<typeof DownloadTokenRow>
 
 export const DownloadTokenCodec = S.transform(DownloadTokenRow, DownloadToken, {
   decode: (r) => ({
-    id: r.id as any,
+    id: S.decodeUnknownSync(DownloadTokenId)(r.id),
     token: r.token,
-    documentId: r.document_id as any,
-    issuedTo: r.issued_to as any,
+    documentId: S.decodeUnknownSync(DocumentId)(r.document_id),
+    issuedTo: S.decodeUnknownSync(UserId)(r.issued_to),
     expiresAt: r.expires_at,
-    usedAt: fromNullable(r.used_at),
-    createdAt: r.created_at
+    usedAt: Option.fromNullable(r.used_at),
+    createdAt: r.created_at,
+    updatedAt: Option.fromNullable(r.updated_at)
   }),
   encode: (d) => ({
     id: d.id,
@@ -49,7 +51,8 @@ export const DownloadTokenCodec = S.transform(DownloadTokenRow, DownloadToken, {
     issued_to: d.issuedTo,
     expires_at: d.expiresAt,
     used_at: d.usedAt._tag === "Some" ? d.usedAt.value : null,
-    created_at: d.createdAt
+    created_at: d.createdAt,
+    updated_at: Option.getOrNull(d.updatedAt as any)
   }),
   strict: false
 })

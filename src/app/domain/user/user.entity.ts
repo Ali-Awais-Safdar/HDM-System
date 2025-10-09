@@ -6,7 +6,7 @@ import { HashedPassword } from "@domain/refined/hashed-password"
 import { UserId, WorkspaceId } from "@domain/refined/ids"
 import { BaseEntity, type IEntity } from "@domain/utils/base.entity"
 import { UserValidationError } from "@domain/user/user.error"
-import { formatParseError, isSome } from "@domain/utils/option.utils"
+import { formatParseError } from "@domain/utils/option.utils"
 
 export type { Role }
 
@@ -54,13 +54,6 @@ export class UserEntity
     )
   }
 
-  serialized(): Effect.Effect<SerializedUser, ParseResult.ParseError, never> {
-    return super.serialized() as Effect.Effect<
-      SerializedUser,
-      ParseResult.ParseError,
-      never
-    >
-  }
 
   get id(): UserId {
     return this.data.id
@@ -87,7 +80,7 @@ export class UserEntity
   }
 
   get updatedAt(): Date | null {
-    return null
+    return Option.getOrNull(this.data.updatedAt)
   }
 
   get isAdminUser(): boolean {
@@ -99,7 +92,7 @@ export class UserEntity
   }
 
   get hasWorkspaceAssignment(): boolean {
-    return isSome(this.workspaceId)
+    return Option.isSome(this.workspaceId)
   }
 
   get emailDomain(): string {
@@ -144,7 +137,8 @@ export class UserEntity
       Effect.flatMap((currentSerialized) =>
         UserEntity.create({
           ...currentSerialized,
-          workspaceId
+          workspaceId,
+          updatedAt: new Date()
         })
       )
     )
@@ -162,7 +156,8 @@ export class UserEntity
       Effect.flatMap((currentSerialized) =>
         UserEntity.create({
           ...currentSerialized,
-          workspaceId: null
+          workspaceId: null,
+          updatedAt: new Date()
         })
       )
     )

@@ -1,8 +1,7 @@
 import { Option, Schema as S } from "effect"
 import { DocumentGuards } from "@domain/document/document.guards"
 import { Optional } from "@domain/utils/schema.utils"
-import { fromNullable } from "@domain/utils/option.utils"
-import { DateTime } from "@domain/refined/date-time"
+import { DateTimeFromAny } from "@domain/refined/date-time"
 import { DocumentId, DocumentVersionId, UserId } from "@domain/refined/ids"
 
 const Tags = S.Array(S.String).pipe(DocumentGuards.ValidTagList)
@@ -14,8 +13,8 @@ export const Document = S.Struct({
   description: Optional(S.String.pipe(DocumentGuards.ValidDescription)), // Accepts null/undefined and transforms to Option<string>
   tags: Optional(Tags), // Accepts null/undefined and transforms to Option<readonly string[]>
   currentVersionId: DocumentVersionId,
-  createdAt: DateTime,
-  updatedAt: Optional(DateTime) // Accepts null/undefined and transforms to Option<Date>
+  createdAt: DateTimeFromAny,
+  updatedAt: Optional(DateTimeFromAny) // Accepts null/undefined and transforms to Option<Date>
 })
 export type Document = S.Schema.Type<typeof Document>
 
@@ -33,32 +32,27 @@ export type DocumentRow = S.Schema.Type<typeof DocumentRow>
 
 export const DocumentCodec = S.transform(DocumentRow, Document, {
   decode: (r) => ({
-    id: r.id as DocumentId,
-    ownerId: r.owner_id as UserId,
+    id: S.decodeUnknownSync(DocumentId)(r.id),
+    ownerId: S.decodeUnknownSync(UserId)(r.owner_id),
     title: r.title,
-    description: fromNullable(r.description),
-    tags: fromNullable(r.tags),
-    currentVersionId: r.current_version_id as DocumentVersionId,
+    description: Option.fromNullable(r.description),
+    tags: Option.fromNullable(r.tags),
+    currentVersionId: S.decodeUnknownSync(DocumentVersionId)(r.current_version_id),
     createdAt: r.created_at,
-    updatedAt: fromNullable(r.updated_at)
+    updatedAt: Option.fromNullable(r.updated_at)
   }),
   encode: (d) => ({
     id: d.id,
     owner_id: d.ownerId,
     title: d.title,
-    description: Option.match(d.description, {
-      onNone: () => undefined,
-      onSome: (value) => value
-    }),
+    description: Option.getOrNull(d.description as any),
     tags: Option.match(d.tags, {
-      onNone: () => undefined,
+      onNone: () => null,
       onSome: (value) => Array.isArray(value) ? [...value] : []
     }),
     current_version_id: d.currentVersionId,
     created_at: d.createdAt,
-    updated_at: (Option as any).isOption?.(d.updatedAt)
-      ? Option.getOrNull(d.updatedAt as any)
-      : (d.updatedAt ?? null)
+    updated_at: Option.getOrNull(d.updatedAt as any)
   }),
   strict: false
 })

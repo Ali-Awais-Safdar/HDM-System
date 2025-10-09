@@ -102,7 +102,7 @@ export class DocumentVersionEntity
   }
 
   get updatedAt(): Date | null {
-    return null
+    return Option.getOrNull(this.data.updatedAt)
   }
 
   get hasCreatorInfo(): boolean {

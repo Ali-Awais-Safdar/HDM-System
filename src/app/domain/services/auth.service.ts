@@ -76,7 +76,8 @@ export class AuthService {
           passwordHash: hashed,
           roles: roles as Role[],
           workspaceId: null,
-          createdAt: new Date().toISOString()
+          createdAt: new Date(),
+          updatedAt: null
         }).pipe(Effect.mapError((e) => new AuthError(e.message)))
       ),
       Effect.flatMap(user => 

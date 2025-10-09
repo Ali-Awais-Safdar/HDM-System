@@ -17,8 +17,22 @@ export const DateTimeEpoch = S.transform(S.Number, DateTime, {
 })
 export type DateTimeEpoch = S.Schema.Type<typeof DateTimeEpoch>
 
+export const DateTimeFromAny = S.transform(S.Unknown, DateTime, {
+  decode: (input) => {
+    if (input instanceof Date) return input
+    if (typeof input === 'string') return new Date(input)
+    if (typeof input === 'number') return new Date(input)
+    throw new Error(`Cannot convert ${typeof input} to Date`)
+  },
+  encode: (date) => date,
+  strict: false
+})
+export type DateTimeFromAny = S.Schema.Type<typeof DateTimeFromAny>
+
 export const makeDateTime = (input: unknown) => S.decodeUnknown(DateTime)(input)
 export const makeDateTimeFromIso = (input: unknown) =>
   S.decodeUnknown(DateTimeIso)(input)
 export const makeDateTimeFromEpoch = (input: unknown) =>
   S.decodeUnknown(DateTimeEpoch)(input)
+export const makeDateTimeFromAny = (input: unknown) =>
+  S.decodeUnknown(DateTimeFromAny)(input)
