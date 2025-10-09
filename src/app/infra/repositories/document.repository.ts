@@ -1,5 +1,5 @@
 import { Effect as E, Option as O, pipe } from "effect"
-import { DocumentEntity } from "@domain/document/document.entity"
+import { DocumentEntity, type SerializedDocument } from "@domain/document/document.entity"
 import {
   DocumentRepository,
   type DocumentSearchFilters,
@@ -40,22 +40,22 @@ export class DocumentDrizzleRepository extends DocumentRepository {
   }
 
   private fromDbRow(row: DocumentModel): E.Effect<DocumentEntity, ValidationError, never> {
-    return DocumentEntity.fromPersistence({
+    const documentInput: SerializedDocument = {
       id: row.id,
       ownerId: row.ownerId,
       title: row.title,
-      description: row.description
-        ? { _tag: "Some" as const, value: row.description }
-        : { _tag: "None" as const },
-      tags: row.tags && row.tags.length > 0
-        ? { _tag: "Some" as const, value: row.tags }
-        : { _tag: "None" as const },
+      description: row.description ?? null,
+      tags: row.tags && row.tags.length > 0 ? row.tags : null,
       currentVersionId: row.currentVersionId,
-      createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt,
-      updatedAt: row.updatedAt 
-        ? { _tag: "Some" as const, value: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : row.updatedAt }
-        : { _tag: "None" as const }
-    })
+      createdAt: row.createdAt instanceof Date ? row.createdAt : new Date(row.createdAt),
+      updatedAt: row.updatedAt
+        ? row.updatedAt instanceof Date
+          ? row.updatedAt
+          : new Date(row.updatedAt)
+        : null
+    }
+
+    return DocumentEntity.create(documentInput)
   }
 
   // ========== Query Helpers ==========

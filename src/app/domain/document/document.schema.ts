@@ -1,7 +1,7 @@
-import { Schema as S } from "effect"
+import { Option, Schema as S } from "effect"
 import { DocumentGuards } from "@domain/document/document.guards"
 import { Optional } from "@domain/utils/schema.utils"
-import { fromNullable, toNullable } from "@domain/utils/option.utils"
+import { fromNullable } from "@domain/utils/option.utils"
 import { DateTime } from "@domain/refined/date-time"
 import { DocumentId, DocumentVersionId, UserId } from "@domain/refined/ids"
 
@@ -33,12 +33,12 @@ export type DocumentRow = S.Schema.Type<typeof DocumentRow>
 
 export const DocumentCodec = S.transform(DocumentRow, Document, {
   decode: (r) => ({
-    id: r.id as any,
-    ownerId: r.owner_id as any,
+    id: r.id as DocumentId,
+    ownerId: r.owner_id as UserId,
     title: r.title,
     description: fromNullable(r.description),
     tags: fromNullable(r.tags),
-    currentVersionId: r.current_version_id as any,
+    currentVersionId: r.current_version_id as DocumentVersionId,
     createdAt: r.created_at,
     updatedAt: fromNullable(r.updated_at)
   }),
@@ -46,11 +46,19 @@ export const DocumentCodec = S.transform(DocumentRow, Document, {
     id: d.id,
     owner_id: d.ownerId,
     title: d.title,
-    description: toNullable(d.description as any),
-    tags: toNullable(d.tags as any),
+    description: Option.match(d.description, {
+      onNone: () => undefined,
+      onSome: (value) => value
+    }),
+    tags: Option.match(d.tags, {
+      onNone: () => undefined,
+      onSome: (value) => Array.isArray(value) ? [...value] : []
+    }),
     current_version_id: d.currentVersionId,
     created_at: d.createdAt,
-    updated_at: toNullable(d.updatedAt as any)
+    updated_at: (Option as any).isOption?.(d.updatedAt)
+      ? Option.getOrNull(d.updatedAt as any)
+      : (d.updatedAt ?? null)
   }),
   strict: false
 })

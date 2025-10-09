@@ -1,14 +1,14 @@
 import { Effect } from "effect"
 import { AccessPolicyEntity } from "@domain/accessPolicy/access-policy.entity"
 import { DocumentAccessContext, DocumentAccessPolicy } from "@domain/accessPolicy/document-access.policy"
-import { DocumentEntity } from "@domain/document/document.entity"
+import { DocumentEntity, type SerializedDocument } from "@domain/document/document.entity"
 import { DocumentRepository } from "@domain/document/document.repository"
 import {
   DocumentNotFoundError,
   DocumentValidationError,
 } from "@domain/document/document.error"
 import { BusinessRuleViolationError, DomainError, ValidationError } from "@domain/utils/base.errors"
-import { DocumentId, UserId } from "@domain/refined/ids"
+import { DocumentId, DocumentVersionId, UserId } from "@domain/refined/ids"
 import { Role } from "@domain/accessPolicy/access-policy.schema"
 
 export type DocumentServiceErrorCode = 
@@ -37,30 +37,26 @@ export class DocumentService {
   createDocument(
     ownerId: UserId,
     title: string,
-    currentVersionId: any,
+    currentVersionId: DocumentVersionId,
     description?: string | null,
     tags?: string[] | null
   ): Effect.Effect<
-    DocumentEntity, 
+    DocumentEntity,
     DocumentValidationError | ValidationError
   > {
-    const docData: any = {
+    const documentInput: SerializedDocument = {
       id: crypto.randomUUID(),
       ownerId,
       title,
-      currentVersionId
+      description: description ?? null,
+      tags: tags ?? null,
+      currentVersionId,
+      createdAt: new Date().toISOString(),
+      updatedAt: null
     }
-    
-    if (description !== undefined && description !== null) {
-      docData.description = description
-    }
-    
-    if (tags !== undefined && tags !== null) {
-      docData.tags = tags
-    }
-    
-    return DocumentEntity.createNew(docData).pipe(
-      Effect.flatMap(document => this.documentRepository.save(document))
+
+    return DocumentEntity.create(documentInput).pipe(
+      Effect.flatMap((document) => this.documentRepository.save(document))
     )
   }
 

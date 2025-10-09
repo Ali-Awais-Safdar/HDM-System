@@ -50,6 +50,11 @@ const ALLOWED_MIME_TYPES = [
   'text/xml'
 ] as const;
 
+type AllowedMimeType = (typeof ALLOWED_MIME_TYPES)[number];
+
+const isAllowedMimeType = (mime: string): mime is AllowedMimeType =>
+  (ALLOWED_MIME_TYPES as readonly string[]).includes(mime);
+
 /**
  * File upload validation schema using Effect Schema for consistent validation.
  */
@@ -60,7 +65,7 @@ export const FileUploadSchema = S.Struct({
   ),
   mimeType: S.String.pipe(
     S.filter((s) => s.trim().length > 0, { message: () => "MIME type is required" }),
-    S.filter((s) => ALLOWED_MIME_TYPES.includes(s.toLowerCase() as any), { message: () => "MIME type is not allowed" })
+    S.filter((s) => isAllowedMimeType(s.toLowerCase()), { message: () => "MIME type is not allowed" })
   ),
   size: S.Number.pipe(
     S.filter((n) => n > 0, { message: () => "File size must be positive" }),

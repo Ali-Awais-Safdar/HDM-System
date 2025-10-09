@@ -70,14 +70,14 @@ export class AuthService {
         )
       ),
       Effect.flatMap(({ hashed, userId }) =>
-        UserEntity.createNew({
+        UserEntity.create({
           id: userId,
-          email: email,
+          email,
           passwordHash: hashed,
-          roles: roles as Role[]
-        }).pipe(
-          Effect.mapError((e) => new AuthError(e.message))
-        )
+          roles: roles as Role[],
+          workspaceId: null,
+          createdAt: new Date().toISOString()
+        }).pipe(Effect.mapError((e) => new AuthError(e.message)))
       ),
       Effect.flatMap(user => 
         userRepository.save(user).pipe(

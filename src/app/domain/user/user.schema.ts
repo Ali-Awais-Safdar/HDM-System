@@ -32,7 +32,7 @@ export const UserCodec = S.transform(UserRowSchema, UserSchema, {
   decode: (r) => ({
     id: r.id as any,
     email: r.email as any,
-    passwordHash: r.password_hash,
+    passwordHash: r.password_hash as any,
     roles: r.roles as any,
     workspaceId: r.workspace_id != null ? Option.some(r.workspace_id as any) : Option.none(),
     createdAt: r.created_at

@@ -1,11 +1,21 @@
+import { randomBytes, randomUUID } from "crypto"
 import { Effect } from "effect"
-import { DownloadTokenEntity } from "@domain/downloadToken/download-token.entity"
+import {
+  DownloadTokenEntity,
+  type SerializedDownloadToken
+} from "@domain/downloadToken/download-token.entity"
 import {
   DownloadTokenNotFoundError,
   DownloadTokenRepository,
 } from "@domain/downloadToken/download-token.repository"
+import { DownloadTokenValidationError } from "@domain/downloadToken/download-token.error"
 import { BusinessRuleViolationError, DomainError, ValidationError } from "@domain/utils/base.errors"
-import { DocumentId, DownloadTokenId, UserId } from "@domain/refined/ids"
+import {
+  DocumentId,
+  DownloadTokenId,
+  UserId,
+  makeDownloadTokenIdSync
+} from "@domain/refined/ids"
 
 export type DownloadTokenServiceErrorCode =
   | "REPOSITORY_ERROR"
@@ -41,11 +51,19 @@ export class DownloadTokenService {
     DownloadTokenEntity, 
     DownloadTokenServiceError | ValidationError
   > {
-    const tokenEffect = expiresAt 
-      ? DownloadTokenEntity.createNew({ documentId, issuedTo, expiresAt })
-      : DownloadTokenEntity.createWithDefaultExpiry({ documentId, issuedTo })
+    const preparedExpiresAt =
+      expiresAt ?? new Date(Date.now() + 15 * 60 * 1000)
+    const serialized: SerializedDownloadToken = {
+      id: makeDownloadTokenIdSync(randomUUID()),
+      token: randomBytes(32).toString("base64url"),
+      documentId,
+      issuedTo,
+      expiresAt: preparedExpiresAt.toISOString(),
+      usedAt: null,
+      createdAt: new Date().toISOString()
+    }
 
-    return tokenEffect.pipe(
+    return DownloadTokenEntity.create(serialized).pipe(
       Effect.flatMap(token => this.tokenRepository.save(token)),
       Effect.mapError(error => 
         error instanceof ValidationError
@@ -63,8 +81,12 @@ export class DownloadTokenService {
     tokenString: string,
     userId: UserId
   ): Effect.Effect<
-    DownloadTokenEntity, 
-    DownloadTokenServiceError | DownloadTokenNotFoundError | ValidationError | BusinessRuleViolationError
+    DownloadTokenEntity,
+    DownloadTokenServiceError |
+      DownloadTokenNotFoundError |
+      ValidationError |
+      BusinessRuleViolationError |
+      DownloadTokenValidationError
   > {
     return this.tokenRepository.findByToken(tokenString).pipe(
       Effect.flatMap(tokenOption =>
