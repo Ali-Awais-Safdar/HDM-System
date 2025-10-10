@@ -23,12 +23,23 @@ export interface IUser extends IEntity<UserId> {
 export type UserType = S.Schema.Type<typeof UserSchema>
 export type SerializedUser = S.Schema.Encoded<typeof UserSchema>
 
-export class UserEntity
-  extends BaseEntity<typeof UserSchema, UserType>
-  implements IUser
-{
+export class UserEntity extends BaseEntity implements IUser {
+  readonly email!: EmailAddress
+  readonly passwordHash!: HashedPassword
+  readonly roles!: readonly Role[]
+  readonly workspaceId!: Option.Option<WorkspaceId>
+
   private constructor(data: UserType) {
-    super(UserSchema, data)
+    super()
+    this._fromSerialized({
+      id: data.id,
+      createdAt: data.createdAt,
+      updatedAt: Option.getOrNull(data.updatedAt)
+    })
+    this.email = data.email
+    this.passwordHash = data.passwordHash
+    this.roles = data.roles
+    this.workspaceId = data.workspaceId
   }
 
   static create(
@@ -55,33 +66,7 @@ export class UserEntity
   }
 
 
-  get id(): UserId {
-    return this.data.id
-  }
-
-  get email(): EmailAddress {
-    return this.data.email
-  }
-
-  get passwordHash(): HashedPassword {
-    return this.data.passwordHash
-  }
-
-  get roles(): readonly Role[] {
-    return this.data.roles
-  }
-
-  get workspaceId(): Option.Option<WorkspaceId> {
-    return this.data.workspaceId
-  }
-
-  get createdAt(): Date {
-    return this.data.createdAt
-  }
-
-  get updatedAt(): Date | null {
-    return Option.getOrNull(this.data.updatedAt)
-  }
+  // id, createdAt, updatedAt are inherited from BaseEntity; other fields assigned in ctor
 
   get isAdminUser(): boolean {
     return this.roles.includes("ADMIN" as Role)
@@ -126,7 +111,7 @@ export class UserEntity
   assignToWorkspace(
     workspaceId: WorkspaceId
   ): Effect.Effect<UserEntity, UserValidationError, never> {
-    return this.serialized().pipe(
+    return this.serialized(UserSchema).pipe(
       Effect.mapError((error) =>
         new UserValidationError(
           "workspaceId",
@@ -145,7 +130,7 @@ export class UserEntity
   }
 
   removeFromWorkspace(): Effect.Effect<UserEntity, UserValidationError, never> {
-    return this.serialized().pipe(
+    return this.serialized(UserSchema).pipe(
       Effect.mapError((error) =>
         new UserValidationError(
           "workspaceId",

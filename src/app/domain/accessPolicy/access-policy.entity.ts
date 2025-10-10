@@ -29,12 +29,29 @@ export interface IAccessPolicy extends IEntity<AccessPolicyId> {
 export type AccessPolicyType = S.Schema.Type<typeof AccessPolicySchema>
 export type SerializedAccessPolicy = S.Schema.Encoded<typeof AccessPolicySchema>
 
-export class AccessPolicyEntity
-  extends BaseEntity<typeof AccessPolicySchema, AccessPolicyType>
-  implements IAccessPolicy
-{
+export class AccessPolicyEntity extends BaseEntity implements IAccessPolicy {
+  readonly resourceType!: "document"
+  readonly resourceId!: DocumentId
+  readonly subjectType!: SubjectType
+  readonly subjectId!: Option.Option<UserId>
+  readonly role!: Option.Option<Role>
+  readonly actions!: readonly PermissionAction[]
+  readonly effect!: "allow"
+
   private constructor(data: AccessPolicyType) {
-    super(AccessPolicySchema, data)
+    super()
+    this._fromSerialized({
+      id: data.id,
+      createdAt: data.createdAt,
+      updatedAt: Option.getOrNull(data.updatedAt)
+    })
+    this.resourceType = data.resourceType
+    this.resourceId = data.resourceId
+    this.subjectType = data.subjectType
+    this.subjectId = data.subjectId
+    this.role = data.role
+    this.actions = data.actions
+    this.effect = data.effect
   }
 
   static create(
@@ -68,57 +85,9 @@ export class AccessPolicyEntity
     )
   }
 
-  serialized(): Effect.Effect<
-    SerializedAccessPolicy,
-    ParseResult.ParseError,
-    never
-  > {
-    return super.serialized() as Effect.Effect<
-      SerializedAccessPolicy,
-      ParseResult.ParseError,
-      never
-    >
-  }
+  // Use BaseEntity.serialized with AccessPolicySchema when needed
 
-  get id(): AccessPolicyId {
-    return this.data.id
-  }
-
-  get resourceType(): "document" {
-    return this.data.resourceType
-  }
-
-  get resourceId(): DocumentId {
-    return this.data.resourceId
-  }
-
-  get subjectType(): SubjectType {
-    return this.data.subjectType
-  }
-
-  get subjectId(): Option.Option<UserId> {
-    return this.data.subjectId
-  }
-
-  get role(): Option.Option<Role> {
-    return this.data.role
-  }
-
-  get actions(): readonly PermissionAction[] {
-    return this.data.actions
-  }
-
-  get effect(): "allow" {
-    return this.data.effect
-  }
-
-  get createdAt(): Date {
-    return this.data.createdAt
-  }
-
-  get updatedAt(): Date | null {
-    return Option.getOrNull(this.data.updatedAt)
-  }
+  // id, createdAt, updatedAt come from BaseEntity; other fields are assigned in ctor
 
   get isUserSpecificPolicy(): boolean {
     return this.subjectType === "user"
@@ -209,7 +178,7 @@ export class AccessPolicyEntity
       newActions
     ).pipe(
       Effect.flatMap((allActions) =>
-        this.serialized().pipe(
+        this.serialized(AccessPolicySchema).pipe(
           Effect.mapError(
             (error) =>
               new AccessPolicyValidationError(
@@ -255,7 +224,7 @@ export class AccessPolicyEntity
       actionsToRemove
     ).pipe(
       Effect.flatMap((remainingActions) =>
-        this.serialized().pipe(
+        this.serialized(AccessPolicySchema).pipe(
           Effect.mapError(
             (error) =>
               new AccessPolicyValidationError(

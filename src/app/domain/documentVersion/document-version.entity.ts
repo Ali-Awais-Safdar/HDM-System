@@ -22,12 +22,29 @@ export type DocumentVersionType = S.Schema.Type<typeof DocumentVersionSchema>
 export type SerializedDocumentVersion =
   S.Schema.Encoded<typeof DocumentVersionSchema>
 
-export class DocumentVersionEntity
-  extends BaseEntity<typeof DocumentVersionSchema, DocumentVersionType>
-  implements IDocumentVersion
-{
+export class DocumentVersionEntity extends BaseEntity implements IDocumentVersion {
+  readonly documentId!: DocumentId
+  readonly version!: number
+  readonly checksum!: Sha256
+  readonly fileKey!: FileKey
+  readonly mimeType!: MimeType
+  readonly size!: FileSize
+  readonly createdBy!: Option.Option<UserId>
+
   private constructor(data: DocumentVersionType) {
-    super(DocumentVersionSchema, data)
+    super()
+    this._fromSerialized({
+      id: data.id,
+      createdAt: data.createdAt,
+      updatedAt: Option.getOrNull(data.updatedAt)
+    })
+    this.documentId = data.documentId
+    this.version = data.version
+    this.checksum = data.checksum
+    this.fileKey = data.fileKey
+    this.mimeType = data.mimeType
+    this.size = data.size
+    this.createdBy = data.createdBy
   }
 
   static create(
@@ -53,57 +70,9 @@ export class DocumentVersionEntity
     )
   }
 
-  serialized(): Effect.Effect<
-    SerializedDocumentVersion,
-    ParseResult.ParseError,
-    never
-  > {
-    return super.serialized() as Effect.Effect<
-      SerializedDocumentVersion,
-      ParseResult.ParseError,
-      never
-    >
-  }
+  // Use BaseEntity.serialized with DocumentVersionSchema when needed
 
-  get id(): DocumentVersionId {
-    return this.data.id
-  }
-
-  get documentId(): DocumentId {
-    return this.data.documentId
-  }
-
-  get version(): number {
-    return this.data.version
-  }
-
-  get checksum(): Sha256 {
-    return this.data.checksum
-  }
-
-  get fileKey(): FileKey {
-    return this.data.fileKey
-  }
-
-  get mimeType(): MimeType {
-    return this.data.mimeType
-  }
-
-  get size(): FileSize {
-    return this.data.size
-  }
-
-  get createdBy(): Option.Option<UserId> {
-    return this.data.createdBy
-  }
-
-  get createdAt(): Date {
-    return this.data.createdAt
-  }
-
-  get updatedAt(): Date | null {
-    return Option.getOrNull(this.data.updatedAt)
-  }
+  // id, createdAt, updatedAt from BaseEntity; rest from direct fields
 
   get hasCreatorInfo(): boolean {
     return Option.isSome(this.createdBy)

@@ -21,12 +21,25 @@ export interface IDocument extends IEntity<DocumentId> {
 export type DocumentType = S.Schema.Type<typeof DocumentSchema>
 export type SerializedDocument = S.Schema.Encoded<typeof DocumentSchema>
 
-export class DocumentEntity
-  extends BaseEntity<typeof DocumentSchema, DocumentType>
-  implements IDocument
-{
+export class DocumentEntity extends BaseEntity implements IDocument {
+  readonly ownerId!: UserId
+  readonly title!: string
+  readonly description!: Option.Option<string>
+  readonly tags!: Option.Option<readonly string[]>
+  readonly currentVersionId!: DocumentVersionId
+
   private constructor(data: DocumentType) {
-    super(DocumentSchema, data)
+    super()
+    this._fromSerialized({
+      id: data.id,
+      createdAt: data.createdAt,
+      updatedAt: Option.getOrNull(data.updatedAt)
+    })
+    this.ownerId = data.ownerId
+    this.title = data.title
+    this.description = data.description
+    this.tags = data.tags
+    this.currentVersionId = data.currentVersionId
   }
 
   static create(
@@ -54,37 +67,7 @@ export class DocumentEntity
   }
 
 
-  get id(): DocumentId {
-    return this.data.id
-  }
-
-  get ownerId(): UserId {
-    return this.data.ownerId
-  }
-
-  get title(): string {
-    return this.data.title
-  }
-
-  get description(): Option.Option<string> {
-    return this.data.description
-  }
-
-  get tags(): Option.Option<readonly string[]> {
-    return this.data.tags
-  }
-
-  get currentVersionId(): DocumentVersionId {
-    return this.data.currentVersionId
-  }
-
-  get createdAt(): Date {
-    return this.data.createdAt
-  }
-
-  get updatedAt(): Date | null {
-    return Option.getOrNull(this.data.updatedAt)
-  }
+  // id, createdAt, updatedAt come from BaseEntity fields
 
   get hasDescriptionValue(): boolean {
     return Option.isSome(this.description)
@@ -131,7 +114,7 @@ export class DocumentEntity
   rename(
     newTitle: string
   ): Effect.Effect<DocumentEntity, DocumentValidationError, never> {
-    return this.serialized().pipe(
+    return this.serialized(DocumentSchema).pipe(
       Effect.mapError(
         (error) =>
           new DocumentValidationError(
@@ -155,7 +138,7 @@ export class DocumentEntity
   ): Effect.Effect<DocumentEntity, DocumentValidationError, never> {
     const nextDescription = newDescription ?? null
 
-    return this.serialized().pipe(
+    return this.serialized(DocumentSchema).pipe(
       Effect.mapError(
         (error) =>
           new DocumentValidationError(
@@ -194,7 +177,7 @@ export class DocumentEntity
           : e
       ),
       Effect.flatMap((uniqueTags) =>
-        this.serialized().pipe(
+        this.serialized(DocumentSchema).pipe(
           Effect.mapError(
             (error) =>
               new DocumentValidationError(
@@ -240,7 +223,7 @@ export class DocumentEntity
           )
       ),
       Effect.flatMap((filteredTags) =>
-        this.serialized().pipe(
+        this.serialized(DocumentSchema).pipe(
           Effect.mapError(
             (error) =>
               new DocumentValidationError(
@@ -264,7 +247,7 @@ export class DocumentEntity
   updateCurrentVersion(
     newVersionId: DocumentVersionId
   ): Effect.Effect<DocumentEntity, DocumentValidationError, never> {
-    return this.serialized().pipe(
+    return this.serialized(DocumentSchema).pipe(
       Effect.mapError(
         (error) =>
           new DocumentValidationError(

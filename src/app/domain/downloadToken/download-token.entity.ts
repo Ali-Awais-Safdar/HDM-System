@@ -20,12 +20,25 @@ export type DownloadTokenType = S.Schema.Type<typeof DownloadTokenSchema>
 export type SerializedDownloadToken =
   S.Schema.Encoded<typeof DownloadTokenSchema>
 
-export class DownloadTokenEntity
-  extends BaseEntity<typeof DownloadTokenSchema, DownloadTokenType>
-  implements IDownloadToken
-{
+export class DownloadTokenEntity extends BaseEntity implements IDownloadToken {
+  readonly token!: string
+  readonly documentId!: DocumentId
+  readonly issuedTo!: UserId
+  readonly expiresAt!: Date
+  readonly usedAt!: Option.Option<Date>
+
   private constructor(data: DownloadTokenType) {
-    super(DownloadTokenSchema, data)
+    super()
+    this._fromSerialized({
+      id: data.id,
+      createdAt: data.createdAt,
+      updatedAt: Option.getOrNull(data.updatedAt)
+    })
+    this.token = data.token
+    this.documentId = data.documentId
+    this.issuedTo = data.issuedTo
+    this.expiresAt = data.expiresAt
+    this.usedAt = data.usedAt
   }
 
   static create(
@@ -51,49 +64,9 @@ export class DownloadTokenEntity
     )
   }
 
-  serialized(): Effect.Effect<
-    SerializedDownloadToken,
-    ParseResult.ParseError,
-    never
-  > {
-    return super.serialized() as Effect.Effect<
-      SerializedDownloadToken,
-      ParseResult.ParseError,
-      never
-    >
-  }
+  // Use BaseEntity.serialized with DownloadTokenSchema when needed
 
-  get id(): DownloadTokenId {
-    return this.data.id
-  }
-
-  get token(): string {
-    return this.data.token
-  }
-
-  get documentId(): DocumentId {
-    return this.data.documentId
-  }
-
-  get issuedTo(): UserId {
-    return this.data.issuedTo
-  }
-
-  get expiresAt(): Date {
-    return this.data.expiresAt
-  }
-
-  get usedAt(): Option.Option<Date> {
-    return this.data.usedAt
-  }
-
-  get createdAt(): Date {
-    return this.data.createdAt
-  }
-
-  get updatedAt(): Date | null {
-    return Option.getOrNull(this.data.updatedAt)
-  }
+  // id, createdAt, updatedAt from BaseEntity; other fields are direct
 
   get hasBeenUsed(): boolean {
     return Option.isSome(this.usedAt)
@@ -169,7 +142,7 @@ export class DownloadTokenEntity
     }
 
     const usedAtDate = new Date()
-    return this.serialized().pipe(
+    return this.serialized(DownloadTokenSchema).pipe(
       Effect.mapError(
         (error) =>
           new DownloadTokenValidationError(
