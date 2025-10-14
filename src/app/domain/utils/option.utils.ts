@@ -10,3 +10,11 @@ export const formatParseError = (error: ParseResult.ParseError): string => {
   }
   return String(error)
 }
+
+/**
+ * Helper to map ParseResult.ParseError to a custom error type.
+ */
+export const mapParseError = <E>(
+  error: ParseResult.ParseError,
+  build: (message: string) => E
+): E => build(formatParseError(error))

@@ -1,101 +1,83 @@
-import { Effect, Option, ParseResult, Schema as S } from "effect"
+import { Effect, Option, ParseResult, Schema as S, Clock } from "effect"
 import { DocumentVersion as DocumentVersionSchema } from "@domain/documentVersion/document-version.schema"
-import { BaseEntity, type IEntity } from "@domain/utils/base.entity"
 import { Sha256 } from "@domain/refined/checksum"
 import { FileKey, FileSize, MimeType } from "@domain/refined/file-reference"
 import { DocumentId, DocumentVersionId, UserId } from "@domain/refined/ids"
 import { DocumentVersionValidationError } from "@domain/documentVersion/document-version.error"
-import { formatParseError } from "@domain/utils/option.utils"
-
-export interface IDocumentVersion extends IEntity<DocumentVersionId> {
-  readonly id: DocumentVersionId
-  readonly documentId: DocumentId
-  readonly version: number
-  readonly checksum: Sha256
-  readonly fileKey: FileKey
-  readonly mimeType: MimeType
-  readonly size: FileSize
-  readonly createdBy: Option.Option<UserId>
-}
+import { mapParseError } from "@domain/utils/option.utils"
+import { getCurrentTime } from "@domain/utils/audit-trail"
+import { isFirstVersion as isFirstVersionNum, isNewerThan as isNewerVersionNum, isOlderThan as isOlderVersionNum } from "@domain/documentVersion/version-number.vo"
+import { FileMetadata } from "@domain/documentVersion/file-metadata.vo"
+import { serializeWith } from "@domain/utils/schema-transform"
 
 export type DocumentVersionType = S.Schema.Type<typeof DocumentVersionSchema>
 export type SerializedDocumentVersion =
   S.Schema.Encoded<typeof DocumentVersionSchema>
 
-export class DocumentVersionEntity extends BaseEntity implements IDocumentVersion {
+export class DocumentVersionEntity {
+  readonly id!: DocumentVersionId
   readonly documentId!: DocumentId
   readonly version!: number
-  readonly checksum!: Sha256
-  readonly fileKey!: FileKey
-  readonly mimeType!: MimeType
-  readonly size!: FileSize
+  readonly file!: FileMetadata
   readonly createdBy!: Option.Option<UserId>
-
-  private constructor(data: DocumentVersionType) {
-    super()
-    this._fromSerialized({
-      id: data.id,
-      createdAt: data.createdAt,
-      updatedAt: Option.getOrNull(data.updatedAt)
-    })
-    this.documentId = data.documentId
-    this.version = data.version
-    this.checksum = data.checksum
-    this.fileKey = data.fileKey
-    this.mimeType = data.mimeType
-    this.size = data.size
-    this.createdBy = data.createdBy
-  }
+  readonly createdAt!: Date
+  readonly updatedAt!: Option.Option<Date>
 
   static create(
     input: SerializedDocumentVersion
-  ): Effect.Effect<DocumentVersionEntity, DocumentVersionValidationError, never> {
-    return S.decodeUnknown(DocumentVersionSchema)(input).pipe(
-      Effect.map((data) => new DocumentVersionEntity(data)),
-      Effect.mapError((error) => DocumentVersionEntity.toValidationError(error, input))
-    ) as Effect.Effect<DocumentVersionEntity, DocumentVersionValidationError, never>
+  ): Effect.Effect<DocumentVersionEntity, DocumentVersionValidationError, Clock.Clock> {
+    return getCurrentTime().pipe(
+      Effect.flatMap((now) => {
+        const dataWithAudit = {
+          ...input,
+          createdAt: input.createdAt || now,
+          updatedAt: input.updatedAt
+        }
+        return S.decodeUnknown(DocumentVersionSchema)(dataWithAudit).pipe(
+          Effect.map((data) => new DocumentVersionEntity(data)),
+          Effect.mapError((error) => new DocumentVersionValidationError(
+            mapParseError(error as ParseResult.ParseError, (m) => `DocumentVersion validation failed: ${m}`),
+            "documentVersion",
+            input
+          ))
+        )
+      })
+    ) as Effect.Effect<DocumentVersionEntity, DocumentVersionValidationError, Clock.Clock>
   }
 
-  private static toValidationError(
-    error: unknown,
-    input: SerializedDocumentVersion
-  ): DocumentVersionValidationError {
-    if (error instanceof DocumentVersionValidationError) {
-      return error
-    }
-    return new DocumentVersionValidationError(
-      `DocumentVersion validation failed: ${formatParseError(error as ParseResult.ParseError)}`,
-      "documentVersion",
-      input
-    )
+  private constructor(data: DocumentVersionType) {
+    this.id = data.id
+    this.createdAt = data.createdAt
+    this.updatedAt = data.updatedAt
+    this.documentId = data.documentId
+    this.version = data.version
+    this.file = data.file
+    this.createdBy = data.createdBy
   }
 
-  // Use BaseEntity.serialized with DocumentVersionSchema when needed
-
-  // id, createdAt, updatedAt from BaseEntity; rest from direct fields
+  serialized(): Effect.Effect<SerializedDocumentVersion, ParseResult.ParseError, never> {
+    return serializeWith(DocumentVersionSchema, this as unknown as DocumentVersionType)
+  }
 
   get hasCreatorInfo(): boolean {
     return Option.isSome(this.createdBy)
   }
 
   get sizeInKB(): number {
-    return Math.round(this.size / 1024)
+    return Math.round((this.file.size as unknown as number) / 1024)
   }
 
   get sizeInMB(): number {
-    return Math.round((this.size / (1024 * 1024)) * 100) / 100
+    const sizeNum = this.file.size as unknown as number
+    return Math.round((sizeNum / (1024 * 1024)) * 100) / 100
   }
 
   get isFirstVersion(): boolean {
-    return this.version === 1
+    return isFirstVersionNum(this.version)
   }
 
-  hasCreator(): boolean {
-    return this.hasCreatorInfo
-  }
-
-  getCreatorId(): UserId | null {
-    return Option.getOrNull(this.createdBy)
+  getCreatorIdOption(): Option.Option<UserId> {
+    return this.createdBy
   }
 
   isForDocument(documentId: DocumentId): boolean {
@@ -107,10 +89,23 @@ export class DocumentVersionEntity extends BaseEntity implements IDocumentVersio
   }
 
   isNewerThan(other: DocumentVersionEntity): boolean {
-    return this.version > other.version
+    return isNewerVersionNum(this.version, other.version)
   }
 
   isOlderThan(other: DocumentVersionEntity): boolean {
-    return this.version < other.version
+    return isOlderVersionNum(this.version, other.version)
+  }
+
+  get checksum(): Sha256 {
+    return this.file.checksum
+  }
+  get fileKey(): FileKey {
+    return this.file.fileKey
+  }
+  get mimeType(): MimeType {
+    return this.file.mimeType
+  }
+  get size(): FileSize {
+    return this.file.size
   }
 }

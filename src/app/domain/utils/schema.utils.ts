@@ -3,6 +3,9 @@ import { Schema as S, Option } from "effect"
 /**
  * Helper for optional schema fields that accepts null/undefined 
  * and transforms to Option<T>.
+ * 
+ * Encoding convention: Option.none() → undefined (consistent external representation)
+ * Decoding convention: null/undefined → Option.none()
  */
 export const Optional = <A, I = A, R = never>(schema: S.Schema<A, I, R>) =>
   S.Union(schema, S.Undefined, S.Null).pipe(
@@ -18,7 +21,7 @@ export const Optional = <A, I = A, R = never>(schema: S.Schema<A, I, R>) =>
         },
         encode: (option) => {
           if (Option.isNone(option)) {
-            return null as any
+            return undefined as any
           }
           return option.value
         }

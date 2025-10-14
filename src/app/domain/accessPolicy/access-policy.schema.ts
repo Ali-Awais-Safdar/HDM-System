@@ -1,6 +1,6 @@
 import { Schema as S } from "effect"
 import { Optional } from "@domain/utils/schema.utils"
-import { DateTimeFromAny } from "@domain/refined/date-time"
+import { BaseEntitySchema } from "@domain/utils/schema.base"
 import { AccessPolicyId, DocumentId, UserId } from "@domain/refined/ids"
 
 export const PermissionActionSchema = S.Union(
@@ -31,19 +31,17 @@ export const PermissionLevelSchema = S.Union(
 )
 export type PermissionLevel = S.Schema.Type<typeof PermissionLevelSchema>
 
-export const AccessPolicySchema = S.Struct({
-  id: AccessPolicyId,
-  resourceType: S.Literal("document"),
-  resourceId: DocumentId,
-  subjectType: SubjectTypeSchema,
-  subjectId: Optional(UserId), // Accepts null/undefined and transforms to Option<UserId>
-  role: Optional(RoleSchema), // Accepts null/undefined and transforms to Option<Role>
-  actions: S.Array(PermissionActionSchema),
-  effect: S.Literal("allow"),
-  createdAt: DateTimeFromAny,
-  updatedAt: Optional(DateTimeFromAny) // Accepts null/undefined and transforms to Option<Date>
-})
+export const AccessPolicySchema = S.extend(
+  BaseEntitySchema(AccessPolicyId),
+  S.Struct({
+    resourceType: S.Literal("document"),
+    resourceId: DocumentId,
+    subjectType: SubjectTypeSchema,
+    subjectId: Optional(UserId),
+    role: Optional(RoleSchema),
+    actions: S.Array(PermissionActionSchema),
+    effect: S.Literal("allow")
+  })
+)
 export type AccessPolicy = S.Schema.Type<typeof AccessPolicySchema>
 export type AccessPolicyArray = ReadonlyArray<AccessPolicy>
-
-export const makeAccessPolicy = (input: unknown) => S.decodeUnknown(AccessPolicySchema)(input)

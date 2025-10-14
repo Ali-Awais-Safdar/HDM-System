@@ -1,4 +1,4 @@
-import { Effect, Option, ParseResult, Schema as S } from "effect"
+import { Effect, Option, ParseResult, Schema as S, Clock } from "effect"
 import { AccessPolicyValidationError } from "@domain/accessPolicy/access-policy.error"
 import {
   AccessPolicySchema,
@@ -8,28 +8,20 @@ import {
   SubjectType
 } from "@domain/accessPolicy/access-policy.schema"
 import { AccessPolicyGuards } from "@domain/accessPolicy/access-policy.guards"
-import { BaseEntity, type IEntity } from "@domain/utils/base.entity"
+import { PermissionSet, computePermissionLevelSync } from "@domain/accessPolicy/permission-set.vo"
 import { BusinessRuleViolationError } from "@domain/utils/base.errors"
-import { formatParseError } from "@domain/utils/option.utils"
+import { formatParseError, mapParseError } from "@domain/utils/option.utils"
 import { AccessPolicyId, DocumentId, UserId } from "@domain/refined/ids"
+import { getCurrentTime } from "@domain/utils/audit-trail"
+import { applyMutationWithTimestamp, serializeWith } from "@domain/utils/schema-transform"
 
 export type { PermissionLevel, PermissionAction, Role, SubjectType }
-
-export interface IAccessPolicy extends IEntity<AccessPolicyId> {
-  readonly id: AccessPolicyId
-  readonly resourceType: "document"
-  readonly resourceId: DocumentId
-  readonly subjectType: SubjectType
-  readonly subjectId: Option.Option<UserId>
-  readonly role: Option.Option<Role>
-  readonly actions: readonly PermissionAction[]
-  readonly effect: "allow"
-}
 
 export type AccessPolicyType = S.Schema.Type<typeof AccessPolicySchema>
 export type SerializedAccessPolicy = S.Schema.Encoded<typeof AccessPolicySchema>
 
-export class AccessPolicyEntity extends BaseEntity implements IAccessPolicy {
+export class AccessPolicyEntity {
+  readonly id!: AccessPolicyId
   readonly resourceType!: "document"
   readonly resourceId!: DocumentId
   readonly subjectType!: SubjectType
@@ -37,14 +29,45 @@ export class AccessPolicyEntity extends BaseEntity implements IAccessPolicy {
   readonly role!: Option.Option<Role>
   readonly actions!: readonly PermissionAction[]
   readonly effect!: "allow"
+  readonly createdAt!: Date
+  readonly updatedAt!: Option.Option<Date>
+
+  static create(
+    input: SerializedAccessPolicy
+  ): Effect.Effect<
+    AccessPolicyEntity,
+    AccessPolicyValidationError,
+    Clock.Clock
+  > {
+    return getCurrentTime().pipe(
+      Effect.flatMap((now) => {
+        const dataWithAudit = {
+          ...input,
+          createdAt: input.createdAt || now,
+          updatedAt: input.updatedAt
+        }
+        return S.decodeUnknown(AccessPolicySchema)(dataWithAudit).pipe(
+          Effect.flatMap((data) =>
+            AccessPolicyGuards.validateDomainRules(data).pipe(
+              Effect.map(() => new AccessPolicyEntity(data))
+            )
+          ),
+          Effect.mapError((error) =>
+            new AccessPolicyValidationError(
+              mapParseError(error as ParseResult.ParseError, (m) => `AccessPolicy validation failed: ${m}`),
+              "accessPolicy",
+              input
+            )
+          )
+        )
+      })
+    )
+  }
 
   private constructor(data: AccessPolicyType) {
-    super()
-    this._fromSerialized({
-      id: data.id,
-      createdAt: data.createdAt,
-      updatedAt: Option.getOrNull(data.updatedAt)
-    })
+    this.id = data.id
+    this.createdAt = data.createdAt
+    this.updatedAt = data.updatedAt
     this.resourceType = data.resourceType
     this.resourceId = data.resourceId
     this.subjectType = data.subjectType
@@ -54,40 +77,13 @@ export class AccessPolicyEntity extends BaseEntity implements IAccessPolicy {
     this.effect = data.effect
   }
 
-  static create(
-    input: SerializedAccessPolicy
-  ): Effect.Effect<
-    AccessPolicyEntity,
-    AccessPolicyValidationError,
-    never
-  > {
-    return S.decodeUnknown(AccessPolicySchema)(input).pipe(
-      Effect.flatMap((data) =>
-        AccessPolicyGuards.validateDomainRules(data).pipe(
-          Effect.map(() => new AccessPolicyEntity(data))
-        )
-      ),
-      Effect.mapError((error) => AccessPolicyEntity.toValidationError(error, input))
-    )
+  /**
+   * Serializes the entity to its external representation.
+   * This avoids full re-encoding during mutations by reusing existing validation.
+   */
+  serialized(): Effect.Effect<SerializedAccessPolicy, ParseResult.ParseError, never> {
+    return serializeWith(AccessPolicySchema, this as unknown as AccessPolicyType)
   }
-
-  private static toValidationError(
-    error: unknown,
-    input: SerializedAccessPolicy
-  ): AccessPolicyValidationError {
-    if (error instanceof AccessPolicyValidationError) {
-      return error
-    }
-    return new AccessPolicyValidationError(
-      `AccessPolicy validation failed: ${formatParseError(error as ParseResult.ParseError)}`,
-      "accessPolicy",
-      input
-    )
-  }
-
-  // Use BaseEntity.serialized with AccessPolicySchema when needed
-
-  // id, createdAt, updatedAt come from BaseEntity; other fields are assigned in ctor
 
   get isUserSpecificPolicy(): boolean {
     return this.subjectType === "user"
@@ -101,25 +97,8 @@ export class AccessPolicyEntity extends BaseEntity implements IAccessPolicy {
     return this.actions.length
   }
 
-  get priorityLevel(): number {
-    if (this.isUserSpecificPolicy) return 2
-    if (this.isRoleBasedPolicy) return 1
-    return 0
-  }
-
   get permissionLevel(): PermissionLevel {
-    const hasAdmin =
-      this.actions.includes("delete" as PermissionAction) ||
-      this.actions.includes("share" as PermissionAction)
-    const hasWrite =
-      this.actions.includes("update" as PermissionAction) ||
-      this.actions.includes("download" as PermissionAction)
-    const hasRead = this.actions.includes("read" as PermissionAction)
-
-    if (hasAdmin) return "admin"
-    if (hasWrite) return "write"
-    if (hasRead) return "read"
-    return "read"
+    return computePermissionLevelSync({ actions: this.actions } as PermissionSet)
   }
 
   appliesToSubject(
@@ -150,24 +129,12 @@ export class AccessPolicyEntity extends BaseEntity implements IAccessPolicy {
     return this.resourceType === resourceType && this.resourceId === resourceId
   }
 
-  grantsAction(action: PermissionAction): boolean {
-    return this.actions.includes(action)
-  }
-
-  grantsAllActions(actions: PermissionAction[]): boolean {
-    return actions.every((action) => this.grantsAction(action))
-  }
-
-  grantsAnyAction(actions: PermissionAction[]): boolean {
-    return actions.some((action) => this.grantsAction(action))
-  }
-
   addActions(
     newActions: PermissionAction[]
   ): Effect.Effect<
     AccessPolicyEntity,
     AccessPolicyValidationError | BusinessRuleViolationError,
-    never
+    Clock.Clock
   > {
     if (newActions.length === 0) {
       return Effect.succeed(this)
@@ -178,22 +145,16 @@ export class AccessPolicyEntity extends BaseEntity implements IAccessPolicy {
       newActions
     ).pipe(
       Effect.flatMap((allActions) =>
-        this.serialized(AccessPolicySchema).pipe(
-          Effect.mapError(
-            (error) =>
-              new AccessPolicyValidationError(
-                `Failed to prepare access policy for action addition: ${formatParseError(error)}`,
-                "actions",
-                allActions
-              )
+        applyMutationWithTimestamp(
+          AccessPolicySchema,
+          this as unknown,
+          (_now) => ({ actions: allActions } as any),
+          (error) => new AccessPolicyValidationError(
+            `Failed to prepare access policy for action addition: ${formatParseError(error as ParseResult.ParseError)}`,
+            "actions",
+            allActions
           ),
-          Effect.flatMap((currentSerialized) =>
-            AccessPolicyEntity.create({
-              ...currentSerialized,
-              actions: allActions,
-              updatedAt: new Date()
-            })
-          )
+          (input) => AccessPolicyEntity.create(input)
         )
       ),
       Effect.mapError((error) =>
@@ -213,7 +174,7 @@ export class AccessPolicyEntity extends BaseEntity implements IAccessPolicy {
   ): Effect.Effect<
     AccessPolicyEntity,
     AccessPolicyValidationError | BusinessRuleViolationError,
-    never
+    Clock.Clock
   > {
     if (actionsToRemove.length === 0) {
       return Effect.succeed(this)
@@ -224,22 +185,16 @@ export class AccessPolicyEntity extends BaseEntity implements IAccessPolicy {
       actionsToRemove
     ).pipe(
       Effect.flatMap((remainingActions) =>
-        this.serialized(AccessPolicySchema).pipe(
-          Effect.mapError(
-            (error) =>
-              new AccessPolicyValidationError(
-                `Failed to prepare access policy for action removal: ${formatParseError(error)}`,
-                "actions",
-                remainingActions
-              )
+        applyMutationWithTimestamp(
+          AccessPolicySchema,
+          this as unknown,
+          (_now) => ({ actions: remainingActions } as any),
+          (error) => new AccessPolicyValidationError(
+            `Failed to prepare access policy for action removal: ${formatParseError(error as ParseResult.ParseError)}`,
+            "actions",
+            remainingActions
           ),
-          Effect.flatMap((currentSerialized) =>
-            AccessPolicyEntity.create({
-              ...currentSerialized,
-              actions: remainingActions,
-              updatedAt: new Date()
-            })
-          )
+          (input) => AccessPolicyEntity.create(input)
         )
       ),
       Effect.mapError((error) =>

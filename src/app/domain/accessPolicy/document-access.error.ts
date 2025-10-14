@@ -1,9 +1,5 @@
 import { DomainError } from "@domain/utils/base.errors"
 
-/**
- * DocumentAccess-specific domain errors.
- * Provides fine-grained error handling for document access control operations.
- */
 
 export class DocumentAccessDeniedError extends DomainError {
   readonly _tag = "DocumentAccessDeniedError" as const
@@ -41,20 +37,6 @@ export class DocumentAccessInsufficientPermissionsError extends DomainError {
   }
 }
 
-export class DocumentAccessEvaluationError extends DomainError {
-  readonly _tag = "DocumentAccessEvaluationError" as const
-  readonly code = "DOCUMENT_ACCESS_EVALUATION_ERROR"
-  
-  constructor(
-    message: string,
-    public readonly userId: string,
-    public readonly documentId: string,
-    details?: Record<string, unknown>
-  ) {
-    super(message, { userId, documentId, ...details })
-  }
-}
-
 export class DocumentAccessContextInvalidError extends DomainError {
   readonly _tag = "DocumentAccessContextInvalidError" as const
   readonly code = "DOCUMENT_ACCESS_CONTEXT_INVALID"
@@ -68,22 +50,8 @@ export class DocumentAccessContextInvalidError extends DomainError {
   }
 }
 
-export class DocumentAccessPermissionLevelInvalidError extends DomainError {
-  readonly _tag = "DocumentAccessPermissionLevelInvalidError" as const
-  readonly code = "DOCUMENT_ACCESS_PERMISSION_LEVEL_INVALID"
-  
-  constructor(
-    public readonly level: string,
-    details?: Record<string, unknown>
-  ) {
-    super(`Invalid permission level: '${level}'`, { level, ...details })
-  }
-}
-
-// Union type for all document access errors
+// Union type for all document access errors used in domain
 export type DocumentAccessErrorType =
   | DocumentAccessDeniedError
   | DocumentAccessInsufficientPermissionsError
-  | DocumentAccessEvaluationError
   | DocumentAccessContextInvalidError
-  | DocumentAccessPermissionLevelInvalidError

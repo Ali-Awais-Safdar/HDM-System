@@ -1,75 +1,63 @@
-import { Effect, Option, ParseResult, Schema as S } from "effect"
+import { Effect, Option, ParseResult, Schema as S, Clock } from "effect"
 import { Role } from "@domain/accessPolicy/access-policy.schema"
 import { UserSchema } from "@domain/user/user.schema"
-import { EmailAddress } from "@domain/refined/email"
+import { EmailAddress, getEmailDomain } from "@domain/refined/email"
 import { HashedPassword } from "@domain/refined/hashed-password"
 import { UserId, WorkspaceId } from "@domain/refined/ids"
-import { BaseEntity, type IEntity } from "@domain/utils/base.entity"
 import { UserValidationError } from "@domain/user/user.error"
-import { formatParseError } from "@domain/utils/option.utils"
+import { formatParseError, mapParseError } from "@domain/utils/option.utils"
+import { getCurrentTime } from "@domain/utils/audit-trail"
+import { applyMutationWithTimestamp, serializeWith } from "@domain/utils/schema-transform"
+import { UserGuards } from "@domain/user/user.guards"
 
 export type { Role }
-
-export interface IUser extends IEntity<UserId> {
-  readonly id: UserId
-  readonly email: EmailAddress
-  readonly passwordHash: HashedPassword
-  readonly roles: readonly Role[]
-  readonly workspaceId: Option.Option<WorkspaceId>
-  readonly createdAt: Date
-  readonly updatedAt: Date | null
-}
 
 export type UserType = S.Schema.Type<typeof UserSchema>
 export type SerializedUser = S.Schema.Encoded<typeof UserSchema>
 
-export class UserEntity extends BaseEntity implements IUser {
+export class UserEntity {
+  readonly id!: UserId
   readonly email!: EmailAddress
   readonly passwordHash!: HashedPassword
   readonly roles!: readonly Role[]
   readonly workspaceId!: Option.Option<WorkspaceId>
+  readonly createdAt!: Date
+  readonly updatedAt!: Option.Option<Date>
+
+  static create(
+    input: SerializedUser
+  ): Effect.Effect<UserEntity, UserValidationError, Clock.Clock> {
+    return getCurrentTime().pipe(
+      Effect.flatMap((now) => {
+        const dataWithAudit = {
+          ...input,
+          createdAt: input.createdAt || now,
+          updatedAt: input.updatedAt
+        }
+        return S.decodeUnknown(UserSchema)(dataWithAudit).pipe(
+          Effect.map((data) => new UserEntity(data)),
+          Effect.mapError((error) => new UserValidationError(
+            "user",
+            input,
+            mapParseError(error as ParseResult.ParseError, (m) => m)
+          ))
+        )
+      })
+    ) as Effect.Effect<UserEntity, UserValidationError, Clock.Clock>
+  }
 
   private constructor(data: UserType) {
-    super()
-    this._fromSerialized({
-      id: data.id,
-      createdAt: data.createdAt,
-      updatedAt: Option.getOrNull(data.updatedAt)
-    })
+    this.id = data.id
+    this.createdAt = data.createdAt
+    this.updatedAt = data.updatedAt
     this.email = data.email
     this.passwordHash = data.passwordHash
     this.roles = data.roles
     this.workspaceId = data.workspaceId
   }
 
-  static create(
-    input: SerializedUser
-  ): Effect.Effect<UserEntity, UserValidationError, never> {
-    return S.decodeUnknown(UserSchema)(input).pipe(
-      Effect.map((data) => new UserEntity(data)),
-      Effect.mapError((error) => UserEntity.toValidationError(error, input))
-    ) as Effect.Effect<UserEntity, UserValidationError, never>
-  }
-
-  private static toValidationError(
-    error: unknown,
-    input: SerializedUser
-  ): UserValidationError {
-    if (error instanceof UserValidationError) {
-      return error
-    }
-    return new UserValidationError(
-      "user",
-      input,
-      formatParseError(error as ParseResult.ParseError)
-    )
-  }
-
-
-  // id, createdAt, updatedAt are inherited from BaseEntity; other fields assigned in ctor
-
-  get isAdminUser(): boolean {
-    return this.roles.includes("ADMIN" as Role)
+  serialized(): Effect.Effect<SerializedUser, ParseResult.ParseError, never> {
+    return serializeWith(UserSchema, this as unknown as UserType)
   }
 
   get roleCount(): number {
@@ -81,16 +69,11 @@ export class UserEntity extends BaseEntity implements IUser {
   }
 
   get emailDomain(): string {
-    const parts = this.email.split("@")
-    return parts[1] || ""
+    return getEmailDomain(this.email)
   }
 
   isAdmin(): boolean {
-    return this.isAdminUser
-  }
-
-  canManageUsers(): boolean {
-    return this.isAdmin()
+    return UserGuards.isAdmin(this as any)
   }
 
   hasRole(role: Role): boolean {
@@ -110,41 +93,33 @@ export class UserEntity extends BaseEntity implements IUser {
 
   assignToWorkspace(
     workspaceId: WorkspaceId
-  ): Effect.Effect<UserEntity, UserValidationError, never> {
-    return this.serialized(UserSchema).pipe(
-      Effect.mapError((error) =>
+  ): Effect.Effect<UserEntity, UserValidationError, Clock.Clock> {
+    return applyMutationWithTimestamp(
+      UserSchema,
+      this as unknown,
+      (_now) => ({ workspaceId } as any),
+      (error) =>
         new UserValidationError(
           "workspaceId",
           workspaceId,
-          `Failed to prepare user for workspace assignment: ${formatParseError(error)}`
-        )
-      ),
-      Effect.flatMap((currentSerialized) =>
-        UserEntity.create({
-          ...currentSerialized,
-          workspaceId,
-          updatedAt: new Date()
-        })
-      )
+          `Failed to prepare user for workspace assignment: ${formatParseError(error as ParseResult.ParseError)}`
+        ),
+      (input) => UserEntity.create(input)
     )
   }
 
-  removeFromWorkspace(): Effect.Effect<UserEntity, UserValidationError, never> {
-    return this.serialized(UserSchema).pipe(
-      Effect.mapError((error) =>
+  removeFromWorkspace(): Effect.Effect<UserEntity, UserValidationError, Clock.Clock> {
+    return applyMutationWithTimestamp(
+      UserSchema,
+      this as unknown,
+      (_now) => ({ workspaceId: undefined } as any),
+      (error) =>
         new UserValidationError(
           "workspaceId",
           null,
-          `Failed to prepare user for workspace removal: ${formatParseError(error)}`
-        )
-      ),
-      Effect.flatMap((currentSerialized) =>
-        UserEntity.create({
-          ...currentSerialized,
-          workspaceId: null,
-          updatedAt: new Date()
-        })
-      )
+          `Failed to prepare user for workspace removal: ${formatParseError(error as ParseResult.ParseError)}`
+        ),
+      (input) => UserEntity.create(input)
     )
   }
 }

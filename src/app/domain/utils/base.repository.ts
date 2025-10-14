@@ -1,5 +1,4 @@
 import { Effect, Option } from "effect"
-import { type IEntity } from "@domain/utils/base.entity"
 import { DomainError, ValidationError } from "@domain/utils/base.errors"
 
 export type RepositoryEffect<A, E = DomainError> = Effect.Effect<
@@ -8,24 +7,25 @@ export type RepositoryEffect<A, E = DomainError> = Effect.Effect<
   never
 >
 
-export abstract class BaseRepository<TEntity extends IEntity> {
+export abstract class BaseRepository<
+  TEntity extends { readonly id: any },
+  TNotFoundError extends DomainError = DomainError,
+  TSaveError = ValidationError
+> {
   protected abstract readonly entityName: string
 
-  protected toOption<T>(value: T | null | undefined): Option.Option<T> {
-    return value == null ? Option.none() : Option.some(value)
-  }
+  /**
+   * Persist the entity. Implementations should upsert by default.
+   */
+  abstract save(entity: TEntity): Effect.Effect<TEntity, TSaveError, never>
 
-  abstract insert(entity: TEntity): RepositoryEffect<TEntity>
+  abstract delete(id: TEntity["id"]): RepositoryEffect<boolean, TNotFoundError>
 
-  abstract update(entity: TEntity): RepositoryEffect<TEntity>
-
-  abstract delete(id: TEntity["id"]): RepositoryEffect<boolean>
-
-  abstract fetchById(
+  abstract findById(
     id: TEntity["id"]
-  ): RepositoryEffect<Option.Option<TEntity>>
+  ): Effect.Effect<Option.Option<TEntity>, TNotFoundError | ValidationError>
 
-  abstract exists(id: TEntity["id"]): RepositoryEffect<boolean>
+  abstract exists(id: TEntity["id"]): RepositoryEffect<boolean, TNotFoundError>
 
-  abstract list(): RepositoryEffect<readonly TEntity[]>
+  abstract list(): RepositoryEffect<readonly TEntity[], TNotFoundError>
 }
