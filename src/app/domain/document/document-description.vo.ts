@@ -1,4 +1,4 @@
-import { Schema as S } from "effect"
+import { Effect, Schema as S } from "effect"
 
 /**
  * DocumentDescription value object with validation rules
@@ -16,16 +16,16 @@ export const DocumentDescription = S.String.pipe(
     },
     { message: () => "Document description must be empty or 1-1000 characters" }
   ),
-  S.transform(
+  S.transformOrFail(
     S.Union(S.Undefined, S.String),
     {
       strict: false,
       decode: (input) => {
-        if (input === undefined || input === null) return undefined
-        const trimmed = input.trim()
-        return trimmed.length === 0 ? undefined : trimmed
+        if (input === undefined || input === null) return Effect.succeed(undefined as any)
+        const trimmed = (input as string).trim()
+        return Effect.succeed((trimmed.length === 0 ? undefined : trimmed) as any)
       },
-      encode: (value) => value
+      encode: (value) => Effect.succeed(value as any)
     }
   )
 )

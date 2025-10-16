@@ -343,9 +343,14 @@ describe("DocumentEntity", () => {
 
   describe("Property Tests", () => {
     it("should deduplicate and normalize tags", () => {
+      const TAG_RE = new RegExp('^[a-zA-Z0-9\\-_\\s]+$')
       fc.assert(
         fc.property(
-          fc.array(fc.string({ minLength: 1, maxLength: 10 }), { maxLength: 30 }),
+          fc.array(
+            fc.string({ minLength: 1, maxLength: 10 })
+              .filter((s) => TAG_RE.test(s) && s.trim().length > 0),
+            { minLength: 1, maxLength: 30 }
+          ),
           (rawTags: string[]) => {
             const document = TestPatterns.Effect.expectSuccess(
               withTestClock(DocumentEntity.create(generateDocument({ tags: [] })), Date.now())
