@@ -157,15 +157,12 @@ export class AccessPolicyEntity {
           (input) => AccessPolicyEntity.create(input)
         )
       ),
-      Effect.mapError((error) =>
-        error instanceof AccessPolicyValidationError
-          ? error
-          : new AccessPolicyValidationError(
-              String(error),
-              "actions",
-              newActions
-            )
-      )
+      Effect.mapError((error) => {
+        const err = error as unknown
+        if (err instanceof AccessPolicyValidationError) return err
+        if (err instanceof BusinessRuleViolationError) return err
+        return new AccessPolicyValidationError(String(err), "actions", newActions)
+      })
     )
   }
 
@@ -197,15 +194,12 @@ export class AccessPolicyEntity {
           (input) => AccessPolicyEntity.create(input)
         )
       ),
-      Effect.mapError((error) =>
-        error instanceof AccessPolicyValidationError
-          ? error
-          : new AccessPolicyValidationError(
-              String(error),
-              "actions",
-              actionsToRemove
-            )
-      )
+      Effect.mapError((error) => {
+        const err = error as unknown
+        if (err instanceof AccessPolicyValidationError) return err
+        if (err instanceof BusinessRuleViolationError) return err
+        return new AccessPolicyValidationError(String(err), "actions", actionsToRemove)
+      })
     )
   }
 }

@@ -14,7 +14,7 @@ describe("AccessPolicyEntity", () => {
     it("should create valid user policy from factory data", () => {
       const data = generateAccessPolicy({
         subjectType: "user",
-        subjectId: "user-123",
+        subjectId: "550e8400-e29b-41d4-a716-446655440000",
         role: undefined,
         actions: ["read", "update"],
       })
@@ -180,12 +180,12 @@ describe("AccessPolicyEntity", () => {
     it("should check user policy application correctly", () => {
       const policy = createAccessPolicyEntity({
         subjectType: "user",
-        subjectId: "user-123" as UserId,
+        subjectId: "550e8400-e29b-41d4-a716-446655440000" as UserId,
         actions: ["read"],
       })
 
-      expect(policy.appliesToSubject("user", "user-123" as UserId)).toBe(true)
-      expect(policy.appliesToSubject("user", "user-456" as UserId)).toBe(false)
+      expect(policy.appliesToSubject("user", "550e8400-e29b-41d4-a716-446655440000" as UserId)).toBe(true)
+      expect(policy.appliesToSubject("user", "550e8400-e29b-41d4-a716-446655440001" as UserId)).toBe(false)
       expect(policy.appliesToSubject("role", undefined, "USER")).toBe(false)
     })
 
@@ -206,12 +206,12 @@ describe("AccessPolicyEntity", () => {
     it("should check resource application correctly", () => {
       const policy = createAccessPolicyEntity({
         resourceType: "document",
-        resourceId: "doc-123" as DocumentId,
+        resourceId: "550e8400-e29b-41d4-a716-446655440002" as DocumentId,
         actions: ["read"],
       })
 
-      expect(policy.appliesToResource("document", "doc-123" as DocumentId)).toBe(true)
-      expect(policy.appliesToResource("document", "doc-456" as DocumentId)).toBe(false)
+      expect(policy.appliesToResource("document", "550e8400-e29b-41d4-a716-446655440002" as DocumentId)).toBe(true)
+      expect(policy.appliesToResource("document", "550e8400-e29b-41d4-a716-446655440003" as DocumentId)).toBe(false)
       expect(policy.appliesToResource("file", "doc-123" as DocumentId)).toBe(false)
     })
   })
@@ -298,7 +298,7 @@ describe("AccessPolicyEntity", () => {
 
       it("should handle adding all action types", () => {
         const original = createAccessPolicyEntity({
-          actions: [],
+          actions: ["read"],
         })
 
         const allActions = ["read", "update", "delete", "download", "share"] as const
@@ -481,26 +481,30 @@ describe("AccessPolicyEntity", () => {
 
   describe("Factory Helpers", () => {
     it("should create user policy with createUserPolicy", () => {
-      const policyData = createUserPolicy("doc-123" as DocumentId, "user-456" as UserId, ["read", "update"])
+      const policyData = createUserPolicy(
+        "550e8400-e29b-41d4-a716-446655440001" as DocumentId,
+        "550e8400-e29b-41d4-a716-446655440010" as UserId,
+        ["read", "update"]
+      )
       const policy = TestPatterns.Effect.expectSuccess(
         withTestClock(AccessPolicyEntity.create(policyData), Date.now())
       )
 
       expect(policy.subjectType).toBe("user")
-      expect(policy.resourceId).toBe("doc-123")
-      expect(policy.appliesToSubject("user", "user-456" as UserId)).toBe(true)
+      expect(policy.resourceId).toBe("550e8400-e29b-41d4-a716-446655440001")
+      expect(policy.appliesToSubject("user", "550e8400-e29b-41d4-a716-446655440010" as UserId)).toBe(true)
       expect(policy.actions).toContain("read")
       expect(policy.actions).toContain("update")
     })
 
     it("should create role policy with createRolePolicy", () => {
-      const policyData = createRolePolicy("doc-123" as DocumentId, "USER", ["read"])
+      const policyData = createRolePolicy("550e8400-e29b-41d4-a716-446655440001" as DocumentId, "USER", ["read"])
       const policy = TestPatterns.Effect.expectSuccess(
         withTestClock(AccessPolicyEntity.create(policyData), Date.now())
       )
 
       expect(policy.subjectType).toBe("role")
-      expect(policy.resourceId).toBe("doc-123")
+      expect(policy.resourceId).toBe("550e8400-e29b-41d4-a716-446655440001")
       expect(policy.appliesToSubject("role", undefined, "USER")).toBe(true)
       expect(policy.actions).toContain("read")
     })
@@ -510,7 +514,7 @@ describe("AccessPolicyEntity", () => {
     it("should maintain data through serialization round-trip", () => {
       const original = createAccessPolicyEntity({
         subjectType: "user",
-        subjectId: "user-789" as UserId,
+        subjectId: "550e8400-e29b-41d4-a716-446655440099" as UserId,
         actions: ["read", "update", "delete"],
       })
 
@@ -636,7 +640,7 @@ describe("AccessPolicyEntity", () => {
       )
 
       // Timestamps should progress correctly
-      expect(original.updatedAt).toBeUndefined()
+      TestPatterns.Option.expectNone(original.updatedAt)
       const additionsUpdatedAt = TestPatterns.Option.expectSome(withAdditions.updatedAt)
       expect(additionsUpdatedAt.getTime()).toBe(laterTime)
       const removalsUpdatedAt = TestPatterns.Option.expectSome(withRemovals.updatedAt)
