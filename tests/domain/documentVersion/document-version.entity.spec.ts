@@ -12,12 +12,12 @@ describe("DocumentVersionEntity", () => {
       const data = generateDocumentVersion({
         version: 1,
         file: {
-          checksum: "abc123",
+          checksum: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           fileKey: "files/test.pdf",
           mimeType: "application/pdf",
           size: 1024 * 1024, // 1MB
         },
-        createdBy: "user-123",
+        createdBy: "550e8400-e29b-41d4-a716-446655440000",
       })
 
       const version = TestPatterns.Effect.expectSuccess(
@@ -49,7 +49,7 @@ describe("DocumentVersionEntity", () => {
     it("should fail with unsupported MIME type", () => {
       const data = generateDocumentVersion({
         file: {
-          checksum: "abc123",
+          checksum: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           fileKey: "files/test.xyz",
           mimeType: "application/unsupported",
           size: 1024,
@@ -67,7 +67,7 @@ describe("DocumentVersionEntity", () => {
     it("should fail with file size exceeding 100MB", () => {
       const data = generateDocumentVersion({
         file: {
-          checksum: "abc123",
+          checksum: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           fileKey: "files/large.pdf",
           mimeType: "application/pdf",
           size: 101 * 1024 * 1024, // 101MB
@@ -85,7 +85,7 @@ describe("DocumentVersionEntity", () => {
     it("should fail with zero file size", () => {
       const data = generateDocumentVersion({
         file: {
-          checksum: "abc123",
+          checksum: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           fileKey: "files/empty.pdf",
           mimeType: "application/pdf",
           size: 0,
@@ -116,13 +116,14 @@ describe("DocumentVersionEntity", () => {
 
   describe("Creator Info Option Handling", () => {
     it("should handle creator Some case", () => {
+      const userId = "550e8400-e29b-41d4-a716-446655440010"
       const version = createDocumentVersionEntity({
-        createdBy: "user-123",
+        createdBy: userId,
       })
 
       expect(version.hasCreatorInfo).toBe(true)
       const creatorId = TestPatterns.Option.expectSome(version.getCreatorIdOption())
-      expect(creatorId).toBe("user-123")
+      expect(creatorId).toBe(userId)
     })
 
     it("should handle creator None case", () => {
@@ -139,7 +140,7 @@ describe("DocumentVersionEntity", () => {
     it("should calculate sizeInKB correctly", () => {
       const version = createDocumentVersionEntity({
         file: {
-          checksum: "abc123",
+          checksum: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           fileKey: "files/test.pdf",
           mimeType: "application/pdf",
           size: 1536, // 1.5KB
@@ -152,7 +153,7 @@ describe("DocumentVersionEntity", () => {
     it("should calculate sizeInMB correctly", () => {
       const version = createDocumentVersionEntity({
         file: {
-          checksum: "abc123",
+          checksum: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           fileKey: "files/test.pdf",
           mimeType: "application/pdf",
           size: 2.5 * 1024 * 1024, // 2.5MB
@@ -165,7 +166,7 @@ describe("DocumentVersionEntity", () => {
     it("should handle large file sizes", () => {
       const version = createDocumentVersionEntity({
         file: {
-          checksum: "abc123",
+          checksum: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           fileKey: "files/large.pdf",
           mimeType: "application/pdf",
           size: 50 * 1024 * 1024, // 50MB
@@ -214,14 +215,14 @@ describe("DocumentVersionEntity", () => {
     it("should expose file properties correctly", () => {
       const version = createDocumentVersionEntity({
         file: {
-          checksum: "abc123def456",
+          checksum: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
           fileKey: "files/test.pdf",
           mimeType: "application/pdf",
           size: 1024,
         },
       })
 
-      expect(version.checksum).toBe("abc123def456")
+      expect(version.checksum).toBe("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
       expect(version.fileKey).toBe("files/test.pdf")
       expect(version.mimeType).toBe("application/pdf")
       expect(version.size).toBe(1024)
@@ -229,7 +230,7 @@ describe("DocumentVersionEntity", () => {
 
     it("should maintain file metadata through serialization", () => {
       const originalFile = {
-        checksum: "def456ghi789",
+        checksum: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
         fileKey: "files/document.pdf",
         mimeType: "image/png",
         size: 2048,
@@ -270,7 +271,7 @@ describe("DocumentVersionEntity", () => {
       mimeTypes.forEach((mimeType) => {
         const version = createDocumentVersionEntity({
           file: {
-            checksum: "test123",
+            checksum: "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
             fileKey: `files/test.${mimeType.split("/")[1]}`,
             mimeType,
             size: 1024,
@@ -283,7 +284,7 @@ describe("DocumentVersionEntity", () => {
 
     it("should preserve file metadata integrity across operations", () => {
       const fileData = {
-        checksum: "sha256:abcdef123456",
+        checksum: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
         fileKey: "uploads/2025/document-v2.pdf",
         mimeType: "application/pdf",
         size: 5 * 1024 * 1024, // 5MB
@@ -337,9 +338,9 @@ describe("DocumentVersionEntity", () => {
     it("should maintain data through serialization round-trip", () => {
       const original = createDocumentVersionEntity({
         version: 2,
-        createdBy: "user-456",
+        createdBy: "550e8400-e29b-41d4-a716-446655440001",
         file: {
-          checksum: "def456ghi789",
+          checksum: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
           fileKey: "files/document.pdf",
           mimeType: "application/pdf",
           size: 2048,

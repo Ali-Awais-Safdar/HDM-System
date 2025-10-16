@@ -27,7 +27,7 @@ const generateFile = () => {
   // Keep file size within (1, 100MB]
   const size = faker.number.int({ min: 1, max: 100 * 1024 * 1024 })
   return {
-    checksum: faker.string.hexadecimal({ length: 64 }).toLowerCase() as any,
+    checksum: faker.string.hexadecimal({ length: 64, prefix: "", casing: "lower" }) as any,
     fileKey: `files/${faker.string.alphanumeric(16)}` as FileKey,
     mimeType,
     size: size as FileSize,
