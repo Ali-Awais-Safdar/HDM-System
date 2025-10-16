@@ -42,7 +42,7 @@ export class DownloadTokenEntity {
       Effect.flatMap((now) => {
         const dataWithAudit = {
           ...input,
-          createdAt: input.createdAt || now,
+          createdAt: input.createdAt || now.toISOString(),
           updatedAt: input.updatedAt
         }
         return S.decodeUnknown(DownloadTokenSchema)(dataWithAudit).pipe(
@@ -125,7 +125,7 @@ export class DownloadTokenEntity {
               DownloadTokenSchema,
               this as unknown,
               now,
-              () => ({ usedAt: now } as any),
+              () => ({ usedAt: now.toISOString() }),
               (error) => new DownloadTokenValidationError(
                 `Failed to prepare download token for usage: ${formatParseError(error as ParseResult.ParseError)}`,
                 "usedAt",

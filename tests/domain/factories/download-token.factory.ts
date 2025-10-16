@@ -5,6 +5,7 @@ import { DownloadTokenEntity } from "@domain/downloadToken/download-token.entity
 import { expectSuccess } from "../../utils/test.helpers"
 import { DownloadTokenId, DocumentId, UserId } from "@domain/refined/ids"
 import { DownloadTokenString } from "@domain/downloadToken/download-token.string.vo"
+import { withTestClock } from "../setup/test-clock"
 
 type EncodedDownloadToken = S.Schema.Encoded<typeof DownloadTokenSchema>
 
@@ -16,7 +17,7 @@ const makeExpiry = (now: Date): Date => {
 
 export const generateDownloadToken = (
   overrides: Partial<EncodedDownloadToken> = {},
-  now: Date = new Date("2025-01-03T00:00:00.000Z")
+  now: Date = new Date(Date.now())
 ): EncodedDownloadToken => {
   const base: EncodedDownloadToken = {
     id: faker.string.uuid() as DownloadTokenId,
@@ -35,6 +36,18 @@ export const generateDownloadToken = (
 export const createDownloadTokenEntity = (
   overrides: Partial<EncodedDownloadToken> = {},
   now?: Date
-) => expectSuccess(DownloadTokenEntity.create(generateDownloadToken(overrides, now ?? new Date("2025-01-03T00:00:00.000Z"))))
+) => {
+  const effectiveNow = (() => {
+    if (now) return now
+    if (overrides.createdAt) return new Date(overrides.createdAt as string)
+    if (overrides.expiresAt) {
+      const exp = new Date(overrides.expiresAt as string)
+      return new Date(exp.getTime() - 60 * 60 * 1000) // 1 hour before expiry
+    }
+    return new Date("2025-01-03T00:00:00.000Z")
+  })()
+  const data = generateDownloadToken(overrides, effectiveNow)
+  return expectSuccess(withTestClock(DownloadTokenEntity.create(data), effectiveNow.getTime()))
+}
 
 
