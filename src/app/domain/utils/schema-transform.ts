@@ -44,7 +44,7 @@ export function applyMutationWithTimestamp<
       encodeModifyRecreate(
         schema,
         current,
-        { ...(makeDelta(now) as any), updatedAt: now } as Partial<I>,
+        { ...(makeDelta(now)), updatedAt: now.toISOString() } as Partial<I>,
         onEncodeError,
         create
       ) as Effect.Effect<Entity, DomainErr, Clock.Clock>
@@ -71,7 +71,7 @@ export function applyMutationWithProvidedTimestamp<
   return encodeModifyRecreate(
     schema,
     current,
-    { ...(makeDelta(now) as any), updatedAt: now } as Partial<I>,
+    { ...(makeDelta(now)), updatedAt: now.toISOString() } as Partial<I>,
     onEncodeError,
     create
   ) as Effect.Effect<Entity, DomainErr, Clock.Clock>

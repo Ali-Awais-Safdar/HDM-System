@@ -1,25 +1,21 @@
-import { defineConfig } from "vitest/config";
-import path from "path";
-
-const root = process.cwd();
+import { defineConfig } from "vitest/config"
+import path from "node:path"
 
 export default defineConfig({
-  resolve: {
-    alias: [
-      { find: /^@\/(.*)$/, replacement: path.resolve(root, "src/$1") },
-      { find: /^@domain\/(.*)$/, replacement: path.resolve(root, "src/app/domain/$1") },
-      { find: /^@application\/(.*)$/, replacement: path.resolve(root, "src/app/application/$1") },
-      { find: /^@infra\/(.*)$/, replacement: path.resolve(root, "src/app/infra/$1") },
-      { find: /^@presentation\/(.*)$/, replacement: path.resolve(root, "src/presentation/$1") },
-      { find: /^@shared\/(.*)$/, replacement: path.resolve(root, "src/shared/$1") },
-    ],
-  },
   test: {
     globals: true,
     environment: "node",
-    pool: "threads",
-    dir: "tests",
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "lcov"],
+      include: ["src/app/domain/**/*"],
+    },
   },
-});
+  resolve: {
+    alias: {
+      "@domain": path.resolve(__dirname, "src/app/domain"),
+    },
+  },
+})
 
 

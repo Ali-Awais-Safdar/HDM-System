@@ -1,5 +1,6 @@
-import { Schema as S, Option, Effect, Clock } from "effect"
-import { DateTimeFromAny } from "@domain/refined/date-time"
+import { Schema as S, Effect, Clock } from "effect"
+import { DateTimeFromString } from "@domain/refined/date-time"
+import { Optional } from "@domain/utils/schema.utils"
 
 /**
  * AuditTrail value object to standardize createdAt/updatedAt handling.
@@ -7,14 +8,8 @@ import { DateTimeFromAny } from "@domain/refined/date-time"
  * - updatedAt: Option<Date> (none means never updated)
  */
 export const AuditTrail = S.Struct({
-  createdAt: DateTimeFromAny,
-  updatedAt: S.Union(S.Null, S.Undefined, DateTimeFromAny).pipe(
-    S.transform(S.OptionFromSelf(DateTimeFromAny), {
-      decode: (v) => (v == null ? Option.none() : Option.some(v)),
-      encode: (opt) => (Option.isNone(opt) ? undefined as any : opt.value),
-      strict: false
-    })
-  )
+  createdAt: DateTimeFromString,
+  updatedAt: Optional(DateTimeFromString)
 })
 export type AuditTrail = S.Schema.Type<typeof AuditTrail>
 

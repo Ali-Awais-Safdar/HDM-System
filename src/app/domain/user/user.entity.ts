@@ -7,7 +7,7 @@ import { UserId, WorkspaceId } from "@domain/refined/ids"
 import { UserValidationError } from "@domain/user/user.error"
 import { formatParseError, mapParseError } from "@domain/utils/option.utils"
 import { getCurrentTime } from "@domain/utils/audit-trail"
-import { applyMutationWithTimestamp, serializeWith } from "@domain/utils/schema-transform"
+import { applyMutationWithProvidedTimestamp, serializeWith } from "@domain/utils/schema-transform"
 import { UserGuards } from "@domain/user/user.guards"
 
 export type { Role }
@@ -31,7 +31,7 @@ export class UserEntity {
       Effect.flatMap((now) => {
         const dataWithAudit = {
           ...input,
-          createdAt: input.createdAt || now,
+          createdAt: input.createdAt || now.toISOString(),
           updatedAt: input.updatedAt
         }
         return S.decodeUnknown(UserSchema)(dataWithAudit).pipe(
@@ -94,32 +94,42 @@ export class UserEntity {
   assignToWorkspace(
     workspaceId: WorkspaceId
   ): Effect.Effect<UserEntity, UserValidationError, Clock.Clock> {
-    return applyMutationWithTimestamp(
-      UserSchema,
-      this as unknown,
-      (_now) => ({ workspaceId } as any),
-      (error) =>
-        new UserValidationError(
-          "workspaceId",
-          workspaceId,
-          `Failed to prepare user for workspace assignment: ${formatParseError(error as ParseResult.ParseError)}`
-        ),
-      (input) => UserEntity.create(input)
+    return getCurrentTime().pipe(
+      Effect.flatMap((now) =>
+        applyMutationWithProvidedTimestamp(
+          UserSchema,
+          this as unknown,
+          now,
+          () => ({ workspaceId: workspaceId as WorkspaceId }),
+          (error) =>
+            new UserValidationError(
+              "workspaceId",
+              workspaceId,
+              `Failed to prepare user for workspace assignment: ${formatParseError(error as ParseResult.ParseError)}`
+            ),
+          (input) => UserEntity.create(input)
+        )
+      )
     )
   }
 
   removeFromWorkspace(): Effect.Effect<UserEntity, UserValidationError, Clock.Clock> {
-    return applyMutationWithTimestamp(
-      UserSchema,
-      this as unknown,
-      (_now) => ({ workspaceId: undefined } as any),
-      (error) =>
-        new UserValidationError(
-          "workspaceId",
-          null,
-          `Failed to prepare user for workspace removal: ${formatParseError(error as ParseResult.ParseError)}`
-        ),
-      (input) => UserEntity.create(input)
+    return getCurrentTime().pipe(
+      Effect.flatMap((now) =>
+        applyMutationWithProvidedTimestamp(
+          UserSchema,
+          this as unknown,
+          now,
+          () => ({ workspaceId: undefined }),
+          (error) =>
+            new UserValidationError(
+              "workspaceId",
+              null,
+              `Failed to prepare user for workspace removal: ${formatParseError(error as ParseResult.ParseError)}`
+            ),
+          (input) => UserEntity.create(input)
+        )
+      )
     )
   }
 }

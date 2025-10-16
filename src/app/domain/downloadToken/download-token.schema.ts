@@ -1,5 +1,5 @@
 import { Schema as S } from "effect"
-import { DateTimeFromAny } from "@domain/refined/date-time"
+import { DateTimeFromString } from "@domain/refined/date-time"
 import { Optional } from "@domain/utils/schema.utils"
 import { DocumentId, DownloadTokenId, UserId } from "@domain/refined/ids"
 import { BaseEntitySchema } from "@domain/utils/schema.base"
@@ -12,8 +12,8 @@ export const DownloadToken = S.extend(
   token: DownloadTokenString,
   documentId: DocumentId,
   issuedTo: UserId,
-  expiresAt: ExpiryWindow()(DateTimeFromAny),
-  usedAt: Optional(DateTimeFromAny),
+  expiresAt: ExpiryWindow()(DateTimeFromString),
+  usedAt: Optional(DateTimeFromString),
 })
 )
 export type DownloadToken = S.Schema.Type<typeof DownloadToken>

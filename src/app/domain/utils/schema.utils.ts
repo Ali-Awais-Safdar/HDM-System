@@ -7,25 +7,18 @@ import { Schema as S, Option } from "effect"
  * Encoding convention: Option.none() → undefined (consistent external representation)
  * Decoding convention: null/undefined → Option.none()
  */
-export const Optional = <A, I = A, R = never>(schema: S.Schema<A, I, R>) =>
-  S.Union(schema, S.Undefined, S.Null).pipe(
-    S.transform(
-      S.OptionFromSelf(schema),
-      {
-        strict: false,
-        decode: (input) => {
-          if (input === null || input === undefined) {
-            return Option.none()
-          }
-          return Option.some(input)
-        },
-        encode: (option) => {
-          if (Option.isNone(option)) {
-            return undefined as any
-          }
-          return option.value
-        }
-      }
-    )
+export const Optional = <A, I, R>(schema: S.Schema<A, I, R>) => {
+  const decodeInner = S.decodeUnknownSync(schema as unknown as S.Schema<A, I, never>)
+  const encodeInner = S.encodeSync(schema as unknown as S.Schema<A, I, never>)
+  const Encoded = S.encodedSchema(schema as unknown as S.Schema<A, I, never>)
+  const Typed = S.typeSchema(schema as unknown as S.Schema<A, I, never>)
+
+  return S.Union(S.Null, S.Undefined, Encoded).pipe(
+    S.transform(S.OptionFromSelf(Typed), {
+      strict: false,
+      decode: (input) => (input == null ? Option.none() : Option.some(decodeInner(input as unknown as I) as unknown as A)),
+      encode: (option) => (Option.isNone(option) ? (undefined) : (encodeInner(option.value as unknown as A)))
+    })
   )
+}
 
