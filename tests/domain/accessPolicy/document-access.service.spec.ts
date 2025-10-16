@@ -127,8 +127,8 @@ describe("DocumentAccessService", () => {
 
   describe("full denial (no effective level)", () => {
     it("raises DocumentAccessDeniedError when no policies and user is neither admin nor owner", () => {
-      const user = createUserEntity({ roles: ["USER"], id: "user-1" as any })
-      const doc = createDocumentEntity({ ownerId: "owner-1" as any })
+      const user = createUserEntity({ roles: ["USER"] })
+      const doc = createDocumentEntity()
       const policies: ReadonlyArray<AccessPolicyEntity> = []
 
       const error = expectFailure(
@@ -154,8 +154,8 @@ describe("DocumentAccessService", () => {
     })
 
     it("grants via owner bypass regardless of policies", () => {
-      const owner = createUserEntity({ id: "owner-xyz" as any })
-      const doc = createDocumentEntity({ ownerId: "owner-xyz" as any })
+      const owner = createUserEntity()
+      const doc = createDocumentEntity({ ownerId: owner.id })
       const result = expectSuccess(
         DocumentAccessService.canReadDocument(owner, doc, [])
       )
@@ -166,14 +166,14 @@ describe("DocumentAccessService", () => {
 
   describe("helper methods", () => {
     it("isOwner returns true when user id equals document owner id", () => {
-      const owner = createUserEntity({ id: "owner-123" as any })
-      const doc = createDocumentEntity({ ownerId: "owner-123" as any })
+      const owner = createUserEntity()
+      const doc = createDocumentEntity({ ownerId: owner.id })
       expect(DocumentAccessService.isOwner(owner, doc)).toBe(true)
     })
 
     it("isOwner returns false when user id differs from document owner id", () => {
-      const user = createUserEntity({ id: "user-123" as any })
-      const doc = createDocumentEntity({ ownerId: "owner-456" as any })
+      const user = createUserEntity()
+      const doc = createDocumentEntity()
       expect(DocumentAccessService.isOwner(user, doc)).toBe(false)
     })
 
@@ -185,9 +185,9 @@ describe("DocumentAccessService", () => {
     })
 
     it("hasAccess returns true when underlying access is granted", () => {
-      const user = createUserEntity({ id: "user-1" as any })
-      const doc = createDocumentEntity({ id: "doc-1" as any })
-      const policies = [userPolicy("doc-1", "user-1", ["read"]) ]
+      const user = createUserEntity()
+      const doc = createDocumentEntity()
+      const policies = [userPolicy(String(doc.id), String(user.id), ["read"]) ]
       const granted = expectSuccess(
         DocumentAccessService.hasAccess(user, doc, policies, "read")
       )
@@ -195,9 +195,9 @@ describe("DocumentAccessService", () => {
     })
 
     it("hasAccess returns false when underlying access denies (insufficient level)", () => {
-      const user = createUserEntity({ id: "user-1" as any })
-      const doc = createDocumentEntity({ id: "doc-1" as any })
-      const policies = [userPolicy("doc-1", "user-1", ["read"]) ]
+      const user = createUserEntity()
+      const doc = createDocumentEntity()
+      const policies = [userPolicy(String(doc.id), String(user.id), ["read"]) ]
       const granted = expectSuccess(
         DocumentAccessService.hasAccess(user, doc, policies, "admin")
       )
@@ -205,8 +205,8 @@ describe("DocumentAccessService", () => {
     })
 
     it("hasAccess returns false when underlying access throws an error", () => {
-      const user = createUserEntity({ id: "user-1" as any })
-      const doc = createDocumentEntity({ id: "doc-1" as any })
+      const user = createUserEntity()
+      const doc = createDocumentEntity()
       // Invalid policy that will fail encoding/context validation and throw in canAccessDocument
       const invalidPolicies = [({ foo: "bar" } as unknown as AccessPolicyEntity)] as const
       const granted = expectSuccess(

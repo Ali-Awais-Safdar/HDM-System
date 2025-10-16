@@ -59,15 +59,28 @@ export class DocumentAccessService {
             "accessContext",
             context
           )),
-          Effect.flatMap((validatedContext) =>
-            DocumentAccessPolicy.canAccessE(validatedContext as any, requiredLevel).pipe(
+          Effect.flatMap((validatedContext) => {
+            // Normalize the context to unwrap Option values for the policy
+            const normalizedContext = {
+              userId: validatedContext.userId,
+              roles: validatedContext.roles,
+              documentId: validatedContext.documentId,
+              documentOwnerId: validatedContext.documentOwnerId,
+              userPolicies: validatedContext.userPolicies.map((policy: any) => ({
+                subjectType: policy.subjectType,
+                subjectId: policy.subjectId._tag === "Some" ? policy.subjectId.value : undefined,
+                role: policy.role._tag === "Some" ? policy.role.value : undefined,
+                actions: policy.actions
+              }))
+            }
+            return DocumentAccessPolicy.canAccessE(normalizedContext, requiredLevel).pipe(
               Effect.flatMap((result): Effect.Effect<
                 DocumentAccessResult,
                 DocumentAccessDeniedError | DocumentAccessInsufficientPermissionsError
               > => {
                 if (result.granted) return Effect.succeed(result)
-                // Use the already validated context to compute effective level
-                return DocumentAccessPolicy.getEffectivePermissionLevel(validatedContext as any).pipe(
+                // Use the normalized context to compute effective level
+                return DocumentAccessPolicy.getEffectivePermissionLevel(normalizedContext).pipe(
                   Effect.flatMap((level): Effect.Effect<never, DocumentAccessDeniedError | DocumentAccessInsufficientPermissionsError> =>
                     level === null
                       ? Effect.fail(new DocumentAccessDeniedError(
@@ -86,7 +99,7 @@ export class DocumentAccessService {
                 )
               })
             )
-          )
+          })
         )
       })
     )
