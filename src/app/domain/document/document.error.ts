@@ -5,14 +5,12 @@ export class DocumentNotFoundError extends DomainError {
   readonly code = "DOCUMENT_NOT_FOUND"
   
   constructor(
-    public readonly field: string,
-    public readonly value: unknown,
-    details?: string
+    message: string,
+    public readonly field?: string,
+    public readonly value?: unknown,
+    details?: Record<string, unknown>
   ) {
-    super(
-      `Document not found for ${field}: ${value}${details ? ` - ${details}` : ""}`,
-      { field, value }
-    )
+    super(message, { field, value, ...details })
   }
 }
 
@@ -22,14 +20,12 @@ export class DocumentValidationError extends DomainError {
   readonly code = "DOCUMENT_VALIDATION_ERROR"
   
   constructor(
-    public readonly field: string,
-    public readonly value: unknown,
-    details?: string
+    message: string,
+    public readonly field?: string,
+    public readonly value?: unknown,
+    details?: Record<string, unknown>
   ) {
-    super(
-      `Document validation failed for ${field}: ${value}${details ? ` - ${details}` : ""}`,
-      { field, value }
-    )
+    super(message, { field, value, ...details })
   }
 }
 

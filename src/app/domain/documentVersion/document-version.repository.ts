@@ -4,7 +4,7 @@ import {
   DocumentVersionNotFoundError,
   DocumentVersionValidationError
 } from "./document-version.error"
-import { ValidationError } from "@domain/utils/base.errors"
+import { ValidationError, DatabaseError } from "@domain/utils/base.errors"
 import { BaseRepository } from "@domain/utils/base.repository"
 import { DocumentId } from "@domain/refined/ids"
 
@@ -24,17 +24,17 @@ export abstract class DocumentVersionRepository extends BaseRepository<
   abstract findByDocumentIdAndVersion(
     documentId: DocumentId,
     version: number
-  ): Effect.Effect<Option.Option<DocumentVersionEntity>, DocumentVersionNotFoundError | ValidationError>
+  ): Effect.Effect<Option.Option<DocumentVersionEntity>, DocumentVersionNotFoundError | ValidationError | DatabaseError>
 
   abstract findByDocumentId(
     documentId: DocumentId
-  ): Effect.Effect<readonly DocumentVersionEntity[], DocumentVersionNotFoundError | ValidationError>
+  ): Effect.Effect<readonly DocumentVersionEntity[], DocumentVersionNotFoundError | ValidationError | DatabaseError>
 
   abstract findLatestByDocumentId(
     documentId: DocumentId
-  ): Effect.Effect<Option.Option<DocumentVersionEntity>, DocumentVersionNotFoundError | ValidationError>
+  ): Effect.Effect<Option.Option<DocumentVersionEntity>, DocumentVersionNotFoundError | ValidationError | DatabaseError>
 
   abstract getNextVersionNumber(
     documentId: DocumentId
-  ): Effect.Effect<number, DocumentVersionNotFoundError>
+  ): Effect.Effect<number, DocumentVersionNotFoundError | DatabaseError>
 }

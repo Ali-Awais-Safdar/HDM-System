@@ -5,14 +5,12 @@ export class DocumentVersionNotFoundError extends DomainError {
   readonly code = "DOCUMENT_VERSION_NOT_FOUND"
   
   constructor(
-    public readonly field: string,
-    public readonly value: unknown,
-    details?: string
+    message: string,
+    public readonly field?: string,
+    public readonly value?: unknown,
+    details?: Record<string, unknown>
   ) {
-    super(
-      `Document version not found for ${field}: ${value}${details ? ` - ${details}` : ""}`,
-      { field, value }
-    )
+    super(message, { field, value, ...details })
   }
 }
 
@@ -23,9 +21,10 @@ export class DocumentVersionValidationError extends DomainError {
   constructor(
     message: string,
     public readonly field?: string,
-    public readonly value?: unknown
+    public readonly value?: unknown,
+    details?: Record<string, unknown>
   ) {
-    super(message, { field, value })
+    super(message, { field, value, ...details })
   }
 }
 

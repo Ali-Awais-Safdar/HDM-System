@@ -4,7 +4,7 @@ import {
   DownloadTokenNotFoundError,
   DownloadTokenAlreadyUsedError
 } from "./download-token.error"
-import { BusinessRuleViolationError, ValidationError } from "@domain/utils/base.errors"
+import { BusinessRuleViolationError, ValidationError, DatabaseError } from "@domain/utils/base.errors"
 import { BaseRepository } from "@domain/utils/base.repository"
 import { DocumentId, UserId } from "@domain/refined/ids"
 
@@ -17,28 +17,28 @@ export abstract class DownloadTokenRepository extends BaseRepository<DownloadTok
 
   abstract findByToken(
     token: string
-  ): Effect.Effect<Option.Option<DownloadTokenEntity>, DownloadTokenNotFoundError | ValidationError>
+  ): Effect.Effect<Option.Option<DownloadTokenEntity>, DownloadTokenNotFoundError | ValidationError | DatabaseError>
 
   abstract findByUserId(
     userId: UserId
-  ): Effect.Effect<readonly DownloadTokenEntity[], DownloadTokenNotFoundError | ValidationError>
+  ): Effect.Effect<readonly DownloadTokenEntity[], DownloadTokenNotFoundError | ValidationError | DatabaseError>
 
   abstract findByDocumentId(
     documentId: DocumentId
-  ): Effect.Effect<readonly DownloadTokenEntity[], DownloadTokenNotFoundError | ValidationError>
+  ): Effect.Effect<readonly DownloadTokenEntity[], DownloadTokenNotFoundError | ValidationError | DatabaseError>
 
   abstract findValidTokens(
     documentId: DocumentId,
     userId: UserId
-  ): Effect.Effect<readonly DownloadTokenEntity[], DownloadTokenNotFoundError | ValidationError>
+  ): Effect.Effect<readonly DownloadTokenEntity[], DownloadTokenNotFoundError | ValidationError | DatabaseError>
 
   abstract markAsUsed(
     token: string
-  ): Effect.Effect<DownloadTokenEntity, DownloadTokenNotFoundError | DownloadTokenAlreadyUsedError | ValidationError>
+  ): Effect.Effect<DownloadTokenEntity, DownloadTokenNotFoundError | DownloadTokenAlreadyUsedError | BusinessRuleViolationError | ValidationError | DatabaseError>
 
-  abstract deleteExpiredTokens(): Effect.Effect<number, never>
+  abstract deleteExpiredTokens(): Effect.Effect<number, DatabaseError>
 
   abstract deleteByDocumentId(
     documentId: DocumentId
-  ): Effect.Effect<number, DownloadTokenNotFoundError>
+  ): Effect.Effect<number, DownloadTokenNotFoundError | DatabaseError>
 }

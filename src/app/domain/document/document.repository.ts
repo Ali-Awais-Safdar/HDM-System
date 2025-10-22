@@ -4,7 +4,7 @@ import {
   DocumentNotFoundError,
   DocumentValidationError,
 } from "./document.error"
-import { ValidationError } from "@domain/utils/base.errors"
+import { ValidationError, DatabaseError } from "@domain/utils/base.errors"
 import { Paginated, PaginationOptions } from "@domain/utils/pagination"
 import { BaseRepository } from "@domain/utils/base.repository"
 import { UserId } from "@domain/refined/ids"
@@ -27,9 +27,9 @@ export abstract class DocumentRepository extends BaseRepository<
   // Domain-specific read operations
   abstract findByOwner(
     ownerId: UserId
-  ): Effect.Effect<readonly DocumentEntity[], DocumentNotFoundError | ValidationError>
+  ): Effect.Effect<readonly DocumentEntity[], DocumentNotFoundError | ValidationError | DatabaseError>
 
   abstract search(
     filters: DocumentSearchFilters
-  ): Effect.Effect<Paginated<DocumentEntity>, DocumentNotFoundError | ValidationError>
+  ): Effect.Effect<Paginated<DocumentEntity>, DocumentNotFoundError | ValidationError | DatabaseError>
 }

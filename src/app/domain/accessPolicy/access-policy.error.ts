@@ -5,14 +5,12 @@ export class AccessPolicyNotFoundError extends DomainError {
   readonly code = "ACCESS_POLICY_NOT_FOUND"
   
   constructor(
-    public readonly field: string,
-    public readonly value: unknown,
-    details?: string
+    message: string,
+    public readonly field?: string,
+    public readonly value?: unknown,
+    details?: Record<string, unknown>
   ) {
-    super(
-      `Access policy not found for ${field}: ${value}${details ? ` - ${details}` : ""}`,
-      { field, value }
-    )
+    super(message, { field, value, ...details })
   }
 }
 
@@ -23,9 +21,10 @@ export class AccessPolicyValidationError extends DomainError {
   constructor(
     message: string,
     public readonly field?: string,
-    public readonly value?: unknown
+    public readonly value?: unknown,
+    details?: Record<string, unknown>
   ) {
-    super(message, { field, value })
+    super(message, { field, value, ...details })
   }
 }
 
@@ -34,14 +33,12 @@ export class AccessPolicyConflictError extends DomainError {
   readonly code = "ACCESS_POLICY_CONFLICT"
   
   constructor(
-    public readonly field: string,
-    public readonly value: unknown,
-    details?: string
+    message: string,
+    public readonly field?: string,
+    public readonly value?: unknown,
+    details?: Record<string, unknown>
   ) {
-    super(
-      `Access policy conflict for ${field}: ${value}${details ? ` - ${details}` : ""}`,
-      { field, value }
-    )
+    super(message, { field, value, ...details })
   }
 }
 

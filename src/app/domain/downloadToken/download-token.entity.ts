@@ -108,7 +108,7 @@ export class DownloadTokenEntity {
       Effect.flatMap((now) =>
         require(
           !this.hasBeenUsed,
-          () => new DownloadTokenAlreadyUsedError("token", this.id)
+          () => new DownloadTokenAlreadyUsedError("Download token already used", "token", this.id)
         ).pipe(
           Effect.flatMap(() =>
             require(
@@ -153,7 +153,7 @@ export class DownloadTokenEntity {
     ).pipe(
       Effect.flatMap(() => require(
         !this.hasBeenUsed,
-        () => new DownloadTokenAlreadyUsedError("token", this.id)
+        () => new DownloadTokenAlreadyUsedError("Download token already used", "token", this.id)
       )),
       Effect.flatMap(() => this.isExpired(clockSkewToleranceMs).pipe(
         Effect.flatMap((expired) => require(

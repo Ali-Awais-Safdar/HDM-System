@@ -36,9 +36,9 @@ export class DocumentEntity {
         return S.decodeUnknown(DocumentSchema)(dataWithAudit).pipe(
           Effect.map((data) => new DocumentEntity(data)),
           Effect.mapError((error) => new DocumentValidationError(
+            mapParseError(error as ParseResult.ParseError, (m) => `Document validation failed: ${m}`),
             "document",
-            input,
-            mapParseError(error as ParseResult.ParseError, (m) => m)
+            input
           ))
         )
       })
@@ -94,9 +94,9 @@ export class DocumentEntity {
   ): Effect.Effect<DocumentEntity, DocumentValidationError, Clock.Clock> {
     return S.decodeUnknown(DocumentTitle)(newTitle).pipe(
       Effect.mapError((error) => new DocumentValidationError(
+        mapParseError(error as ParseResult.ParseError, (m) => `Document title validation failed: ${m}`),
         "title",
-        newTitle,
-        mapParseError(error as ParseResult.ParseError, (m) => m)
+        newTitle
       )),
       Effect.flatMap((validatedTitle) =>
         applyMutationWithTimestamp(
@@ -104,9 +104,9 @@ export class DocumentEntity {
           this as unknown,
           (_now) => ({ title: validatedTitle } as any),
           (error) => new DocumentValidationError(
+            `Failed to prepare document for rename: ${formatParseError(error as ParseResult.ParseError)}`,
             "title",
-            newTitle,
-            `Failed to prepare document for rename: ${formatParseError(error as ParseResult.ParseError)}`
+            newTitle
           ),
           (input) => DocumentEntity.create(input)
         )
@@ -128,9 +128,9 @@ export class DocumentEntity {
       this as unknown,
       (_now) => ({ description: externalDescription } as any),
       (error) => new DocumentValidationError(
+        `Failed to prepare document for description update: ${formatParseError(error as ParseResult.ParseError)}`,
         "description",
-        newDescription,
-        `Failed to prepare document for description update: ${formatParseError(error as ParseResult.ParseError)}`
+        newDescription
       ),
       (input) => DocumentEntity.create(input)
     )
@@ -149,7 +149,7 @@ export class DocumentEntity {
           return TagListAdd(existingTags, newTags).pipe(
             Effect.mapError((e) =>
               e instanceof ValidationError
-                ? new DocumentValidationError("tags", newTags, e.message)
+                ? new DocumentValidationError(e.message, "tags", newTags)
                 : e
             ),
             Effect.flatMap((uniqueTags) =>
@@ -158,9 +158,9 @@ export class DocumentEntity {
                 this as unknown,
                 (_now) => ({ tags: uniqueTags } as any),
                 (error) => new DocumentValidationError(
+                  `Failed to prepare document for tag addition: ${formatParseError(error as ParseResult.ParseError)}`,
                   "tags",
-                  uniqueTags,
-                  `Failed to prepare document for tag addition: ${formatParseError(error as ParseResult.ParseError)}`
+                  uniqueTags
                 ),
                 (input) => DocumentEntity.create(input)
               )
@@ -184,9 +184,9 @@ export class DocumentEntity {
             Effect.mapError(
               (e) =>
                 new DocumentValidationError(
+                  e instanceof Error ? e.message : String(e),
                   "tags",
-                  tagsToRemove,
-                  e instanceof Error ? e.message : String(e)
+                  tagsToRemove
                 )
             ),
             Effect.flatMap((filteredTags) =>
@@ -195,9 +195,9 @@ export class DocumentEntity {
                 this as unknown,
                 (_now) => ({ tags: filteredTags.length > 0 ? filteredTags : undefined } as any),
                 (error) => new DocumentValidationError(
+                  `Failed to prepare document for tag removal: ${formatParseError(error as ParseResult.ParseError)}`,
                   "tags",
-                  filteredTags,
-                  `Failed to prepare document for tag removal: ${formatParseError(error as ParseResult.ParseError)}`
+                  filteredTags
                 ),
                 (input) => DocumentEntity.create(input)
               )
@@ -205,9 +205,9 @@ export class DocumentEntity {
           )
         })()
       : Effect.fail(new DocumentValidationError(
+          "No valid tags to remove provided",
           "tags",
-          tagsToRemove,
-          "No valid tags to remove provided"
+          tagsToRemove
         ))
   }
 
@@ -219,9 +219,9 @@ export class DocumentEntity {
       this as unknown,
       (_now) => ({ currentVersionId: newVersionId } as any),
       (error) => new DocumentValidationError(
+        `Failed to prepare document for version update: ${formatParseError(error as ParseResult.ParseError)}`,
         "currentVersionId",
-        newVersionId,
-        `Failed to prepare document for version update: ${formatParseError(error as ParseResult.ParseError)}`
+        newVersionId
       ),
       (input) => DocumentEntity.create(input)
     )

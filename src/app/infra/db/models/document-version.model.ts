@@ -1,4 +1,4 @@
-import { pgTable, varchar, integer, index, unique } from "drizzle-orm/pg-core"
+import { pgTable, varchar, integer, index, unique, check } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 import { SharedColumns, UuidCol } from "../shared-columns"
 import { documents } from "./document.model"
@@ -23,7 +23,7 @@ export const documentVersions = pgTable("document_versions", {
   documentIdx: index("document_versions_document_idx").on(table.documentId),
   createdAtIdx: index("document_versions_created_at_idx").on(table.createdAt),
   docVerUnique: unique("document_versions_doc_ver_unique").on(table.documentId, table.version),
-  versionCheck: sql`check (version >= 1)`
+  versionCheck: check("document_versions_version_check", sql`version >= 1`)
 }))
 
 // Type inference from Drizzle schema

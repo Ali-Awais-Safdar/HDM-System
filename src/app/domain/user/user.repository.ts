@@ -5,7 +5,7 @@ import {
   UserNotFoundError,
   UserValidationError,
 } from "./user.error"
-import { ValidationError } from "@domain/utils/base.errors"
+import { ValidationError, DatabaseError } from "@domain/utils/base.errors"
 import { BaseRepository } from "@domain/utils/base.repository"
 import { EmailAddress } from "@domain/refined/email"
 
@@ -23,5 +23,5 @@ export abstract class UserRepository extends BaseRepository<
   // Domain-specific read operations
   abstract findByEmail(
     email: EmailAddress
-  ): Effect.Effect<Option.Option<UserEntity>, UserNotFoundError | ValidationError>
+  ): Effect.Effect<Option.Option<UserEntity>, UserNotFoundError | ValidationError | DatabaseError>
 }

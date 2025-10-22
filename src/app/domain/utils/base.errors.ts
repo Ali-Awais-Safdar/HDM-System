@@ -38,6 +38,32 @@ export class BusinessRuleViolationError extends DomainError {
   }
 }
 
+export class DatabaseError extends DomainError {
+  readonly _tag = "DatabaseError" as const
+  readonly code = "DB_ERROR"
+
+  constructor(
+    message: string,
+    details?: {
+      code?: string
+      constraint?: string
+      table?: string
+      field?: string
+      value?: string
+      originalError?: unknown
+    }
+  ) {
+    const diagnosticInfo = {
+      ...details,
+      originalError: details?.originalError instanceof Error 
+        ? details.originalError.message 
+        : details?.originalError ? String(details.originalError) : undefined
+    }
+    super(message, diagnosticInfo)
+  }
+}
+
 export type DomainErrorType = 
   | ValidationError
   | BusinessRuleViolationError
+  | DatabaseError

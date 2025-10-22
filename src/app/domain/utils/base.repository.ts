@@ -1,5 +1,6 @@
 import { Effect, Option } from "effect"
-import { DomainError, ValidationError } from "@domain/utils/base.errors"
+import { DomainError, ValidationError, DatabaseError } from "@domain/utils/base.errors"
+import { Paginated, PaginationOptions } from "@domain/utils/pagination"
 
 export type RepositoryEffect<A, E = DomainError> = Effect.Effect<
   A,
@@ -14,18 +15,19 @@ export abstract class BaseRepository<
 > {
   protected abstract readonly entityName: string
 
-  /**
-   * Persist the entity. Implementations should upsert by default.
-   */
-  abstract save(entity: TEntity): Effect.Effect<TEntity, TSaveError, never>
+  abstract save(entity: TEntity): Effect.Effect<TEntity, TSaveError | DatabaseError, never>
 
-  abstract delete(id: TEntity["id"]): RepositoryEffect<boolean, TNotFoundError>
+  /**
+   * Delete an entity by id.
+   * Implementations MUST fail with the typed NotFoundError when the entity does not exist,
+   */
+  abstract delete(id: TEntity["id"]): Effect.Effect<boolean, TNotFoundError | DatabaseError, never>
 
   abstract findById(
     id: TEntity["id"]
-  ): Effect.Effect<Option.Option<TEntity>, TNotFoundError | ValidationError>
+  ): Effect.Effect<Option.Option<TEntity>, TNotFoundError | ValidationError | DatabaseError>
 
-  abstract exists(id: TEntity["id"]): RepositoryEffect<boolean, TNotFoundError>
+  abstract exists(id: TEntity["id"]): Effect.Effect<boolean, DatabaseError, never>
 
-  abstract list(): RepositoryEffect<readonly TEntity[], TNotFoundError>
+  abstract list(options?: PaginationOptions): RepositoryEffect<Paginated<TEntity>, TNotFoundError | DatabaseError>
 }

@@ -1,4 +1,5 @@
-import { pgTable, varchar, jsonb, index } from "drizzle-orm/pg-core"
+import { pgTable, varchar, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core"
+import { sql } from "drizzle-orm"
 import { SharedColumns, UuidCol } from "../shared-columns"
 import { documents } from "./document.model"
 import { users } from "./user.model"
@@ -22,7 +23,13 @@ export const accessPolicies = pgTable("access_policies", {
   index("access_policies_resource_idx").on(table.resourceId),
   index("access_policies_subject_idx").on(table.subjectId),
   index("access_policies_role_idx").on(table.role),
-  index("access_policies_created_at_idx").on(table.createdAt)
+  index("access_policies_created_at_idx").on(table.createdAt),
+  uniqueIndex("access_policies_resource_subject_unique").on(
+    table.resourceId,
+    table.subjectType,
+    sql`coalesce(${table.subjectId}::text, '')`,
+    sql`coalesce(${table.role}, '')`
+  )
 ])
 
 // Type inference from Drizzle schema

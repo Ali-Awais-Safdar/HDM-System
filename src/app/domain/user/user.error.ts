@@ -5,14 +5,12 @@ export class UserNotFoundError extends DomainError {
   readonly code = "USER_NOT_FOUND"
   
   constructor(
-    public readonly field: string,
-    public readonly value: unknown,
-    details?: string
+    message: string,
+    public readonly field?: string,
+    public readonly value?: unknown,
+    details?: Record<string, unknown>
   ) {
-    super(
-      `User not found for ${field}: ${value}${details ? ` - ${details}` : ""}`,
-      { field, value }
-    )
+    super(message, { field, value, ...details })
   }
 }
 
@@ -21,14 +19,12 @@ export class UserAlreadyExistsError extends DomainError {
   readonly code = "USER_ALREADY_EXISTS"
   
   constructor(
-    public readonly field: string,
-    public readonly value: unknown,
-    details?: string
+    message: string,
+    public readonly field?: string,
+    public readonly value?: unknown,
+    details?: Record<string, unknown>
   ) {
-    super(
-      `User already exists for ${field}: ${value}${details ? ` - ${details}` : ""}`,
-      { field, value }
-    )
+    super(message, { field, value, ...details })
   }
 }
 
@@ -37,14 +33,12 @@ export class UserValidationError extends DomainError {
   readonly code = "USER_VALIDATION_ERROR"
   
   constructor(
-    public readonly field: string,
-    public readonly value: unknown,
-    details?: string
+    message: string,
+    public readonly field?: string,
+    public readonly value?: unknown,
+    details?: Record<string, unknown>
   ) {
-    super(
-      `User validation failed for ${field}: ${value}${details ? ` - ${details}` : ""}`,
-      { field, value }
-    )
+    super(message, { field, value, ...details })
   }
 }
 

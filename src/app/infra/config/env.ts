@@ -1,6 +1,5 @@
 import "dotenv/config";
 import { z } from "zod";
-import { logger } from "@shared/logging/logger";
 
 /**
  * Comprehensive environment configuration with enhanced validation.
@@ -69,14 +68,6 @@ const parsed = EnvSchema.safeParse(process.env);
 if (!parsed.success) {
   // Fail fast with helpful errors.
   // Avoid throwing raw errors across layers (see your error-handling guidance).
-  logger.error({
-    fieldErrors: parsed.error.flatten().fieldErrors,
-    formErrors: parsed.error.flatten().formErrors,
-    issues: parsed.error.issues.map(issue => ({
-      path: issue.path.join('.'),
-      message: issue.message
-    }))
-  }, "Invalid environment configuration");
   
   // Also log to console for immediate visibility during startup
   console.error("❌ Invalid environment configuration:");
@@ -96,26 +87,14 @@ export const env = parsed.data;
 // Validate critical configurations at startup
 if (env.IS_PRODUCTION) {
   if (env.JWT_SECRET.length < 64) {
-    logger.warn({
-      currentLength: env.JWT_SECRET.length,
-      environment: 'production'
-    }, "JWT_SECRET should be at least 64 characters in production");
     console.warn("⚠️  WARNING: JWT_SECRET should be at least 64 characters in production");
   }
   
   if (env.DATABASE_URL.includes('localhost') || env.DATABASE_URL.includes('127.0.0.1')) {
-    logger.warn({
-      databaseUrl: env.DATABASE_URL.replace(/\/\/.*@/, '//***:***@'), // Mask credentials
-      environment: 'production'
-    }, "Using localhost database in production");
     console.warn("⚠️  WARNING: Using localhost database in production");
   }
   
   if (env.CORS_ORIGINS === "*") {
-    logger.warn({
-      corsOrigins: env.CORS_ORIGINS,
-      environment: 'production'
-    }, "CORS is set to allow all origins in production");
     console.warn("⚠️  WARNING: CORS is set to allow all origins in production");
   }
 }

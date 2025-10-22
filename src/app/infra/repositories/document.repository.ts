@@ -1,5 +1,5 @@
-import { Effect as E, Option as O, pipe } from "effect"
-import { DocumentEntity, type SerializedDocument } from "@domain/document/document.entity"
+import { Effect as E, Option as O, pipe, Clock } from "effect"
+import { DocumentEntity } from "@domain/document/document.entity"
 import {
   DocumentRepository,
   type DocumentSearchFilters,
@@ -7,14 +7,17 @@ import {
 import {
   DocumentNotFoundError,
   DocumentValidationError,
-} from "@domain/document/document.errors"
-import { ValidationError } from "@domain/utils/domain.errors"
-import { toNullable } from "@domain/utils/option.utils"
-import { type Paginated } from "@domain/utils/pagination"
-import { DocumentId, UserId } from "@domain/value-objects/id.vo"
-import { documents, type DocumentModel } from "@infra/services/db/models/document.model"
-import { eq, and, or, sql, count, ilike } from "drizzle-orm"
-import type { DatabaseInterface } from "@infra/services/db/interfaces"
+} from "@domain/document/document.error"
+import { ValidationError } from "@domain/utils/base.errors"
+import { type Paginated, PaginationOptions, defaultPaginationOptions, calculateTotalPages } from "@domain/utils/pagination"
+import { DocumentId, UserId } from "@domain/refined/ids"
+import { documents, type DocumentModel } from "@infra/db/models/document.model"
+import { DocumentMapper } from "@infra/db/mappers"
+import { eq, and, or, sql, count, type SQL } from "drizzle-orm"
+import type { DatabaseInterface } from "@infra/db/interfaces"
+import { getErrorMessage, translateDbError, translateQueryError } from "@infra/db/errors"
+import { DatabaseError } from "@domain/utils/base.errors"
+import { fetchSingle, fetchMultiple } from "./helpers"
 
 /**
  * Drizzle-based Document Repository Implementation
@@ -24,137 +27,94 @@ export class DocumentDrizzleRepository extends DocumentRepository {
     super() 
   }
 
-  // ========== Serialization Helpers ==========
-
-  private toDbSerialized(document: DocumentEntity): E.Effect<DocumentModel, ValidationError, never> {
-    return E.sync(() => ({
-      id: document.id,
-      ownerId: document.ownerId,
-      title: document.title,
-      description: toNullable(document.description),
-      tags: toNullable(document.tags) as string[] | null,
-      currentVersionId: document.currentVersionId,
-      createdAt: document.createdAt,
-      updatedAt: toNullable(document.updatedAt)
-    }))
-  }
-
-  private fromDbRow(row: DocumentModel): E.Effect<DocumentEntity, ValidationError, never> {
-    const documentInput: SerializedDocument = {
-      id: row.id,
-      ownerId: row.ownerId,
-      title: row.title,
-      description: row.description ?? null,
-      tags: row.tags && row.tags.length > 0 ? row.tags : null,
-      currentVersionId: row.currentVersionId,
-      createdAt: row.createdAt instanceof Date ? row.createdAt : new Date(row.createdAt),
-      updatedAt: row.updatedAt
-        ? row.updatedAt instanceof Date
-          ? row.updatedAt
-          : new Date(row.updatedAt)
-        : null
-    }
-
-    return DocumentEntity.create(documentInput)
-  }
-
-  // ========== Query Helpers ==========
-
-  private executeQuery<T>(query: () => Promise<T>): E.Effect<T, DocumentNotFoundError> {
-    return E.tryPromise({
-      try: query,
-      catch: (error) => new DocumentNotFoundError(
-        "unknown",
-        { originalError: error instanceof Error ? error.message : String(error) }
-      )
-    })
-  }
-
-  private fetchSingle(
-    query: () => Promise<DocumentModel[]>
-  ): E.Effect<O.Option<DocumentEntity>, DocumentNotFoundError | ValidationError, never> {
-    return pipe(
-      this.executeQuery(query),
-      E.map(O.fromIterable),
-      E.flatMap((option) =>
-        O.match(option, {
-          onNone: () => E.succeed(O.none()),
-          onSome: (row) => pipe(
-            this.fromDbRow(row),
-            E.map(O.some)
-          )
-        })
-      )
-    )
-  }
-
-  private fetchMultiple(
-    query: () => Promise<DocumentModel[]>
-  ): E.Effect<readonly DocumentEntity[], DocumentNotFoundError | ValidationError, never> {
-    return pipe(
-      this.executeQuery(query),
-      E.flatMap((results) => 
-        E.all(results.map((row) => this.fromDbRow(row)))
-      )
-    )
-  }
-
   // ========== Repository Methods ==========
 
   findById(
     id: DocumentId
-  ): E.Effect<O.Option<DocumentEntity>, DocumentNotFoundError | ValidationError, never> {
-    return this.fetchSingle(() =>
-      this.db.select().from(documents).where(eq(documents.id, id)).limit(1)
+  ): E.Effect<O.Option<DocumentEntity>, DocumentNotFoundError | ValidationError | DatabaseError, never> {
+    return pipe(
+      fetchSingle(
+        () => this.db.select().from(documents).where(eq(documents.id, id)).limit(1),
+        DocumentMapper.fromDb,
+        "Document",
+        DocumentNotFoundError
+      ),
+      E.mapError((error): DocumentNotFoundError | ValidationError | DatabaseError =>
+        error instanceof DocumentValidationError
+          ? new ValidationError(error.message, error.field, error.value)
+          : error
+      )
     )
   }
 
   findByOwner(
     ownerId: UserId
-  ): E.Effect<readonly DocumentEntity[], DocumentNotFoundError | ValidationError, never> {
-    return this.fetchMultiple(() =>
-      this.db.select().from(documents).where(eq(documents.ownerId, ownerId))
+  ): E.Effect<readonly DocumentEntity[], DocumentNotFoundError | ValidationError | DatabaseError, never> {
+    return pipe(
+      fetchMultiple(
+        () => this.db.select().from(documents).where(eq(documents.ownerId, ownerId)),
+        DocumentMapper.fromDb,
+        "Document",
+        DocumentNotFoundError
+      ),
+      E.mapError((error): DocumentNotFoundError | ValidationError | DatabaseError =>
+        error instanceof DocumentValidationError
+          ? new ValidationError(error.message, error.field, error.value)
+          : error
+      )
     )
+  }
+
+  // ========== Pure Helper Functions ==========
+
+  private buildSearchConditions(filters: DocumentSearchFilters): SQL[] {
+    const { query, ownerId, tags } = filters
+    
+    return [
+      // Owner filter
+      ownerId ? eq(documents.ownerId, ownerId) : undefined,
+      
+      // Declarative regex-based text search (searches title and description)
+      query && query.trim().length > 0
+        ? this.buildTextSearchCondition(query.trim())
+        : undefined,
+      
+      // Tag filter - checks if any provided tags exist in document's tags array
+      tags && tags.length > 0
+        ? this.buildTagSearchCondition(tags)
+        : undefined
+    ].filter((condition): condition is SQL => condition !== undefined)
+  }
+
+  private buildTextSearchCondition(query: string): SQL {
+
+    const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+    const pattern = `.*${escapedQuery}.*`
+    
+    return or(
+      sql`${documents.title} ~* ${pattern}`,
+      sql`${documents.description} ~* ${pattern}`
+    )!
+  }
+
+  private buildTagSearchCondition(tags: readonly string[]): SQL {
+    return sql`${documents.tags}::jsonb ?| array[${sql.join(
+      tags.map(tag => sql`${tag}`),
+      sql`, `
+    )}]`
   }
 
   search(
     filters: DocumentSearchFilters
-  ): E.Effect<Paginated<DocumentEntity>, DocumentNotFoundError | ValidationError, never> {
+  ): E.Effect<Paginated<DocumentEntity>, DocumentNotFoundError | ValidationError | DatabaseError, never> {
+    const paginationOptions = filters.paginationOptions ?? defaultPaginationOptions()
+    const offset = (paginationOptions.pageNum - 1) * paginationOptions.pageSize
+
     return pipe(
       E.tryPromise({
         try: async () => {
-          const { query, ownerId, tags, paginationOptions = { pageNum: 1, pageSize: 10 } } = filters
-          const offset = (paginationOptions.pageNum - 1) * paginationOptions.pageSize
-
-          // Build where conditions
-          const conditions = []
-          
-          // Owner filter
-          if (ownerId) {
-            conditions.push(eq(documents.ownerId, ownerId))
-          }
-          
-          // Text search filter (searches title and description)
-          if (query && query.trim().length > 0) {
-            const searchTerm = `%${query.trim()}%`
-            conditions.push(
-              or(
-                ilike(documents.title, searchTerm),
-                ilike(documents.description, searchTerm)
-              )
-            )
-          }
-          
-          // Checks if any of the provided tags exist in the document's tags array
-          if (tags && tags.length > 0) {
-            conditions.push(
-              sql`${documents.tags}::jsonb ?| array[${sql.join(
-                tags.map(tag => sql`${tag}`),
-                sql`, `
-              )}]`
-            )
-          }
-
+          const conditions = this.buildSearchConditions(filters)
           const whereCondition = conditions.length ? and(...conditions) : undefined
 
           // Execute query with pagination
@@ -174,59 +134,96 @@ export class DocumentDrizzleRepository extends DocumentRepository {
 
           return { 
             data: data as DocumentModel[], 
-            total: totalResult[0]?.count || 0, 
-            paginationOptions 
+            total: Number(totalResult[0]?.count ?? 0)
           }
         },
-        catch: (error) => new DocumentNotFoundError(
-          "unknown",
-          { originalError: error instanceof Error ? error.message : String(error) }
+        catch: (error) => translateQueryError(
+          error,
+          { operation: "search", entityType: "Document", field: "query", value: "search" },
+          (message, field, value, details) => new DocumentNotFoundError(message, field, value, details)
         )
       }),
-      E.flatMap(({ data, total, paginationOptions }) =>
-        E.all(data.map((row) => this.fromDbRow(row))).pipe(
-          E.map((items) => ({
-            data: items,
-            total,
-            pageNum: paginationOptions.pageNum,
-            pageSize: paginationOptions.pageSize,
-            totalPages: Math.ceil(total / paginationOptions.pageSize)
-          }))
-        )
+      E.flatMap(({ data, total }) =>
+        data.length === 0
+          ? E.succeed({
+              data: [] as readonly DocumentEntity[],
+              total,
+              pageNum: paginationOptions.pageNum,
+              pageSize: paginationOptions.pageSize,
+              totalPages: calculateTotalPages(total, paginationOptions.pageSize)
+            } as Paginated<DocumentEntity>)
+          : pipe(
+              E.forEach(data, (row) =>
+                pipe(
+                  DocumentMapper.fromDb(row),
+                  E.provideService(Clock.Clock, Clock.make()),
+                  E.mapError((error): DocumentNotFoundError | ValidationError =>
+                    error instanceof DocumentValidationError
+                      ? new ValidationError(error.message, error.field, error.value)
+                      : error
+                  )
+                )
+              ),
+              E.map((items): Paginated<DocumentEntity> => ({
+                data: items,
+                total,
+                pageNum: paginationOptions.pageNum,
+                pageSize: paginationOptions.pageSize,
+                totalPages: calculateTotalPages(total, paginationOptions.pageSize)
+              }))
+            )
       )
     )
   }
 
   exists(
     id: DocumentId
-  ): E.Effect<boolean, DocumentNotFoundError, never> {
+  ): E.Effect<boolean, DatabaseError, never> {
     return pipe(
       E.tryPromise({
         try: (): Promise<Pick<DocumentModel, "id">[]> =>
           this.db.select({ id: documents.id }).from(documents).where(eq(documents.id, id)).limit(1),
-        catch: () => new DocumentNotFoundError(id)
+        catch: (error) => new DatabaseError(
+          `Database error during exists check on Document`,
+          { originalError: error }
+        )
       }),
       E.map((result) => result.length > 0)
     )
   }
 
-  private ensureExists(id: DocumentId): E.Effect<void, DocumentNotFoundError, never> {
+  private ensureExists(id: DocumentId): E.Effect<void, DocumentNotFoundError | DatabaseError, never> {
     return pipe(
       this.exists(id),
       E.flatMap((exists) =>
         E.if(exists, {
           onTrue: () => E.succeed(undefined),
-          onFalse: () => E.fail(new DocumentNotFoundError(id))
+          onFalse: () => E.fail(new DocumentNotFoundError(`Document not found: id=${id}`, "id", id))
         })
       )
     )
   }
 
+  private mapDocumentSaveError(error: unknown, document: DocumentEntity): DocumentValidationError | ValidationError | DatabaseError {
+    return error instanceof DatabaseError
+      ? error
+      : error instanceof ValidationError
+      ? new DocumentValidationError(
+          error.message,
+          error.field,
+          error.value
+        )
+      : new DocumentValidationError(
+          `Failed to save document: ${getErrorMessage(error)}`,
+          "save",
+          document.id
+        )
+  }
+
   save(
     document: DocumentEntity
-  ): E.Effect<DocumentEntity, DocumentValidationError | ValidationError, never> {
+  ): E.Effect<DocumentEntity, DocumentValidationError | ValidationError | DatabaseError, never> {
     return pipe(
-      // Check if document already exists
       this.findById(document.id),
       E.flatMap((existingDoc) =>
         O.match(existingDoc, {
@@ -234,35 +231,26 @@ export class DocumentDrizzleRepository extends DocumentRepository {
           onSome: () => this.update(document)
         })
       ),
-      E.mapError((error) => {
-        if (error instanceof ValidationError) {
-          return new DocumentValidationError(
-            error.message,
-            error.field,
-            error.value
-          )
-        }
-        return new DocumentValidationError(
-          `Failed to save document: ${error}`,
-          undefined,
-          { documentId: document.id }
-        )
-      })
+      E.mapError((error) => this.mapDocumentSaveError(error, document))
     )
   }
 
   private insert(
     document: DocumentEntity
-  ): E.Effect<DocumentEntity, ValidationError, never> {
+  ): E.Effect<DocumentEntity, ValidationError | DatabaseError | DocumentValidationError, never> {
     return pipe(
-      this.toDbSerialized(document),
+      DocumentMapper.toDb(document),
       E.flatMap((dbData) =>
         E.tryPromise({
           try: () => this.db.insert(documents).values(dbData),
-          catch: (error) => new ValidationError(
-            `Failed to insert document: ${error instanceof Error ? error.message : String(error)}`,
-            undefined,
-            { documentId: document.id }
+          catch: (error) => translateDbError(
+            error,
+            { operation: "insert", entityType: "Document" },
+            {
+              createConflictError: (message: string) => new ValidationError(message, "documentId", document.id),
+              createNotFoundError: (field: string, value: string) => new ValidationError(`Document not found: ${field}=${value}`, field, value),
+              createValidationError: (message: string, field: string) => new ValidationError(message, field, document.id)
+            }
           )
         })
       ),
@@ -272,17 +260,21 @@ export class DocumentDrizzleRepository extends DocumentRepository {
 
   private update(
     document: DocumentEntity
-  ): E.Effect<DocumentEntity, ValidationError | DocumentNotFoundError, never> {
+  ): E.Effect<DocumentEntity, ValidationError | DocumentNotFoundError | DatabaseError | DocumentValidationError, never> {
     return pipe(
       this.ensureExists(document.id),
-      E.flatMap(() => this.toDbSerialized(document)),
+      E.flatMap(() => DocumentMapper.toDb(document)),
       E.flatMap((dbData) =>
         E.tryPromise({
           try: () => this.db.update(documents).set(dbData).where(eq(documents.id, document.id)),
-          catch: (error) => new ValidationError(
-            `Failed to update document: ${error instanceof Error ? error.message : String(error)}`,
-            undefined,
-            { documentId: document.id }
+          catch: (error) => translateDbError(
+            error,
+            { operation: "update", entityType: "Document" },
+            {
+              createConflictError: (message: string) => new ValidationError(message, "documentId", document.id),
+              createNotFoundError: (field: string, value: string) => new ValidationError(`Document not found: ${field}=${value}`, field, value),
+              createValidationError: (message: string, field: string) => new ValidationError(message, field, document.id)
+            }
           )
         })
       ),
@@ -292,7 +284,7 @@ export class DocumentDrizzleRepository extends DocumentRepository {
 
   delete(
     id: DocumentId
-  ): E.Effect<boolean, DocumentNotFoundError, never> {
+  ): E.Effect<boolean, DocumentNotFoundError | DatabaseError, never> {
     return pipe(
       this.exists(id),
       E.flatMap((exists) =>
@@ -301,12 +293,83 @@ export class DocumentDrizzleRepository extends DocumentRepository {
             pipe(
               E.tryPromise({
                 try: () => this.db.delete(documents).where(eq(documents.id, id)),
-                catch: () => new DocumentNotFoundError(id)
+                catch: (error) => translateDbError(
+                  error,
+                  { operation: "delete", entityType: "Document" },
+                  {
+                    createConflictError: (message: string) => new DatabaseError(message),
+                    createNotFoundError: (field: string, value: string) => new DocumentNotFoundError(`Document not found: ${field}=${value}`, field, value),
+                    createValidationError: (message: string) => new DatabaseError(message)
+                  }
+                )
               }),
               E.as(true)
             ),
-          onFalse: () => E.succeed(false)
+          onFalse: () => E.fail(new DocumentNotFoundError(`Document not found: id=${id}`, "id", id))
         })
+      )
+    )
+  }
+
+  list(options?: PaginationOptions): E.Effect<Paginated<DocumentEntity>, DocumentNotFoundError | ValidationError | DatabaseError, never> {
+    const paginationOptions = options ?? defaultPaginationOptions()
+    const offset = (paginationOptions.pageNum - 1) * paginationOptions.pageSize
+
+    return pipe(
+      E.tryPromise({
+        try: async () => {
+          const [data, totalResult] = await Promise.all([
+            this.db
+              .select()
+              .from(documents)
+              .limit(paginationOptions.pageSize)
+              .offset(offset)
+              .orderBy(documents.createdAt),
+            this.db
+              .select({ count: count() })
+              .from(documents)
+          ])
+
+          return { 
+            data: data as DocumentModel[], 
+            total: Number(totalResult[0]?.count ?? 0)
+          }
+        },
+        catch: (error) => translateQueryError(
+          error,
+          { operation: "list", entityType: "Document", field: "list", value: "all" },
+          (message, field, value, details) => new DocumentNotFoundError(message, field, value, details)
+        )
+      }),
+      E.flatMap(({ data, total }) =>
+        data.length === 0
+          ? E.succeed({
+              data: [] as readonly DocumentEntity[],
+              total,
+              pageNum: paginationOptions.pageNum,
+              pageSize: paginationOptions.pageSize,
+              totalPages: calculateTotalPages(total, paginationOptions.pageSize)
+            } as Paginated<DocumentEntity>)
+          : pipe(
+              E.forEach(data, (row) =>
+                pipe(
+                  DocumentMapper.fromDb(row),
+                  E.mapError((error): DocumentNotFoundError | ValidationError =>
+                    error instanceof DocumentValidationError
+                      ? new ValidationError(error.message, error.field, error.value)
+                      : error
+                  ),
+                  E.provideService(Clock.Clock, Clock.make())
+                )
+              ),
+              E.map((entities): Paginated<DocumentEntity> => ({
+                data: entities,
+                total,
+                pageNum: paginationOptions.pageNum,
+                pageSize: paginationOptions.pageSize,
+                totalPages: calculateTotalPages(total, paginationOptions.pageSize)
+              }))
+            )
       )
     )
   }

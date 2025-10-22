@@ -22,7 +22,7 @@ export const downloadTokens = pgTable("download_tokens", {
   index("download_tokens_document_idx").on(table.documentId),
   index("download_tokens_issued_to_idx").on(table.issuedTo),
   index("download_tokens_expires_at_idx").on(table.expiresAt),
-  index("download_tokens_token_idx").on(table.token)
+  index("download_tokens_used_at_idx").on(table.usedAt)
 ])
 
 // Type inference from Drizzle schema

@@ -1,0 +1,1 @@
+CREATE INDEX "download_tokens_used_at_idx" ON "download_tokens" USING btree ("used_at");

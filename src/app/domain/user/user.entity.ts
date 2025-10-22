@@ -37,9 +37,9 @@ export class UserEntity {
         return S.decodeUnknown(UserSchema)(dataWithAudit).pipe(
           Effect.map((data) => new UserEntity(data)),
           Effect.mapError((error) => new UserValidationError(
+            mapParseError(error as ParseResult.ParseError, (m) => `User validation failed: ${m}`),
             "user",
-            input,
-            mapParseError(error as ParseResult.ParseError, (m) => m)
+            input
           ))
         )
       })
@@ -103,9 +103,9 @@ export class UserEntity {
           () => ({ workspaceId: workspaceId as WorkspaceId }),
           (error) =>
             new UserValidationError(
+              `Failed to prepare user for workspace assignment: ${formatParseError(error as ParseResult.ParseError)}`,
               "workspaceId",
-              workspaceId,
-              `Failed to prepare user for workspace assignment: ${formatParseError(error as ParseResult.ParseError)}`
+              workspaceId
             ),
           (input) => UserEntity.create(input)
         )
@@ -123,9 +123,9 @@ export class UserEntity {
           () => ({ workspaceId: undefined }),
           (error) =>
             new UserValidationError(
+              `Failed to prepare user for workspace removal: ${formatParseError(error as ParseResult.ParseError)}`,
               "workspaceId",
-              null,
-              `Failed to prepare user for workspace removal: ${formatParseError(error as ParseResult.ParseError)}`
+              null
             ),
           (input) => UserEntity.create(input)
         )

@@ -3,10 +3,6 @@ import { sql } from "drizzle-orm"
 import { SharedColumns, UuidCol } from "../shared-columns"
 import { users } from "./user.model"
 
-/**
- * Documents table with SharedColumns pattern.
- * Stores document metadata and ownership information.
- */
 export const documents = pgTable("documents", {
   ...SharedColumns,
   ownerId: UuidCol("owner_id")
@@ -15,6 +11,7 @@ export const documents = pgTable("documents", {
   title: varchar("title", { length: 255 }).notNull(),
   description: text("description"),
   tags: jsonb("tags").$type<string[]>(),
+  // FK constraint added at DB level via migration to avoid circular import
   currentVersionId: UuidCol("current_version_id").notNull()
 }, (table) => ({
   ownerIdx: index("documents_owner_idx").on(table.ownerId),

@@ -1,15 +1,20 @@
-import { Effect as E, Option as O, pipe } from "effect"
+import { Effect as E, Option as O, pipe, Clock } from "effect"
 import { DocumentVersionEntity } from "@domain/documentVersion/document-version.entity"
 import { DocumentVersionRepository } from "@domain/documentVersion/document-version.repository"
 import {
-  DocumentValidationError,
   DocumentVersionNotFoundError,
-} from "@domain/document/document.errors"
-import { ValidationError } from "@domain/utils/domain.errors"
-import { DocumentId, DocumentVersionId } from "@domain/value-objects/id.vo"
-import { documentVersions, type DocumentVersionModel } from "@infra/services/db/models/document-version.model"
-import { eq, and, desc, max } from "drizzle-orm"
-import type { DatabaseInterface } from "@infra/services/db/interfaces"
+  DocumentVersionValidationError,
+} from "@domain/documentVersion/document-version.error"
+import { ValidationError } from "@domain/utils/base.errors"
+import { type Paginated, PaginationOptions, defaultPaginationOptions, calculateTotalPages } from "@domain/utils/pagination"
+import { DocumentId, DocumentVersionId } from "@domain/refined/ids"
+import { documentVersions, type DocumentVersionModel } from "@infra/db/models/document-version.model"
+import { DocumentVersionMapper } from "@infra/db/mappers"
+import { eq, and, desc, max, count } from "drizzle-orm"
+import type { DatabaseInterface } from "@infra/db/interfaces"
+import { isUniqueConstraintError, getErrorMessage, translateDbError, translateQueryError } from "@infra/db/errors"
+import { DatabaseError } from "@domain/utils/base.errors"
+import { fetchSingle, fetchMultiple } from "./helpers"
 
 /**
  * Drizzle-based Document Version Repository Implementation
@@ -19,133 +24,102 @@ export class DocumentVersionDrizzleRepository extends DocumentVersionRepository 
     super() 
   }
 
-  // ========== Serialization Helpers ==========
-
-  private toDbSerialized(version: DocumentVersionEntity): E.Effect<Omit<DocumentVersionModel, 'updatedAt'>, ValidationError, never> {
-    return E.sync(() => ({
-      id: version.id,
-      documentId: version.documentId,
-      version: version.version,
-      checksum: version.checksum,
-      fileKey: version.fileKey,
-      mimeType: version.mimeType,
-      size: version.size,
-      createdAt: version.createdAt,
-      createdBy: O.getOrNull(version.createdBy)
-    }))
-  }
-
-  private fromDbRow(row: DocumentVersionModel): E.Effect<DocumentVersionEntity, ValidationError, never> {
-    return DocumentVersionEntity.fromPersistence({
-      id: row.id,
-      documentId: row.documentId,
-      version: row.version,
-      checksum: row.checksum,
-      fileKey: row.fileKey,
-      mimeType: row.mimeType,
-      size: row.size,
-      createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt,
-      createdBy: row.createdBy ? { _tag: "Some" as const, value: row.createdBy } : { _tag: "None" as const }
-    })
-  }
-
-  // ========== Query Helpers ==========
-
-  private executeQuery<T>(query: () => Promise<T>): E.Effect<T, DocumentVersionNotFoundError> {
-    return E.tryPromise({
-      try: query,
-      catch: (error) => new DocumentVersionNotFoundError(
-        "unknown",
-        { originalError: error instanceof Error ? error.message : String(error) }
-      )
-    })
-  }
-
-  private fetchSingle(
-    query: () => Promise<DocumentVersionModel[]>
-  ): E.Effect<O.Option<DocumentVersionEntity>, DocumentVersionNotFoundError | ValidationError, never> {
-    return pipe(
-      this.executeQuery(query),
-      E.map(O.fromIterable),
-      E.flatMap((option) =>
-        O.match(option, {
-          onNone: () => E.succeed(O.none()),
-          onSome: (row) => pipe(
-            this.fromDbRow(row),
-            E.map(O.some)
-          )
-        })
-      )
-    )
-  }
-
-  private fetchMultiple(
-    query: () => Promise<DocumentVersionModel[]>
-  ): E.Effect<readonly DocumentVersionEntity[], DocumentVersionNotFoundError | ValidationError, never> {
-    return pipe(
-      this.executeQuery(query),
-      E.flatMap((results) => 
-        E.all(results.map((row) => this.fromDbRow(row)))
-      )
-    )
-  }
-
   // ========== Repository Methods ==========
 
   findById(
     id: DocumentVersionId
-  ): E.Effect<O.Option<DocumentVersionEntity>, DocumentVersionNotFoundError | ValidationError, never> {
-    return this.fetchSingle(() =>
-      this.db.select().from(documentVersions).where(eq(documentVersions.id, id)).limit(1)
+  ): E.Effect<O.Option<DocumentVersionEntity>, DocumentVersionNotFoundError | ValidationError | DatabaseError, never> {
+    return pipe(
+      fetchSingle(
+        () => this.db.select().from(documentVersions).where(eq(documentVersions.id, id)).limit(1),
+        DocumentVersionMapper.fromDb,
+        "DocumentVersion",
+        DocumentVersionNotFoundError
+      ),
+      E.mapError((error): DocumentVersionNotFoundError | ValidationError | DatabaseError =>
+        error instanceof DocumentVersionValidationError
+          ? new ValidationError(error.message, error.field, error.value)
+          : error
+      )
     )
   }
 
   findByDocumentIdAndVersion(
     documentId: DocumentId,
     version: number
-  ): E.Effect<O.Option<DocumentVersionEntity>, DocumentVersionNotFoundError | ValidationError, never> {
-    return this.fetchSingle(() =>
-      this.db
-        .select()
-        .from(documentVersions)
-        .where(
-          and(
-            eq(documentVersions.documentId, documentId),
-            eq(documentVersions.version, version)
+  ): E.Effect<O.Option<DocumentVersionEntity>, DocumentVersionNotFoundError | ValidationError | DatabaseError, never> {
+    return pipe(
+      fetchSingle(
+        () => this.db
+          .select()
+          .from(documentVersions)
+          .where(
+            and(
+              eq(documentVersions.documentId, documentId),
+              eq(documentVersions.version, version)
+            )
           )
-        )
-        .limit(1)
+          .limit(1),
+        DocumentVersionMapper.fromDb,
+        "DocumentVersion",
+        DocumentVersionNotFoundError
+      ),
+      E.mapError((error): DocumentVersionNotFoundError | ValidationError | DatabaseError =>
+        error instanceof DocumentVersionValidationError
+          ? new ValidationError(error.message, error.field, error.value)
+          : error
+      )
     )
   }
 
   findByDocumentId(
     documentId: DocumentId
-  ): E.Effect<readonly DocumentVersionEntity[], DocumentVersionNotFoundError | ValidationError, never> {
-    return this.fetchMultiple(() =>
-      this.db
-        .select()
-        .from(documentVersions)
-        .where(eq(documentVersions.documentId, documentId))
-        .orderBy(desc(documentVersions.version))
+  ): E.Effect<readonly DocumentVersionEntity[], DocumentVersionNotFoundError | ValidationError | DatabaseError, never> {
+    return pipe(
+      fetchMultiple(
+        () => this.db
+          .select()
+          .from(documentVersions)
+          .where(eq(documentVersions.documentId, documentId))
+          .orderBy(desc(documentVersions.version)),
+        DocumentVersionMapper.fromDb,
+        "DocumentVersion",
+        DocumentVersionNotFoundError
+      ),
+      E.mapError((error): DocumentVersionNotFoundError | ValidationError | DatabaseError =>
+        error instanceof DocumentVersionValidationError
+          ? new ValidationError(error.message, error.field, error.value)
+          : error
+      )
     )
   }
 
   findLatestByDocumentId(
     documentId: DocumentId
-  ): E.Effect<O.Option<DocumentVersionEntity>, DocumentVersionNotFoundError | ValidationError, never> {
-    return this.fetchSingle(() =>
-      this.db
-        .select()
-        .from(documentVersions)
-        .where(eq(documentVersions.documentId, documentId))
-        .orderBy(desc(documentVersions.version))
-        .limit(1)
+  ): E.Effect<O.Option<DocumentVersionEntity>, DocumentVersionNotFoundError | ValidationError | DatabaseError, never> {
+    return pipe(
+      fetchSingle(
+        () => this.db
+          .select()
+          .from(documentVersions)
+          .where(eq(documentVersions.documentId, documentId))
+          .orderBy(desc(documentVersions.version))
+          .limit(1),
+        DocumentVersionMapper.fromDb,
+        "DocumentVersion",
+        DocumentVersionNotFoundError
+      ),
+      E.mapError((error): DocumentVersionNotFoundError | ValidationError | DatabaseError =>
+        error instanceof DocumentVersionValidationError
+          ? new ValidationError(error.message, error.field, error.value)
+          : error
+      )
     )
   }
 
   getNextVersionNumber(
     documentId: DocumentId
-  ): E.Effect<number, DocumentVersionNotFoundError, never> {
+  ): E.Effect<number, DocumentVersionNotFoundError | DatabaseError, never> {
     return pipe(
       E.tryPromise({
         try: async () => {
@@ -157,12 +131,10 @@ export class DocumentVersionDrizzleRepository extends DocumentVersionRepository 
           const maxVersion = result[0]?.maxVersion
           return maxVersion != null ? maxVersion + 1 : 1
         },
-        catch: (error) => new DocumentVersionNotFoundError(
-          "unknown",
-          { 
-            documentId,
-            originalError: error instanceof Error ? error.message : String(error) 
-          }
+        catch: (error) => translateQueryError(
+          error,
+          { operation: "findByDocumentId", entityType: "DocumentVersion", field: "documentId", value: documentId },
+          (message, field, value, details) => new DocumentVersionNotFoundError(message, field, value, details)
         )
       })
     )
@@ -170,7 +142,7 @@ export class DocumentVersionDrizzleRepository extends DocumentVersionRepository 
 
   exists(
     id: DocumentVersionId
-  ): E.Effect<boolean, DocumentVersionNotFoundError, never> {
+  ): E.Effect<boolean, DatabaseError, never> {
     return pipe(
       E.tryPromise({
         try: (): Promise<Pick<DocumentVersionModel, "id">[]> =>
@@ -179,29 +151,49 @@ export class DocumentVersionDrizzleRepository extends DocumentVersionRepository 
             .from(documentVersions)
             .where(eq(documentVersions.id, id))
             .limit(1),
-        catch: () => new DocumentVersionNotFoundError(id)
+        catch: (error) => new DatabaseError(
+          `Database error during exists check on DocumentVersion`,
+          { originalError: error }
+        )
       }),
       E.map((result) => result.length > 0)
     )
   }
 
-  private ensureExists(id: DocumentVersionId): E.Effect<void, DocumentVersionNotFoundError, never> {
+  private ensureExists(id: DocumentVersionId): E.Effect<void, DocumentVersionNotFoundError | DatabaseError, never> {
     return pipe(
       this.exists(id),
       E.flatMap((exists) =>
         E.if(exists, {
           onTrue: () => E.succeed(undefined),
-          onFalse: () => E.fail(new DocumentVersionNotFoundError(id))
+          onFalse: () => E.fail(new DocumentVersionNotFoundError(`Document version not found: id=${id}`, "id", id))
         })
       )
     )
   }
 
+  // ========== Pure Helper Functions ==========
+
+  private mapVersionSaveError(error: unknown, version: DocumentVersionEntity): DocumentVersionValidationError | ValidationError | DatabaseError {
+    return error instanceof DatabaseError
+      ? error
+      : error instanceof ValidationError
+      ? new DocumentVersionValidationError(
+          error.message,
+          error.field,
+          error.value
+        )
+      : new DocumentVersionValidationError(
+          `Failed to save document version: ${getErrorMessage(error)}`,
+          "save",
+          version.id
+        )
+  }
+
   save(
     version: DocumentVersionEntity
-  ): E.Effect<DocumentVersionEntity, DocumentValidationError | ValidationError, never> {
+  ): E.Effect<DocumentVersionEntity, DocumentVersionValidationError | ValidationError | DatabaseError, never> {
     return pipe(
-      // Check if version already exists
       this.findById(version.id),
       E.flatMap((existingVersion) =>
         O.match(existingVersion, {
@@ -209,47 +201,34 @@ export class DocumentVersionDrizzleRepository extends DocumentVersionRepository 
           onSome: () => this.update(version)
         })
       ),
-      E.mapError((error) => {
-        if (error instanceof ValidationError) {
-          return new DocumentValidationError(
-            error.message,
-            error.field,
-            error.value
-          )
-        }
-        return new DocumentValidationError(
-          `Failed to save document version: ${error}`,
-          undefined,
-          { versionId: version.id }
-        )
-      })
+      E.mapError((error) => this.mapVersionSaveError(error, version))
     )
   }
 
   private insert(
     version: DocumentVersionEntity
-  ): E.Effect<DocumentVersionEntity, ValidationError, never> {
+  ): E.Effect<DocumentVersionEntity, ValidationError | DocumentVersionValidationError | DatabaseError, never> {
     return pipe(
-      this.toDbSerialized(version),
+      DocumentVersionMapper.toDb(version),
       E.flatMap((dbData) =>
         E.tryPromise({
           try: () => this.db.insert(documentVersions).values(dbData),
-          catch: (error) => {
-            const errorMsg = error instanceof Error ? error.message : String(error)
-            // Check for unique constraint violation (document_id + version)
-            if (errorMsg.includes('unique') || errorMsg.includes('duplicate')) {
-              return new ValidationError(
-                `Document version ${version.version} already exists for document ${version.documentId}`,
-                'version',
-                version.version
-              )
-            }
-            return new ValidationError(
-              `Failed to insert document version: ${errorMsg}`,
-              undefined,
-              { versionId: version.id }
-            )
-          }
+          catch: (error) =>
+            isUniqueConstraintError(error)
+              ? new ValidationError(
+                  `Document version ${version.version} already exists for document ${version.documentId}`,
+                  'version',
+                  version.version
+                )
+              : translateDbError(
+                  error,
+                  { operation: "insert", entityType: "DocumentVersion" },
+                  {
+                    createConflictError: (message: string) => new ValidationError(message, "versionId", version.id),
+                    createNotFoundError: (field: string, value: string) => new ValidationError(`Document version not found: ${field}=${value}`, field, value),
+                    createValidationError: (message: string, field: string) => new ValidationError(message, field, version.id)
+                  }
+                )
         })
       ),
       E.as(version)
@@ -258,20 +237,24 @@ export class DocumentVersionDrizzleRepository extends DocumentVersionRepository 
 
   private update(
     version: DocumentVersionEntity
-  ): E.Effect<DocumentVersionEntity, ValidationError | DocumentVersionNotFoundError, never> {
+  ): E.Effect<DocumentVersionEntity, ValidationError | DocumentVersionNotFoundError | DatabaseError | DocumentVersionValidationError, never> {
     return pipe(
       this.ensureExists(version.id),
-      E.flatMap(() => this.toDbSerialized(version)),
+      E.flatMap(() => DocumentVersionMapper.toDb(version)),
       E.flatMap((dbData) =>
         E.tryPromise({
           try: () => this.db
             .update(documentVersions)
             .set(dbData)
             .where(eq(documentVersions.id, version.id)),
-          catch: (error) => new ValidationError(
-            `Failed to update document version: ${error instanceof Error ? error.message : String(error)}`,
-            undefined,
-            { versionId: version.id }
+          catch: (error) => translateDbError(
+            error,
+            { operation: "update", entityType: "DocumentVersion" },
+            {
+              createConflictError: (message: string) => new ValidationError(message, "versionId", version.id),
+              createNotFoundError: (field: string, value: string) => new ValidationError(`Document version not found: ${field}=${value}`, field, value),
+              createValidationError: (message: string, field: string) => new ValidationError(message, field, version.id)
+            }
           )
         })
       ),
@@ -281,7 +264,7 @@ export class DocumentVersionDrizzleRepository extends DocumentVersionRepository 
 
   delete(
     id: DocumentVersionId
-  ): E.Effect<boolean, DocumentVersionNotFoundError, never> {
+  ): E.Effect<boolean, DocumentVersionNotFoundError | DatabaseError, never> {
     return pipe(
       this.exists(id),
       E.flatMap((exists) =>
@@ -290,12 +273,83 @@ export class DocumentVersionDrizzleRepository extends DocumentVersionRepository 
             pipe(
               E.tryPromise({
                 try: () => this.db.delete(documentVersions).where(eq(documentVersions.id, id)),
-                catch: () => new DocumentVersionNotFoundError(id)
+                catch: (error) => translateDbError(
+                  error,
+                  { operation: "delete", entityType: "DocumentVersion" },
+                  {
+                    createConflictError: (message: string) => new DatabaseError(message),
+                    createNotFoundError: (field: string, value: string) => new DocumentVersionNotFoundError(`Document version not found: ${field}=${value}`, field, value),
+                    createValidationError: (message: string) => new DatabaseError(message)
+                  }
+                )
               }),
               E.as(true)
             ),
-          onFalse: () => E.succeed(false)
+          onFalse: () => E.fail(new DocumentVersionNotFoundError(`Document version not found: id=${id}`, "id", id))
         })
+      )
+    )
+  }
+
+  list(options?: PaginationOptions): E.Effect<Paginated<DocumentVersionEntity>, DocumentVersionNotFoundError | ValidationError | DatabaseError, never> {
+    const paginationOptions = options ?? defaultPaginationOptions()
+    const offset = (paginationOptions.pageNum - 1) * paginationOptions.pageSize
+
+    return pipe(
+      E.tryPromise({
+        try: async () => {
+          const [data, totalResult] = await Promise.all([
+            this.db
+              .select()
+              .from(documentVersions)
+              .limit(paginationOptions.pageSize)
+              .offset(offset)
+              .orderBy(desc(documentVersions.createdAt)),
+            this.db
+              .select({ count: count() })
+              .from(documentVersions)
+          ])
+
+          return { 
+            data: data as DocumentVersionModel[], 
+            total: Number(totalResult[0]?.count ?? 0)
+          }
+        },
+        catch: (error) => translateQueryError(
+          error,
+          { operation: "list", entityType: "DocumentVersion", field: "list", value: "all" },
+          (message, field, value, details) => new DocumentVersionNotFoundError(message, field, value, details)
+        )
+      }),
+      E.flatMap(({ data, total }) =>
+        data.length === 0
+          ? E.succeed({
+              data: [] as readonly DocumentVersionEntity[],
+              total,
+              pageNum: paginationOptions.pageNum,
+              pageSize: paginationOptions.pageSize,
+              totalPages: calculateTotalPages(total, paginationOptions.pageSize)
+            } as Paginated<DocumentVersionEntity>)
+          : pipe(
+              E.forEach(data, (row) =>
+                pipe(
+                  DocumentVersionMapper.fromDb(row),
+                  E.mapError((error): DocumentVersionNotFoundError | ValidationError =>
+                    error instanceof DocumentVersionValidationError
+                      ? new ValidationError(error.message, error.field, error.value)
+                      : error
+                  ),
+                  E.provideService(Clock.Clock, Clock.make())
+                )
+              ),
+              E.map((entities): Paginated<DocumentVersionEntity> => ({
+                data: entities,
+                total,
+                pageNum: paginationOptions.pageNum,
+                pageSize: paginationOptions.pageSize,
+                totalPages: calculateTotalPages(total, paginationOptions.pageSize)
+              }))
+            )
       )
     )
   }

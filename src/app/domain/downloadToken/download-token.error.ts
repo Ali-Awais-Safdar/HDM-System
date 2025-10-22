@@ -5,14 +5,12 @@ export class DownloadTokenNotFoundError extends DomainError {
   readonly code = "DOWNLOAD_TOKEN_NOT_FOUND"
   
   constructor(
-    public readonly field: string,
-    public readonly value: unknown,
-    details?: string
+    message: string,
+    public readonly field?: string,
+    public readonly value?: unknown,
+    details?: Record<string, unknown>
   ) {
-    super(
-      `Download token not found for ${field}: ${value}${details ? ` - ${details}` : ""}`,
-      { field, value }
-    )
+    super(message, { field, value, ...details })
   }
 }
 
@@ -23,9 +21,10 @@ export class DownloadTokenValidationError extends DomainError {
   constructor(
     message: string,
     public readonly field?: string,
-    public readonly value?: unknown
+    public readonly value?: unknown,
+    details?: Record<string, unknown>
   ) {
-    super(message, { field, value })
+    super(message, { field, value, ...details })
   }
 }
 
@@ -35,14 +34,12 @@ export class DownloadTokenAlreadyUsedError extends DomainError {
   readonly code = "DOWNLOAD_TOKEN_ALREADY_USED"
   
   constructor(
-    public readonly field: string,
-    public readonly value: unknown,
-    details?: string
+    message: string,
+    public readonly field?: string,
+    public readonly value?: unknown,
+    details?: Record<string, unknown>
   ) {
-    super(
-      `Download token already used for ${field}: ${value}${details ? ` - ${details}` : ""}`,
-      { field, value }
-    )
+    super(message, { field, value, ...details })
   }
 }
 

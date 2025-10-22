@@ -15,6 +15,48 @@
       "when": 1759486899876,
       "tag": "0001_open_mercury",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1760703104323,
+      "tag": "0002_loose_enchantress",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1760703375871,
+      "tag": "0003_worthless_iron_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1760715000653,
+      "tag": "0004_shiny_sage",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1760718690650,
+      "tag": "0005_add_updated_at_default",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1761130859488,
+      "tag": "0006_warm_tony_stark",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1761136936981,
+      "tag": "0007_short_fixer",
+      "breakpoints": true
     }
   ]
 }
