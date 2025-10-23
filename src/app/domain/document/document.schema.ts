@@ -1,6 +1,6 @@
 import { Schema as S } from "effect"
 import { Optional } from "@domain/utils/schema.utils"
-import { DocumentId, DocumentVersionId, UserId } from "@domain/refined/ids"
+import { DocumentId, UserId } from "@domain/refined/ids"
 import { BaseEntitySchema } from "@domain/utils/schema.base"
 import { DocumentTitle } from "@domain/document/document-title.vo"
 import { DocumentDescription } from "@domain/document/document-description.vo"
@@ -12,8 +12,7 @@ export const Document = S.extend(
     ownerId: UserId,
     title: DocumentTitle,
     description: Optional(DocumentDescription),
-    tags: Optional(TagList),
-    currentVersionId: DocumentVersionId
+    tags: Optional(TagList)
   })
 )
 export type Document = S.Schema.Type<typeof Document>

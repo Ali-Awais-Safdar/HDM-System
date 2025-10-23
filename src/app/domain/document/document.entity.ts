@@ -4,7 +4,7 @@ import { addTags as TagListAdd, removeTags as TagListRemove } from "@domain/docu
 import { BusinessRuleViolationError, ValidationError } from "@domain/utils/base.errors"
 import { formatParseError, mapParseError } from "@domain/utils/option.utils"
 import { DocumentValidationError } from "@domain/document/document.error"
-import { DocumentId, DocumentVersionId, UserId } from "@domain/refined/ids"
+import { DocumentId, UserId } from "@domain/refined/ids"
 import { DocumentTitle } from "@domain/document/document-title.vo"
 import { DocumentDescription } from "@domain/document/document-description.vo"
 import { getCurrentTime } from "@domain/utils/audit-trail"
@@ -19,7 +19,6 @@ export class DocumentEntity {
   readonly title!: DocumentTitle
   readonly description!: Option.Option<DocumentDescription>
   readonly tags!: Option.Option<readonly string[]>
-  readonly currentVersionId!: DocumentVersionId
   readonly createdAt!: Date
   readonly updatedAt!: Option.Option<Date>
 
@@ -53,7 +52,6 @@ export class DocumentEntity {
     this.title = data.title
     this.description = data.description
     this.tags = data.tags
-    this.currentVersionId = data.currentVersionId
   }
 
   serialized(): Effect.Effect<SerializedDocument, ParseResult.ParseError, never> {
@@ -209,21 +207,5 @@ export class DocumentEntity {
           "tags",
           tagsToRemove
         ))
-  }
-
-  updateCurrentVersion(
-    newVersionId: DocumentVersionId
-  ): Effect.Effect<DocumentEntity, DocumentValidationError, Clock.Clock> {
-    return applyMutationWithTimestamp(
-      DocumentSchema,
-      this as unknown,
-      (_now) => ({ currentVersionId: newVersionId } as any),
-      (error) => new DocumentValidationError(
-        `Failed to prepare document for version update: ${formatParseError(error as ParseResult.ParseError)}`,
-        "currentVersionId",
-        newVersionId
-      ),
-      (input) => DocumentEntity.create(input)
-    )
   }
 }

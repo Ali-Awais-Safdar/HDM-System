@@ -41,7 +41,7 @@
       "idx": 5,
       "version": "7",
       "when": 1760718690650,
-      "tag": "0005_add_updated_at_default",
+      "tag": "0005_access_policies_unique",
       "breakpoints": true
     },
     {
@@ -56,6 +56,13 @@
       "version": "7",
       "when": 1761136936981,
       "tag": "0007_short_fixer",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1761218490493,
+      "tag": "0008_futuristic_white_tiger",
       "breakpoints": true
     }
   ]

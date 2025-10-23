@@ -15,7 +15,6 @@ export const toDb = (
       title: serialized.title,
       description: serialized.description ?? null,
       tags: (serialized.tags ?? null) as string[] | null,
-      currentVersionId: serialized.currentVersionId,
       createdAt: new Date(serialized.createdAt),
       updatedAt: serialized.updatedAt ? new Date(serialized.updatedAt) : null
     }
@@ -41,7 +40,6 @@ export const fromDb = (
     title: row.title,
     description: row.description ?? null,
     tags: row.tags ?? null,
-    currentVersionId: row.currentVersionId,
     createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt,
     updatedAt: row.updatedAt 
       ? (row.updatedAt instanceof Date ? row.updatedAt.toISOString() : row.updatedAt)

@@ -238,20 +238,8 @@ describe("DocumentEntity", () => {
       expect(updated.isModified).toBe(true)
     })
 
-    it("should update current version and update timestamp", () => {
-      const original = TestPatterns.Effect.expectSuccess(
-        withTestClock(DocumentEntity.create(generateDocument()), FIXED_TIME)
-      )
-      const newVersionId = "550e8400-e29b-41d4-a716-446655440001" as any
-
-      const updated = TestPatterns.Effect.expectSuccess(
-        withTestClock(original.updateCurrentVersion(newVersionId), LATER_TIME)
-      )
-
-      expect(updated.currentVersionId).toBe(newVersionId)
-      expect(updated.id).toBe(original.id)
-      expect(updated.isModified).toBe(true)
-    })
+    // Removed test for updateCurrentVersion - method no longer exists
+    // Current version is now managed via document_versions table
 
     it("should fail rename with invalid title length", () => {
       const original = TestPatterns.Effect.expectSuccess(
@@ -402,7 +390,7 @@ describe("DocumentEntity", () => {
       expect(recreated.id).toBe(original.id)
       expect(recreated.title).toBe(original.title)
       expect(recreated.ownerId).toBe(original.ownerId)
-      expect(recreated.currentVersionId).toBe(original.currentVersionId)
+      // currentVersionId removed - no longer part of document entity
       expect(recreated.descriptionOrEmpty).toBe(original.descriptionOrEmpty)
       expect(recreated.tagsOrEmpty).toEqual(original.tagsOrEmpty)
       expect(recreated.createdAt.getTime()).toBe(original.createdAt.getTime())

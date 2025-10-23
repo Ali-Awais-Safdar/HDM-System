@@ -10,9 +10,10 @@ import {
   DocumentValidationError,
 } from "@domain/document/document.error"
 import { BusinessRuleViolationError, DomainError, ValidationError } from "@domain/utils/base.errors"
-import { DocumentId, DocumentVersionId, UserId } from "@domain/refined/ids"
+import { DocumentId, UserId } from "@domain/refined/ids"
 import { UserRepository } from "@domain/user/user.repository"
 import { UserNotFoundError } from "@domain/user/user.error"
+import { DatabaseError } from "@domain/utils/base.errors"
 
 export type DocumentServiceErrorCode = 
   | "ACCESS_DENIED" 
@@ -41,12 +42,11 @@ export class DocumentService {
   createDocument(
     ownerId: UserId,
     title: string,
-    currentVersionId: DocumentVersionId,
     description?: string | null,
     tags?: string[] | null
   ): Effect.Effect<
     DocumentEntity,
-    DocumentValidationError | ValidationError,
+    DocumentValidationError | ValidationError | DatabaseError,
     Clock.Clock
   > {
     const now = ClockService.now()
@@ -56,9 +56,9 @@ export class DocumentService {
       title,
       description: description ?? null,
       tags: tags ?? null,
-      currentVersionId,
-      createdAt: now,
-      updatedAt: Option.none()
+      // currentVersionId removed - versions managed separately
+      createdAt: now.toISOString(),
+      updatedAt: null
     }
 
     return DocumentEntity.create(documentInput).pipe(
@@ -72,7 +72,7 @@ export class DocumentService {
     userPolicies: readonly AccessPolicyEntity[]
   ): Effect.Effect<
     DocumentEntity,
-    DocumentNotFoundError | DocumentServiceError | ValidationError | UserNotFoundError
+    DocumentNotFoundError | DocumentServiceError | ValidationError | UserNotFoundError | DatabaseError
   > {
     return Effect.all([
       this.documentRepository.findById(documentId),
@@ -121,7 +121,7 @@ export class DocumentService {
     }
   ): Effect.Effect<
     DocumentEntity,
-    DocumentNotFoundError | DocumentServiceError | DocumentValidationError | ValidationError | BusinessRuleViolationError | UserNotFoundError,
+    DocumentNotFoundError | DocumentServiceError | DocumentValidationError | ValidationError | BusinessRuleViolationError | UserNotFoundError | DatabaseError,
     Clock.Clock
   > {
     return Effect.all([
