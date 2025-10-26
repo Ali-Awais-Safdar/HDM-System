@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest"
+import { Option } from "effect"
 import { setupSharedTestDatabase, cleanupSharedTestDatabase, clearTestDatabase } from "../setup/test-database"
 import { seedUser, seedDocument, seedDocumentWithOwnerAndVersion } from "../setup/seed-helpers"
 import { expectAsyncSuccess, expectSome, expectNone } from "../../utils/test.helpers"
@@ -7,6 +8,7 @@ import { generateDocument, createDocumentWithTags } from "../../domain/factories
 import { DocumentDrizzleRepository } from "@infra/repositories/document.repository"
 import { calculateTotalPages } from "@domain/utils/pagination"
 import { DocumentEntity } from "@domain/document/document.entity"
+import { DocumentPublishStatus } from "@domain/document/document-publish-status.vo"
 
 describe("DocumentDrizzleRepository Integration", () => {
   let testDb: Awaited<ReturnType<typeof setupSharedTestDatabase>>
@@ -82,6 +84,40 @@ describe("DocumentDrizzleRepository Integration", () => {
       expect(saved.descriptionOrEmpty).toBe("A document with tags")
       expect(saved.tagsOrEmpty).toEqual(["important", "draft", "review"])
     })
+
+    it("should insert a document with publish status and notes", async () => {
+      const owner = await seedUser(testDb.db)
+      const documentData = generateDocument({
+        ownerId: owner.id,
+        title: "Published Document",
+        description: "A published document",
+        publishStatus: "published",
+        publishNotes: "Ready for public consumption",
+      })
+
+      const document = DocumentEntity.create(documentData)
+      const documentEntity = await expectAsyncSuccess(
+        withTestClock(document, Date.now())
+      )
+
+      const saved = await expectAsyncSuccess(
+        withTestClock(documentRepo.save(documentEntity), Date.now())
+      )
+
+      expect(saved.title).toBe("Published Document")
+      expect(saved.publishStatus).toBe("published")
+      expect(saved.publishNotesOrEmpty).toBe("Ready for public consumption")
+      expect(saved.isPublished).toBe(true)
+      expect(saved.hasPublishNotesValue).toBe(true)
+
+      // Verify persistence by reading back from database
+      const foundOption = await expectAsyncSuccess(documentRepo.findById(documentEntity.id))
+      const found = expectSome(foundOption)
+
+      expect(found.publishStatus).toBe("published")
+      expect(found.publishNotesOrEmpty).toBe("Ready for public consumption")
+      expect(found.isPublished).toBe(true)
+    })
   })
 
   describe("save - update", () => {
@@ -108,6 +144,42 @@ describe("DocumentDrizzleRepository Integration", () => {
       const foundOption = await expectAsyncSuccess(documentRepo.findById(document.id))
       const found = expectSome(foundOption)
       expect(found.title).toBe("Updated Document Title")
+    })
+
+    it("should update document publish status and notes", async () => {
+      const { document } = await seedDocumentWithOwnerAndVersion(testDb.db)
+
+      // Update publish status to published
+      const updatedStatus = await expectAsyncSuccess(
+        withTestClock(
+          document.updatePublishStatus("published" as DocumentPublishStatus),
+          Date.now()
+        )
+      )
+
+      // Update publish notes
+      const updatedWithNotes = await expectAsyncSuccess(
+        withTestClock(
+          updatedStatus.updatePublishNotes(Option.some("Document is now published")),
+          Date.now()
+        )
+      )
+
+      // Save the updated document
+      const saved = await expectAsyncSuccess(
+        withTestClock(documentRepo.save(updatedWithNotes), Date.now())
+      )
+
+      expect(saved.publishStatus).toBe("published")
+      expect(saved.publishNotesOrEmpty).toBe("Document is now published")
+      expect(saved.isPublished).toBe(true)
+
+      // Verify the update persisted
+      const foundOption = await expectAsyncSuccess(documentRepo.findById(document.id))
+      const found = expectSome(foundOption)
+      expect(found.publishStatus).toBe("published")
+      expect(found.publishNotesOrEmpty).toBe("Document is now published")
+      expect(found.isPublished).toBe(true)
     })
   })
 
@@ -281,6 +353,89 @@ describe("DocumentDrizzleRepository Integration", () => {
 
       expect(results.data).toHaveLength(1)
       expect(results.data[0]?.title).toBe("React Components")
+    })
+
+    it("should search documents by publish status", async () => {
+      const owner = await seedUser(testDb.db)
+
+      // Create documents with different publish statuses
+      await seedDocument(testDb.db, {
+        ownerId: owner.id,
+        title: "Draft Document",
+        publishStatus: "draft",
+      })
+      await seedDocument(testDb.db, {
+        ownerId: owner.id,
+        title: "Published Document",
+        publishStatus: "published",
+      })
+      await seedDocument(testDb.db, {
+        ownerId: owner.id,
+        title: "Unpublished Document",
+        publishStatus: "unpublished",
+      })
+
+      // Search for published documents
+      const publishedResults = await expectAsyncSuccess(
+        documentRepo.search({
+          publishStatus: "published",
+          ownerId: owner.id,
+        })
+      )
+
+      expect(publishedResults.data).toHaveLength(1)
+      expect(publishedResults.data[0]?.title).toBe("Published Document")
+
+      // Search for draft documents
+      const draftResults = await expectAsyncSuccess(
+        documentRepo.search({
+          publishStatus: "draft",
+          ownerId: owner.id,
+        })
+      )
+
+      expect(draftResults.data).toHaveLength(1)
+      expect(draftResults.data[0]?.title).toBe("Draft Document")
+    })
+
+    it("should combine publish status with other filters", async () => {
+      const owner = await seedUser(testDb.db)
+
+      // Create documents with different combinations
+      await seedDocument(testDb.db, {
+        ownerId: owner.id,
+        title: "Published React Guide",
+        description: "Complete React tutorial",
+        tags: ["frontend", "react"],
+        publishStatus: "published",
+      })
+      await seedDocument(testDb.db, {
+        ownerId: owner.id,
+        title: "Draft React Guide",
+        description: "Work in progress React tutorial",
+        tags: ["frontend", "react"],
+        publishStatus: "draft",
+      })
+      await seedDocument(testDb.db, {
+        ownerId: owner.id,
+        title: "Published Vue Guide",
+        description: "Complete Vue tutorial",
+        tags: ["frontend", "vue"],
+        publishStatus: "published",
+      })
+
+      // Search for published React documents
+      const results = await expectAsyncSuccess(
+        documentRepo.search({
+          query: "React",
+          tags: ["frontend"],
+          publishStatus: "published",
+          ownerId: owner.id,
+        })
+      )
+
+      expect(results.data).toHaveLength(1)
+      expect(results.data[0]?.title).toBe("Published React Guide")
     })
 
     it("should handle pagination correctly", async () => {

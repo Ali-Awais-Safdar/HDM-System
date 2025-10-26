@@ -140,6 +140,34 @@ export class DocumentVersionDrizzleRepository extends DocumentVersionRepository 
     )
   }
 
+  findByDocumentIdAndChecksum(
+    documentId: DocumentId,
+    checksum: string
+  ): E.Effect<O.Option<DocumentVersionEntity>, DocumentVersionNotFoundError | ValidationError | DatabaseError, never> {
+    return pipe(
+      fetchSingle(
+        () => this.db
+          .select()
+          .from(documentVersions)
+          .where(
+            and(
+              eq(documentVersions.documentId, documentId),
+              eq(documentVersions.checksum, checksum)
+            )
+          )
+          .limit(1),
+        DocumentVersionMapper.fromDb,
+        "DocumentVersion",
+        DocumentVersionNotFoundError
+      ),
+      E.mapError((error): DocumentVersionNotFoundError | ValidationError | DatabaseError =>
+        error instanceof DocumentVersionValidationError
+          ? new ValidationError(error.message, error.field, error.value)
+          : error
+      )
+    )
+  }
+
   exists(
     id: DocumentVersionId
   ): E.Effect<boolean, DatabaseError, never> {

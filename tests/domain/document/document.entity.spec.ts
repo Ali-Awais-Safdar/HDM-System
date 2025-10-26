@@ -4,7 +4,8 @@ import * as fc from "fast-check"
 import { DocumentEntity } from "@domain/document/document.entity"
 import { DocumentValidationError } from "@domain/document/document.error"
 import { BusinessRuleViolationError } from "@domain/utils/base.errors"
-import { generateDocument } from "../factories/document.factory"
+import { DocumentPublishStatus } from "@domain/document/document-publish-status.vo"
+import { generateDocument, createPublishedDocument, createUnpublishedDocument, createDraftDocument } from "../factories/document.factory"
 import { TestPatterns } from "../../utils/test-patterns"
 import { withTestClock } from "../setup/test-clock"
 
@@ -394,6 +395,116 @@ describe("DocumentEntity", () => {
       expect(recreated.descriptionOrEmpty).toBe(original.descriptionOrEmpty)
       expect(recreated.tagsOrEmpty).toEqual(original.tagsOrEmpty)
       expect(recreated.createdAt.getTime()).toBe(original.createdAt.getTime())
+    })
+  })
+
+  describe("Publish Status and Notes", () => {
+    it("should create document with default publish status", () => {
+      const document = TestPatterns.Effect.expectSuccess(
+        withTestClock(DocumentEntity.create(generateDocument()), Date.now())
+      )
+
+      expect(document.publishStatus).toBe("draft")
+      expect(document.isDraft).toBe(true)
+      expect(document.isPublished).toBe(false)
+      expect(document.isUnpublished).toBe(false)
+      expect(document.hasPublishNotesValue).toBe(false)
+      expect(document.publishNotesOrEmpty).toBe("")
+    })
+
+    it("should create published document with notes", () => {
+      const document = TestPatterns.Effect.expectSuccess(
+        withTestClock(DocumentEntity.create(createPublishedDocument()), Date.now())
+      )
+
+      expect(document.publishStatus).toBe("published")
+      expect(document.isPublished).toBe(true)
+      expect(document.isDraft).toBe(false)
+      expect(document.isUnpublished).toBe(false)
+      expect(document.hasPublishNotesValue).toBe(true)
+      expect(document.publishNotesOrEmpty).toBe("Published for review")
+    })
+
+    it("should create unpublished document with notes", () => {
+      const document = TestPatterns.Effect.expectSuccess(
+        withTestClock(DocumentEntity.create(createUnpublishedDocument()), Date.now())
+      )
+
+      expect(document.publishStatus).toBe("unpublished")
+      expect(document.isUnpublished).toBe(true)
+      expect(document.isPublished).toBe(false)
+      expect(document.isDraft).toBe(false)
+      expect(document.hasPublishNotesValue).toBe(true)
+      expect(document.publishNotesOrEmpty).toBe("Unpublished due to issues")
+    })
+
+    it("should update publish status", () => {
+      const original = TestPatterns.Effect.expectSuccess(
+        withTestClock(DocumentEntity.create(createDraftDocument()), Date.now())
+      )
+
+      const updated = TestPatterns.Effect.expectSuccess(
+        withTestClock(original.updatePublishStatus("published" as DocumentPublishStatus), Date.now())
+      )
+
+      expect(updated.publishStatus).toBe("published")
+      expect(updated.isPublished).toBe(true)
+      expect(updated.isDraft).toBe(false)
+      expect(updated.id).toBe(original.id)
+      expect(updated.isModified).toBe(true)
+    })
+
+    it("should update publish notes", () => {
+      const original = TestPatterns.Effect.expectSuccess(
+        withTestClock(DocumentEntity.create(createDraftDocument()), Date.now())
+      )
+
+      const updated = TestPatterns.Effect.expectSuccess(
+        withTestClock(original.updatePublishNotes(Option.some("Updated notes")), Date.now())
+      )
+
+      expect(updated.hasPublishNotesValue).toBe(true)
+      expect(updated.publishNotesOrEmpty).toBe("Updated notes")
+      expect(updated.id).toBe(original.id)
+      expect(updated.isModified).toBe(true)
+    })
+
+    it("should clear publish notes", () => {
+      const original = TestPatterns.Effect.expectSuccess(
+        withTestClock(DocumentEntity.create(createPublishedDocument()), Date.now())
+      )
+
+      const updated = TestPatterns.Effect.expectSuccess(
+        withTestClock(original.updatePublishNotes(Option.none()), Date.now())
+      )
+
+      expect(updated.hasPublishNotesValue).toBe(false)
+      expect(updated.publishNotesOrEmpty).toBe("")
+      expect(updated.id).toBe(original.id)
+      expect(updated.isModified).toBe(true)
+    })
+
+    it("should fail with invalid publish status", () => {
+      const data = generateDocument({ publishStatus: "invalid" as any })
+
+      const error = TestPatterns.Effect.expectFailure(
+        withTestClock(DocumentEntity.create(data), Date.now()),
+        DocumentValidationError
+      )
+
+      expect(error).toBeInstanceOf(DocumentValidationError)
+      expect(error.field).toBe("document")
+    })
+
+    it("should fail with publish notes exceeding 1000 characters", () => {
+      const data = generateDocument({ publishNotes: "x".repeat(1001) })
+
+      const error = TestPatterns.Effect.expectFailure(
+        withTestClock(DocumentEntity.create(data), Date.now()),
+        DocumentValidationError
+      )
+
+      expect(error).toBeInstanceOf(DocumentValidationError)
     })
   })
 })

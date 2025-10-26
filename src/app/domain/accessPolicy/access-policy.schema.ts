@@ -31,17 +31,21 @@ export const PermissionLevelSchema = S.Union(
 )
 export type PermissionLevel = S.Schema.Type<typeof PermissionLevelSchema>
 
+export const AccessPolicyStruct = S.Struct({
+  resourceType: S.Literal("document"),
+  resourceId: DocumentId,
+  subjectType: SubjectTypeSchema,
+  subjectId: Optional(UserId),
+  role: Optional(RoleSchema),
+  actions: S.Array(PermissionActionSchema),
+  effect: S.Literal("allow")
+})
+
+export const AccessPolicyFields = AccessPolicyStruct.fields
+
 export const AccessPolicySchema = S.extend(
   BaseEntitySchema(AccessPolicyId),
-  S.Struct({
-    resourceType: S.Literal("document"),
-    resourceId: DocumentId,
-    subjectType: SubjectTypeSchema,
-    subjectId: Optional(UserId),
-    role: Optional(RoleSchema),
-    actions: S.Array(PermissionActionSchema),
-    effect: S.Literal("allow")
-  })
+  AccessPolicyStruct
 )
 export type AccessPolicy = S.Schema.Type<typeof AccessPolicySchema>
 export type AccessPolicyArray = ReadonlyArray<AccessPolicy>

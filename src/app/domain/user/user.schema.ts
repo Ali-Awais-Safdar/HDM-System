@@ -7,13 +7,17 @@ import { EmailAddress } from "@domain/refined/email"
 import { HashedPassword } from "@domain/refined/hashed-password"
 import { UserId, WorkspaceId } from "@domain/refined/ids"
 
+export const UserStruct = S.Struct({
+  email: EmailAddress,
+  passwordHash: HashedPassword,
+  roles: S.Array(RoleSchema).pipe(UserGuards.ValidRoles),
+  workspaceId: Optional(WorkspaceId)
+})
+
+export const UserFields = UserStruct.fields
+
 export const UserSchema = S.extend(
   BaseEntitySchema(UserId),
-  S.Struct({
-    email: EmailAddress,
-    passwordHash: HashedPassword,
-    roles: S.Array(RoleSchema).pipe(UserGuards.ValidRoles),
-    workspaceId: Optional(WorkspaceId)
-  })
+  UserStruct
 )
 export type User = S.Schema.Type<typeof UserSchema>

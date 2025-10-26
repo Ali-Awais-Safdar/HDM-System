@@ -15,6 +15,8 @@ export const toDb = (
       title: serialized.title,
       description: serialized.description ?? null,
       tags: (serialized.tags ?? null) as string[] | null,
+      publishStatus: serialized.publishStatus,
+      publishNotes: serialized.publishNotes ?? null,
       createdAt: new Date(serialized.createdAt),
       updatedAt: serialized.updatedAt ? new Date(serialized.updatedAt) : null
     }
@@ -40,6 +42,8 @@ export const fromDb = (
     title: row.title,
     description: row.description ?? null,
     tags: row.tags ?? null,
+    publishStatus: row.publishStatus as "draft" | "published" | "unpublished",
+    publishNotes: row.publishNotes ?? null,
     createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt,
     updatedAt: row.updatedAt 
       ? (row.updatedAt instanceof Date ? row.updatedAt.toISOString() : row.updatedAt)

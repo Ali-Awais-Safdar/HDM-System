@@ -68,11 +68,14 @@ export class DocumentDrizzleRepository extends DocumentRepository {
   // ========== Pure Helper Functions ==========
 
   private buildSearchConditions(filters: DocumentSearchFilters): SQL[] {
-    const { query, ownerId, tags } = filters
+    const { query, ownerId, tags, publishStatus } = filters
     
     return [
       // Owner filter
       ownerId ? eq(documents.ownerId, ownerId) : undefined,
+      
+      // Publish status filter
+      publishStatus ? eq(documents.publishStatus, publishStatus) : undefined,
       
       // Declarative regex-based text search (searches title and description)
       query && query.trim().length > 0

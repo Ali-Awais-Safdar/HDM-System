@@ -37,4 +37,13 @@ export abstract class DocumentVersionRepository extends BaseRepository<
   abstract getNextVersionNumber(
     documentId: DocumentId
   ): Effect.Effect<number, DocumentVersionNotFoundError | DatabaseError>
+
+  /**
+   * Find document version by document ID and file checksum (for idempotency)
+   * Avoids full table scans by querying with both documentId and checksum
+   */
+  abstract findByDocumentIdAndChecksum(
+    documentId: DocumentId,
+    checksum: string
+  ): Effect.Effect<Option.Option<DocumentVersionEntity>, DocumentVersionNotFoundError | ValidationError | DatabaseError>
 }

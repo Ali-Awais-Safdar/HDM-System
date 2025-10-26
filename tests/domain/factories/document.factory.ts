@@ -14,6 +14,8 @@ const deterministicDefaults = (): EncodedDocument => {
     title: `Document ${faker.string.alphanumeric(8)}`,
     description: undefined,
     tags: undefined,
+    publishStatus: "draft" as const,
+    publishNotes: undefined,
     createdAt: FIXED_CREATED_AT.toISOString(),
     updatedAt: undefined,
   } as EncodedDocument
@@ -37,6 +39,36 @@ export const createDocumentWithoutTags = (
   overrides: Partial<EncodedDocument> = {}
 ): EncodedDocument => {
   return generateDocument({ tags: undefined, ...overrides })
+}
+
+export const createPublishedDocument = (
+  overrides: Partial<EncodedDocument> = {}
+): EncodedDocument => {
+  return generateDocument({ 
+    publishStatus: "published" as const,
+    publishNotes: "Published for review",
+    ...overrides 
+  })
+}
+
+export const createUnpublishedDocument = (
+  overrides: Partial<EncodedDocument> = {}
+): EncodedDocument => {
+  return generateDocument({ 
+    publishStatus: "unpublished" as const,
+    publishNotes: "Unpublished due to issues",
+    ...overrides 
+  })
+}
+
+export const createDraftDocument = (
+  overrides: Partial<EncodedDocument> = {}
+): EncodedDocument => {
+  return generateDocument({ 
+    publishStatus: "draft" as const,
+    publishNotes: undefined,
+    ...overrides 
+  })
 }
 
 

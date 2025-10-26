@@ -7,6 +7,8 @@ import { DocumentValidationError } from "@domain/document/document.error"
 import { DocumentId, UserId } from "@domain/refined/ids"
 import { DocumentTitle } from "@domain/document/document-title.vo"
 import { DocumentDescription } from "@domain/document/document-description.vo"
+import { DocumentPublishStatus } from "@domain/document/document-publish-status.vo"
+import { DocumentPublishNotes } from "@domain/document/document-publish-notes.vo"
 import { getCurrentTime } from "@domain/utils/audit-trail"
 import { applyMutationWithTimestamp, serializeWith } from "@domain/utils/schema-transform"
 
@@ -19,6 +21,8 @@ export class DocumentEntity {
   readonly title!: DocumentTitle
   readonly description!: Option.Option<DocumentDescription>
   readonly tags!: Option.Option<readonly string[]>
+  readonly publishStatus!: DocumentPublishStatus
+  readonly publishNotes!: Option.Option<DocumentPublishNotes>
   readonly createdAt!: Date
   readonly updatedAt!: Option.Option<Date>
 
@@ -52,6 +56,8 @@ export class DocumentEntity {
     this.title = data.title
     this.description = data.description
     this.tags = data.tags
+    this.publishStatus = data.publishStatus
+    this.publishNotes = data.publishNotes
   }
 
   serialized(): Effect.Effect<SerializedDocument, ParseResult.ParseError, never> {
@@ -85,6 +91,29 @@ export class DocumentEntity {
 
   get tagsOrEmpty(): readonly string[] {
     return Option.getOrElse(this.tags, () => [])
+  }
+
+  get hasPublishNotesValue(): boolean {
+    return Option.isSome(this.publishNotes)
+  }
+
+  get publishNotesOrEmpty(): string {
+    return Option.match(this.publishNotes, {
+      onNone: () => "",
+      onSome: (notes) => notes ?? ""
+    })
+  }
+
+  get isPublished(): boolean {
+    return this.publishStatus === "published"
+  }
+
+  get isDraft(): boolean {
+    return this.publishStatus === "draft"
+  }
+
+  get isUnpublished(): boolean {
+    return this.publishStatus === "unpublished"
   }
 
   rename(
@@ -207,5 +236,43 @@ export class DocumentEntity {
           "tags",
           tagsToRemove
         ))
+  }
+
+  updatePublishStatus(
+    newStatus: DocumentPublishStatus
+  ): Effect.Effect<DocumentEntity, DocumentValidationError, Clock.Clock> {
+    return applyMutationWithTimestamp(
+      DocumentSchema,
+      this as unknown,
+      (_now) => ({ publishStatus: newStatus } as any),
+      (error) => new DocumentValidationError(
+        `Failed to prepare document for publish status update: ${formatParseError(error as ParseResult.ParseError)}`,
+        "publishStatus",
+        newStatus
+      ),
+      (input) => DocumentEntity.create(input)
+    )
+  }
+
+  updatePublishNotes(
+    newNotes: Option.Option<string>
+  ): Effect.Effect<DocumentEntity, DocumentValidationError, Clock.Clock> {
+    // Convert Option<string> to external representation for schema validation
+    const externalNotes = Option.match(newNotes, {
+      onNone: () => undefined,
+      onSome: (notes) => notes
+    })
+
+    return applyMutationWithTimestamp(
+      DocumentSchema,
+      this as unknown,
+      (_now) => ({ publishNotes: externalNotes } as any),
+      (error) => new DocumentValidationError(
+        `Failed to prepare document for publish notes update: ${formatParseError(error as ParseResult.ParseError)}`,
+        "publishNotes",
+        newNotes
+      ),
+      (input) => DocumentEntity.create(input)
+    )
   }
 }

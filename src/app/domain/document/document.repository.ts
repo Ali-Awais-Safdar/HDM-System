@@ -13,6 +13,7 @@ export interface DocumentSearchFilters {
   readonly query?: string
   readonly tags?: readonly string[]
   readonly ownerId?: UserId
+  readonly publishStatus?: "draft" | "published" | "unpublished"
   readonly paginationOptions?: PaginationOptions
 }
 

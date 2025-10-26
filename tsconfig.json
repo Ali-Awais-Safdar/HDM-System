@@ -20,6 +20,9 @@
     "forceConsistentCasingInFileNames": true,
     "esModuleInterop": true,
     "downlevelIteration": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "useDefineForClassFields": false,
     "baseUrl": "./src",
     "paths": {
       "@/*": ["*"],
