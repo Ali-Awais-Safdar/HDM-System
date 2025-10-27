@@ -55,7 +55,6 @@ import {
   ensurePermission,
   serializeDocument,
   serializeDocumentSummary,
-  loadBatchActorAccessContext,
   getEffectivePermissionLevel,
   mapDocumentDomainError,
   mapDocumentPersistenceError,
@@ -122,9 +121,10 @@ export class DocumentWorkflow {
                 { originalError: error, generatedId: generatedIdString }
               )),
               Effect.flatMap((validatedId) => {
-                // 5. Build SerializedDocument with validated ID and timestamp
+                // 5. Build SerializedDocument with validated ID, workspaceId, and timestamp
                 const documentData: Partial<SerializedDocument> = {
                   id: validatedId,
+                  workspaceId: dto.workspaceId,
                   ownerId: dto.ownerId,
                   title: dto.title,
                   description: optionToUndefined(dto.description),
@@ -161,10 +161,10 @@ export class DocumentWorkflow {
       // 1. Decode DTO using schema validation
       S.decodeUnknown(UpdateDocumentCommandSchema)(input),
       Effect.flatMap((dto) => 
-        // 2. Load actor and document in parallel
+        // 2. Load actor and document in parallel (with workspace validation)
         Effect.all([
           loadActor(this.userRepository, dto.actorId),
-          loadDocument(this.documentRepository, dto.id)
+          loadDocument(this.documentRepository, dto.id, dto.workspaceId)
         ]).pipe(
           Effect.flatMap(([actor, document]) =>
             // 3. Check write permission
@@ -241,10 +241,10 @@ export class DocumentWorkflow {
       // 1. Decode DTO using schema validation
       S.decodeUnknown(PublishDocumentCommandSchema)(input),
       Effect.flatMap((dto) => 
-        // 2. Load actor and document
+        // 2. Load actor and document (with workspace validation)
         Effect.all([
           loadActor(this.userRepository, dto.actorId),
-          loadDocument(this.documentRepository, dto.documentId)
+          loadDocument(this.documentRepository, dto.documentId, dto.workspaceId)
         ]).pipe(
           Effect.flatMap(([actor, document]) =>
             // 3. Check admin access using ensurePermission helper
@@ -367,6 +367,7 @@ export class DocumentWorkflow {
         collaboratorPolicies,
         (policy) => 
           this.accessPolicyWorkflow.updatePolicyActions({
+            workspaceId: document.workspaceId,
             policyId: policy.id,
             actions: ["read"],
             actorId: document.ownerId // Owner is performing the update
@@ -402,10 +403,10 @@ export class DocumentWorkflow {
       // 1. Decode DTO using schema validation
       S.decodeUnknown(GetDocumentQuerySchema)(input),
       Effect.flatMap((dto) =>
-        // 2. Load actor and document
+        // 2. Load actor and document (with workspace validation)
         Effect.all([
           loadActor(this.userRepository, dto.actorId),
-          loadDocument(this.documentRepository, dto.documentId)
+          loadDocument(this.documentRepository, dto.documentId, dto.workspaceId)
         ]).pipe(
           Effect.flatMap(([actor, document]) =>
             // 3. Check read permission
@@ -441,65 +442,42 @@ export class DocumentWorkflow {
       // 1. Decode DTO using schema validation
       S.decodeUnknown(ListDocumentsQuerySchema)(input),
       Effect.flatMap((dto) =>
-        // 2. Load actor using actorId from DTO
+        // 2. Validate actor exists
         loadActor(this.userRepository, dto.actorId).pipe(
-          Effect.flatMap((actor) => {
-            // 3. Build search filters with caller-provided pagination
+          Effect.flatMap(() => {
+            // 3. Build search filters with workspace, caller-provided pagination, and actor context
             const pageNum = dto.pageNum || 1
             const pageSize = dto.pageSize || 10
             const searchFilters: DocumentSearchFilters = {
+              workspaceId: dto.workspaceId,
               ...(dto.search && { query: dto.search }),
               ...(Option.isSome(dto.tags) && { tags: Option.getOrElse(dto.tags, () => []) }),
               ...(dto.ownerId && { ownerId: dto.ownerId }),
+              actorId: dto.actorId, // Pass actor context for repository-level permission filtering
               paginationOptions: {
                 pageNum,
                 pageSize
               }
             }
 
-            // 4. Search documents with repository-provided pagination
+            // 4. Search documents with repository-level permission filtering
             return this.documentRepository.search(searchFilters).pipe(
               Effect.mapError(mapDocumentPersistenceError("search")),
               Effect.flatMap((paginatedResults) => {
-                // 5. Batch load access policies for all documents in the page
-                return loadBatchActorAccessContext(this.accessPolicyRepository, actor, paginatedResults.data).pipe(
-                  Effect.flatMap((policyMap) => {
-                    // 6. Filter documents using pre-fetched policies - inside Effect chain
-                    return pipe(
-                      Effect.forEach(
-                        paginatedResults.data,
-                        (document) => {
-                          const policies = policyMap.get(document.id) || []
-                          return DocumentAccessService.hasAccess(actor, document, policies, "read").pipe(
-                            Effect.map((hasAccess) => ({ document, hasAccess }))
-                          )
-                        },
-                        { concurrency: "unbounded" }
-                      ),
-                      Effect.map((results) => 
-                        results
-                          .filter((result) => result.hasAccess)
-                          .map((result) => result.document)
-                      ),
-                      Effect.flatMap((filteredDocuments) => {
-                        // 7. Serialize filtered documents directly without re-slicing
-                        return pipe(
-                          Effect.forEach(
-                            filteredDocuments,
-                            serializeDocumentSummary,
-                            { concurrency: "unbounded" }
-                          ),
-                          Effect.map((serializedData) => ({
-                            data: serializedData,
-                            total: paginatedResults.total,
-                            pageNum: paginatedResults.pageNum,
-                            pageSize: paginatedResults.pageSize,
-                            totalPages: paginatedResults.totalPages
-                          }))
-                        )
-                      })
-                    )
-                  })
+                // 5. Serialize accessible documents (already filtered by repository)
+                return pipe(
+                  Effect.forEach(
+                    paginatedResults.data,
+                    serializeDocumentSummary,
+                    { concurrency: "unbounded" }
+                  ),
+                  Effect.map((serializedData) => ({
+                    data: serializedData,
+                    total: paginatedResults.total,
+                    pageNum: paginatedResults.pageNum,
+                    pageSize: paginatedResults.pageSize,
+                    totalPages: paginatedResults.totalPages
+                  }))
                 )
               })
             )
@@ -557,10 +535,10 @@ export class DocumentWorkflow {
       // 1. Decode DTO using schema validation
       S.decodeUnknown(DeleteDocumentCommandSchema)(input),
       Effect.flatMap((dto) =>
-        // 2. Load actor and document in parallel
+        // 2. Load actor and document in parallel (with workspace validation)
         Effect.all([
           loadActor(this.userRepository, dto.actorId),
-          loadDocument(this.documentRepository, dto.id)
+          loadDocument(this.documentRepository, dto.id, dto.workspaceId)
         ]).pipe(
           Effect.flatMap(([actor, document]) =>
             // 3. Check admin permission
@@ -604,10 +582,10 @@ export class DocumentWorkflow {
       // 1. Decode query DTO using schema validation
       S.decodeUnknown(GetDocumentAccessQuerySchema)(input),
       Effect.flatMap((dto) =>
-        // 2. Load actor and document
+        // 2. Load actor and document (with workspace validation)
         Effect.all([
           loadActor(this.userRepository, dto.actorId),
-          loadDocument(this.documentRepository, dto.documentId)
+          loadDocument(this.documentRepository, dto.documentId, dto.workspaceId)
         ]).pipe(
           Effect.flatMap(([actor, document]) =>
             // 3. Load actor access context (policies)

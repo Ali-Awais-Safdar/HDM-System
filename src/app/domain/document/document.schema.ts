@@ -1,6 +1,6 @@
 import { Schema as S } from "effect"
 import { Optional } from "@domain/utils/schema.utils"
-import { DocumentId, UserId } from "@domain/refined/ids"
+import { DocumentId, UserId, WorkspaceId } from "@domain/refined/ids"
 import { BaseEntitySchema } from "@domain/utils/schema.base"
 import { DocumentTitle } from "@domain/document/document-title.vo"
 import { DocumentDescription } from "@domain/document/document-description.vo"
@@ -9,6 +9,7 @@ import { DocumentPublishStatus } from "@domain/document/document-publish-status.
 import { DocumentPublishNotes } from "@domain/document/document-publish-notes.vo"
 
 export const DocumentStruct = S.Struct({
+  workspaceId: WorkspaceId,
   ownerId: UserId,
   title: DocumentTitle,
   description: Optional(DocumentDescription),

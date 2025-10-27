@@ -5,10 +5,13 @@ import { seedUser, seedDocument, seedDocumentWithOwnerAndVersion } from "../setu
 import { expectAsyncSuccess, expectSome, expectNone } from "../../utils/test.helpers"
 import { withTestClock } from "../../domain/setup/test-clock"
 import { generateDocument, createDocumentWithTags } from "../../domain/factories/document.factory"
+import { TEST_WORKSPACE_ID } from "../../application/fixtures/actors"
 import { DocumentDrizzleRepository } from "@infra/repositories/document.repository"
 import { calculateTotalPages } from "@domain/utils/pagination"
 import { DocumentEntity } from "@domain/document/document.entity"
 import { DocumentPublishStatus } from "@domain/document/document-publish-status.vo"
+import { container } from "tsyringe"
+import { TOKENS } from "@infra/di/container"
 
 describe("DocumentDrizzleRepository Integration", () => {
   let testDb: Awaited<ReturnType<typeof setupSharedTestDatabase>>
@@ -17,7 +20,8 @@ describe("DocumentDrizzleRepository Integration", () => {
   beforeAll(async () => {
     // Setup shared database once for the entire test file
     testDb = await setupSharedTestDatabase()
-    documentRepo = new DocumentDrizzleRepository(testDb.db)
+    container.registerInstance(TOKENS.DATABASE_CONNECTION, testDb.db)
+    documentRepo = container.resolve(TOKENS.DOCUMENT_REPOSITORY) as DocumentDrizzleRepository
   })
 
   afterAll(async () => {
@@ -206,7 +210,7 @@ describe("DocumentDrizzleRepository Integration", () => {
 
       // Find documents for owner1
       const owner1Docs = await expectAsyncSuccess(
-        documentRepo.findByOwner(owner1.id)
+        documentRepo.findByOwner(TEST_WORKSPACE_ID, owner1.id)
       )
 
       expect(owner1Docs).toHaveLength(2)
@@ -218,7 +222,7 @@ describe("DocumentDrizzleRepository Integration", () => {
       const owner = await seedUser(testDb.db)
 
       const documents = await expectAsyncSuccess(
-        documentRepo.findByOwner(owner.id)
+        documentRepo.findByOwner(TEST_WORKSPACE_ID, owner.id)
       )
 
       expect(documents).toHaveLength(0)
@@ -249,6 +253,7 @@ describe("DocumentDrizzleRepository Integration", () => {
       // Search for "JavaScript"
       const results = await expectAsyncSuccess(
         documentRepo.search({
+          workspaceId: TEST_WORKSPACE_ID,
           query: "JavaScript",
           ownerId: owner.id,
         })
@@ -275,6 +280,7 @@ describe("DocumentDrizzleRepository Integration", () => {
       // Search for "API"
       const results = await expectAsyncSuccess(
         documentRepo.search({
+          workspaceId: TEST_WORKSPACE_ID,
           query: "API",
           ownerId: owner.id,
         })
@@ -306,6 +312,7 @@ describe("DocumentDrizzleRepository Integration", () => {
       // Search for documents with "backend" tag
       const results = await expectAsyncSuccess(
         documentRepo.search({
+          workspaceId: TEST_WORKSPACE_ID,
           tags: ["backend"],
           ownerId: owner.id,
         })
@@ -345,6 +352,7 @@ describe("DocumentDrizzleRepository Integration", () => {
       // Search for "React" + "frontend" tag + owner1
       const results = await expectAsyncSuccess(
         documentRepo.search({
+          workspaceId: TEST_WORKSPACE_ID,
           query: "React",
           tags: ["frontend"],
           ownerId: owner1.id,
@@ -378,6 +386,7 @@ describe("DocumentDrizzleRepository Integration", () => {
       // Search for published documents
       const publishedResults = await expectAsyncSuccess(
         documentRepo.search({
+          workspaceId: TEST_WORKSPACE_ID,
           publishStatus: "published",
           ownerId: owner.id,
         })
@@ -389,6 +398,7 @@ describe("DocumentDrizzleRepository Integration", () => {
       // Search for draft documents
       const draftResults = await expectAsyncSuccess(
         documentRepo.search({
+          workspaceId: TEST_WORKSPACE_ID,
           publishStatus: "draft",
           ownerId: owner.id,
         })
@@ -427,6 +437,7 @@ describe("DocumentDrizzleRepository Integration", () => {
       // Search for published React documents
       const results = await expectAsyncSuccess(
         documentRepo.search({
+          workspaceId: TEST_WORKSPACE_ID,
           query: "React",
           tags: ["frontend"],
           publishStatus: "published",
@@ -452,6 +463,7 @@ describe("DocumentDrizzleRepository Integration", () => {
       // Get first page (2 items)
       const page1 = await expectAsyncSuccess(
         documentRepo.search({
+          workspaceId: TEST_WORKSPACE_ID,
           ownerId: owner.id,
           paginationOptions: { pageNum: 1, pageSize: 2 },
         })
@@ -466,6 +478,7 @@ describe("DocumentDrizzleRepository Integration", () => {
       // Get second page
       const page2 = await expectAsyncSuccess(
         documentRepo.search({
+          workspaceId: TEST_WORKSPACE_ID,
           ownerId: owner.id,
           paginationOptions: { pageNum: 2, pageSize: 2 },
         })

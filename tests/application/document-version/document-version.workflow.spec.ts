@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest"
 import { workflowTestLifecycle } from "../setup/test-harness"
 import type { WorkflowTestHarness } from "../setup/test-harness"
-import { seedTestActors } from "../fixtures/actors"
+import { seedTestActors, TEST_WORKSPACE_ID } from "../fixtures/actors"
 import { seedDocumentWithReadAccess } from "../fixtures/documents"
 import { expectAsyncSuccess } from "../../utils/test.helpers"
 import { seedDocument, seedDocumentVersion } from "../../infra/setup/seed-helpers"
@@ -41,6 +41,7 @@ describe("DocumentVersionWorkflow", () => {
 
       // List versions with pagination
       const listQuery = {
+        workspaceId: document.workspaceId,
         documentId: document.id,
         actorId: owner.id,
         pageNum: 1,
@@ -81,6 +82,7 @@ describe("DocumentVersionWorkflow", () => {
       }
 
       const listQuery = {
+        workspaceId: document.workspaceId,
         documentId: document.id,
         actorId: owner.id
       }
@@ -110,6 +112,7 @@ describe("DocumentVersionWorkflow", () => {
       }
 
       const query = {
+        workspaceId: document.workspaceId,
         documentId: document.id,
         actorId: owner.id
       }
@@ -128,6 +131,7 @@ describe("DocumentVersionWorkflow", () => {
       const document = await seedDocument(harness.db, { ownerId: owner.id })
 
       const query = {
+        workspaceId: document.workspaceId,
         documentId: document.id,
         actorId: owner.id
       }
@@ -167,6 +171,7 @@ describe("DocumentVersionWorkflow", () => {
 
       // Try to list versions as admin (no access)
       const listQuery = {
+        workspaceId: document.workspaceId,
         documentId: document.id,
         actorId: actors.admin.id
       }
@@ -197,6 +202,7 @@ describe("DocumentVersionWorkflow", () => {
 
       // Try to get latest version as admin (no access)
       const query = {
+        workspaceId: document.workspaceId,
         documentId: document.id,
         actorId: actors.admin.id
       }
@@ -218,6 +224,7 @@ describe("DocumentVersionWorkflow", () => {
       const invalidDocumentId = "00000000-0000-0000-0000-000000000000"
 
       const listQuery = {
+        workspaceId: TEST_WORKSPACE_ID,
         documentId: invalidDocumentId as any,
         actorId: owner.id,
         pageNum: 1,
@@ -249,6 +256,7 @@ describe("DocumentVersionWorkflow", () => {
       })
 
       const query = {
+        workspaceId: document.workspaceId,
         versionId: versionEntity.id,
         actorId: owner.id
       }
@@ -265,7 +273,7 @@ describe("DocumentVersionWorkflow", () => {
 
     it("should fail when retrieving version for non-authorized user", async () => {
       // Create document with read access for collaborator - this already creates a version
-      const { version } = await seedDocumentWithReadAccess(
+      const { version, document } = await seedDocumentWithReadAccess(
         harness.db,
         actors.owner,
         actors.collaborator
@@ -273,6 +281,7 @@ describe("DocumentVersionWorkflow", () => {
 
       // Try to get version as admin (no access)
       const query = {
+        workspaceId: document.workspaceId,
         versionId: version.id,
         actorId: actors.admin.id
       }

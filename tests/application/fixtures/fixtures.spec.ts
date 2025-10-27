@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest"
-import { seedTestActors, getActorId } from "./actors"
+import { seedTestActors, getActorId, TEST_WORKSPACE_ID } from "./actors"
 import { seedDocumentWithReadAccess, seedDocumentWithReadWriteAccess } from "./documents"
 import { makeInitiateUploadRequest, makeConfirmUploadRequest, makeMatchedUploadRequests } from "./uploads"
 import { workflowTestLifecycle } from "../setup/test-harness"
@@ -121,7 +121,8 @@ describe("Application Fixtures", () => {
     it("should create matched initiate/confirm requests", () => {
       const { initiate, confirm } = makeMatchedUploadRequests(
         "doc-123" as any,
-        "user-123" as any
+        "user-123" as any,
+        TEST_WORKSPACE_ID
       )
 
       expect(initiate.documentId).toBe("doc-123")

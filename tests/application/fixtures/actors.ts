@@ -2,12 +2,16 @@ import { seedUser } from "../../infra/setup/seed-helpers"
 import type { DatabaseInterface } from "@infra/db/interfaces"
 import type { UserEntity } from "@domain/user/user.entity"
 import type { EmailAddress } from "@domain/refined/email"
-import type { UserId } from "@domain/refined/ids"
+import type { UserId, WorkspaceId } from "@domain/refined/ids"
 
 // Deterministic IDs for test actors
 export const TEST_OWNER_ID = "11111111-1111-1111-1111-111111111111" as UserId
 export const TEST_ADMIN_ID = "22222222-2222-2222-2222-222222222222" as UserId
 export const TEST_COLLABORATOR_ID = "33333333-3333-3333-3333-333333333333" as UserId
+
+// Deterministic workspace ID for testing
+export const TEST_WORKSPACE_ID = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa" as WorkspaceId
+export const TEST_WORKSPACE_ID_2 = "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb" as WorkspaceId
 
 /**
  * Actor type for role-based access testing

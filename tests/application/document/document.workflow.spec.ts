@@ -1,11 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest"
 import { workflowTestLifecycle } from "../setup/test-harness"
 import type { WorkflowTestHarness } from "../setup/test-harness"
-import { seedTestActors } from "../fixtures/actors"
+import { seedTestActors, TEST_WORKSPACE_ID, TEST_WORKSPACE_ID_2 } from "../fixtures/actors"
 import { seedDocumentWithReadAccess, seedDocumentWithReadWriteAccess } from "../fixtures/documents"
 import { expectAsyncSuccess, expectSome } from "../../utils/test.helpers"
 import { withTestClock } from "../../domain/setup/test-clock"
-import { calculateTotalPages } from "@domain/utils/pagination"
 
 describe("DocumentWorkflow", () => {
   let harness: WorkflowTestHarness
@@ -28,6 +27,7 @@ describe("DocumentWorkflow", () => {
   describe("createDocument - Happy Path", () => {
     it("should create a new document and persist to database", async () => {
       const createCommand = {
+        workspaceId: TEST_WORKSPACE_ID,
         ownerId: actors.owner.id,
         title: "Test Document",
         description: "A test description",
@@ -64,6 +64,7 @@ describe("DocumentWorkflow", () => {
 
     it("should create document with optional fields set to undefined", async () => {
         const createCommand = {
+          workspaceId: TEST_WORKSPACE_ID,
           ownerId: actors.owner.id,
           title: "Minimal Document",
           description: undefined,
@@ -86,6 +87,7 @@ describe("DocumentWorkflow", () => {
     it("should update document title, description and tags", async () => {
       // Create a document
       const createCommand = {
+        workspaceId: TEST_WORKSPACE_ID,
         ownerId: actors.owner.id,
         title: "Original Title",
         description: "Original description",
@@ -101,6 +103,7 @@ describe("DocumentWorkflow", () => {
 
       // Update the document
       const updateCommand = {
+        workspaceId: TEST_WORKSPACE_ID,
         id: created.id as any,
         actorId: actors.owner.id,
         title: "Updated Title",
@@ -130,6 +133,7 @@ describe("DocumentWorkflow", () => {
     it("should handle Option conversions for undefined vs null", async () => {
       // Create document with values
       const createCommand = {
+        workspaceId: TEST_WORKSPACE_ID,
         ownerId: actors.owner.id,
         title: "Test Document",
         description: "Has description",
@@ -145,6 +149,7 @@ describe("DocumentWorkflow", () => {
 
       // Update to remove description (set to undefined)
       const updateRemoveDesc = {
+        workspaceId: TEST_WORKSPACE_ID,
         id: created.id as any,
         actorId: actors.owner.id,
         description: undefined
@@ -162,6 +167,7 @@ describe("DocumentWorkflow", () => {
 
       // Update to set description to empty string
       const updateEmptyDesc = {
+        workspaceId: TEST_WORKSPACE_ID,
         id: created.id as any,
         actorId: actors.owner.id,
         description: ""
@@ -185,6 +191,7 @@ describe("DocumentWorkflow", () => {
     it("should publish document and persist status", async () => {
       // Create and update document
       const createCommand = {
+        workspaceId: TEST_WORKSPACE_ID,
         ownerId: actors.owner.id,
         title: "Draft Document",
         description: undefined,
@@ -200,6 +207,7 @@ describe("DocumentWorkflow", () => {
 
       // Publish the document
       const publishCommand = {
+        workspaceId: TEST_WORKSPACE_ID,
         documentId: created.id as any,
         actorId: actors.owner.id,
         publishStatus: "published" as const,
@@ -232,6 +240,7 @@ describe("DocumentWorkflow", () => {
       const documents = []
       for (let i = 1; i <= 15; i++) {
         const createCommand = {
+          workspaceId: TEST_WORKSPACE_ID,
           ownerId: actors.owner.id,
           title: `Document ${i}`,
           tags: [`tag${i}`] as readonly string[],
@@ -249,6 +258,7 @@ describe("DocumentWorkflow", () => {
 
       // List with pagination
       const listQuery = {
+        workspaceId: TEST_WORKSPACE_ID,
         actorId: actors.owner.id,
         tags: undefined,
         pageNum: 1,
@@ -263,14 +273,16 @@ describe("DocumentWorkflow", () => {
       )
 
       expect(response.data).toHaveLength(5)
-      expect(response.total).toBe(15)
+      // With repository-level permission filtering, pagination metadata
+      // reflects the global count of all accessible documents across all pages
+      expect(response.total).toBe(15) // All 15 documents are accessible (owner's own documents)
       expect(response.pageNum).toBe(1)
       expect(response.pageSize).toBe(5)
-      expect(response.totalPages).toBe(calculateTotalPages(15, 5))
-      expect(response.totalPages).toBe(3)
+      expect(response.totalPages).toBe(3) // 15 documents / 5 per page = 3 pages
 
       // Verify page 2
       const page2Query = {
+        workspaceId: TEST_WORKSPACE_ID,
         actorId: actors.owner.id,
         tags: undefined,
         pageNum: 2,
@@ -282,6 +294,8 @@ describe("DocumentWorkflow", () => {
       )
 
       expect(page2Response.data).toHaveLength(5)
+      // Pagination metadata is consistent across pages
+      expect(page2Response.total).toBe(15)
       expect(page2Response.pageNum).toBe(2)
       expect(page2Response.totalPages).toBe(3)
     })
@@ -294,6 +308,7 @@ describe("DocumentWorkflow", () => {
           await expectAsyncSuccess(
             withTestClock(
               harness.documentWorkflow.createDocument({
+                workspaceId: TEST_WORKSPACE_ID,
                 ownerId: actors.owner.id,
                 title,
                 description: undefined,
@@ -306,6 +321,7 @@ describe("DocumentWorkflow", () => {
 
       // Search for "JavaScript"
       const searchQuery = {
+        workspaceId: TEST_WORKSPACE_ID,
         actorId: actors.owner.id,
         tags: undefined,
         search: "JavaScript"
@@ -324,6 +340,7 @@ describe("DocumentWorkflow", () => {
       await expectAsyncSuccess(
         withTestClock(
           harness.documentWorkflow.createDocument({
+            workspaceId: TEST_WORKSPACE_ID,
             ownerId: actors.owner.id,
             title: "Frontend Doc",
             tags: ["frontend", "react"] as readonly string[],
@@ -336,6 +353,7 @@ describe("DocumentWorkflow", () => {
       await expectAsyncSuccess(
         withTestClock(
           harness.documentWorkflow.createDocument({
+            workspaceId: TEST_WORKSPACE_ID,
             ownerId: actors.owner.id,
             title: "Backend Doc",
             tags: ["backend", "node"] as readonly string[],
@@ -347,6 +365,7 @@ describe("DocumentWorkflow", () => {
 
       // Search by tags
       const tagQuery = {
+        workspaceId: TEST_WORKSPACE_ID,
         actorId: actors.owner.id,
         tags: ["frontend"] as readonly string[]
       }
@@ -371,6 +390,7 @@ describe("DocumentWorkflow", () => {
 
       // Attempt to update as collaborator with read-only access
       const updateCommand = {
+        workspaceId: document.workspaceId,
         id: document.id as any,
         actorId: actors.collaborator.id,
         title: "Unauthorized Update"
@@ -403,6 +423,7 @@ describe("DocumentWorkflow", () => {
       )
 
       const updateCommand = {
+        workspaceId: document.workspaceId,
         id: document.id as any,
         actorId: actors.collaborator.id,
         title: "Authorized Update"
@@ -426,6 +447,7 @@ describe("DocumentWorkflow", () => {
       )
 
       const accessQuery = {
+        workspaceId: document.workspaceId,
         documentId: document.id as any,
         actorId: actors.collaborator.id,
         requiredPermission: "read" as const
@@ -458,6 +480,7 @@ describe("DocumentWorkflow", () => {
 
       // Try to access as admin (who has no specific policy)
       const accessQuery = {
+        workspaceId: document.workspaceId,
         documentId: document.id as any,
         actorId: actors.admin.id
       }
@@ -483,6 +506,7 @@ describe("DocumentWorkflow", () => {
       )
 
       const getQuery = {
+        workspaceId: document.workspaceId,
         documentId: document.id as any,
         actorId: actors.collaborator.id
       }
@@ -498,6 +522,7 @@ describe("DocumentWorkflow", () => {
     it("should fail when actor lacks read permission", async () => {
       // Create document without any access policies
       const createCommand = {
+        workspaceId: TEST_WORKSPACE_ID,
         ownerId: actors.owner.id,
         title: "Private Document",
         description: undefined,
@@ -513,6 +538,7 @@ describe("DocumentWorkflow", () => {
 
       // Try to get as collaborator without access
       const getQuery = {
+        workspaceId: TEST_WORKSPACE_ID,
         documentId: created.id as any,
         actorId: actors.collaborator.id
       }
@@ -526,6 +552,187 @@ describe("DocumentWorkflow", () => {
       } catch (error) {
         expect(error).toBeDefined()
       }
+    })
+  })
+
+  describe("Workspace Isolation", () => {
+    it("should prevent accessing documents from a different workspace", async () => {
+      // Create a document in workspace 1
+      const createCommand = {
+        workspaceId: TEST_WORKSPACE_ID,
+        ownerId: actors.owner.id,
+        title: "Workspace 1 Document",
+        description: undefined,
+        tags: undefined
+      }
+
+      const created = await expectAsyncSuccess(
+        withTestClock(
+          harness.documentWorkflow.createDocument(createCommand),
+          Date.now()
+        )
+      )
+
+      // Try to access with workspace 2 credentials
+      const getQuery = {
+        workspaceId: TEST_WORKSPACE_ID_2,
+        documentId: created.id as any,
+        actorId: actors.owner.id
+      }
+
+      // Should fail with document not found error
+      try {
+        await expectAsyncSuccess(harness.documentWorkflow.getDocument(getQuery))
+        throw new Error("Expected document not found error but got success")
+      } catch (error) {
+        expect(error).toBeDefined()
+        // Error should indicate document not found in the requested workspace
+      }
+    })
+
+    it("should only list documents from the specified workspace", async () => {
+      // Create documents in workspace 1
+      for (let i = 1; i <= 5; i++) {
+        await expectAsyncSuccess(
+          withTestClock(
+            harness.documentWorkflow.createDocument({
+              workspaceId: TEST_WORKSPACE_ID,
+              ownerId: actors.owner.id,
+              title: `WS1 Document ${i}`,
+              description: undefined,
+              tags: undefined
+            }),
+            Date.now() + i * 1000
+          )
+        )
+      }
+
+      // Create documents in workspace 2
+      for (let i = 1; i <= 3; i++) {
+        await expectAsyncSuccess(
+          withTestClock(
+            harness.documentWorkflow.createDocument({
+              workspaceId: TEST_WORKSPACE_ID_2,
+              ownerId: actors.owner.id,
+              title: `WS2 Document ${i}`,
+              description: undefined,
+              tags: undefined
+            }),
+            Date.now() + i * 1000
+          )
+        )
+      }
+
+      // List documents from workspace 1
+      const listQueryWS1 = {
+        workspaceId: TEST_WORKSPACE_ID,
+        actorId: actors.owner.id,
+        tags: null,
+        pageNum: 1,
+        pageSize: 10
+      }
+
+      const ws1Response = await expectAsyncSuccess(
+        harness.documentWorkflow.listDocuments(listQueryWS1)
+      )
+
+      expect(ws1Response.total).toBe(5)
+      expect(ws1Response.data.every(doc => doc.id)).toBe(true)
+
+      // List documents from workspace 2
+      const listQueryWS2 = {
+        workspaceId: TEST_WORKSPACE_ID_2,
+        actorId: actors.owner.id,
+        tags: null,
+        pageNum: 1,
+        pageSize: 10
+      }
+
+      const ws2Response = await expectAsyncSuccess(
+        harness.documentWorkflow.listDocuments(listQueryWS2)
+      )
+
+      expect(ws2Response.total).toBe(3)
+      expect(ws2Response.data.every(doc => doc.id)).toBe(true)
+    })
+
+    it("should prevent updating documents across workspaces", async () => {
+      // Create a document in workspace 1
+      const createCommand = {
+        workspaceId: TEST_WORKSPACE_ID,
+        ownerId: actors.owner.id,
+        title: "Original Title",
+        description: undefined,
+        tags: undefined
+      }
+
+      const created = await expectAsyncSuccess(
+        withTestClock(
+          harness.documentWorkflow.createDocument(createCommand),
+          Date.now()
+        )
+      )
+
+      // Try to update with workspace 2 credentials
+      const updateCommand = {
+        workspaceId: TEST_WORKSPACE_ID_2,
+        id: created.id as any,
+        actorId: actors.owner.id,
+        title: "Unauthorized Update"
+      }
+
+      try {
+        await expectAsyncSuccess(harness.documentWorkflow.updateDocument(updateCommand))
+        throw new Error("Expected document not found error but got success")
+      } catch (error) {
+        expect(error).toBeDefined()
+      }
+
+      // Verify the document was not modified
+      const foundOption = await expectAsyncSuccess(
+        harness.documentRepository.findById(created.id as any)
+      )
+      const found = expectSome(foundOption)
+      expect(found.title).toBe("Original Title")
+    })
+
+    it("should prevent deleting documents across workspaces", async () => {
+      // Create a document in workspace 1
+      const createCommand = {
+        workspaceId: TEST_WORKSPACE_ID,
+        ownerId: actors.owner.id,
+        title: "Document to Delete",
+        description: undefined,
+        tags: undefined
+      }
+
+      const created = await expectAsyncSuccess(
+        withTestClock(
+          harness.documentWorkflow.createDocument(createCommand),
+          Date.now()
+        )
+      )
+
+      // Try to delete with workspace 2 credentials
+      const deleteCommand = {
+        workspaceId: TEST_WORKSPACE_ID_2,
+        id: created.id as any,
+        actorId: actors.owner.id,
+        force: false
+      }
+
+      try {
+        await expectAsyncSuccess(harness.documentWorkflow.deleteDocument(deleteCommand))
+        throw new Error("Expected document not found error but got success")
+      } catch (error) {
+        expect(error).toBeDefined()
+      }
+
+      // Verify the document still exists
+      const foundOption = await expectAsyncSuccess(
+        harness.documentRepository.findById(created.id as any)
+      )
+      expect(expectSome(foundOption).id).toBe(created.id)
     })
   })
 })

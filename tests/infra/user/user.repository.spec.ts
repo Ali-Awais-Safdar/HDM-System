@@ -7,6 +7,8 @@ import { withTestClock } from "../../domain/setup/test-clock"
 import { generateUser, createUserEntity } from "../../domain/factories/user.factory"
 import { UserDrizzleRepository } from "@infra/repositories/user.repository"
 import { calculateTotalPages } from "@domain/utils/pagination"
+import { container } from "tsyringe"
+import { TOKENS } from "@infra/di/container"
 
 describe("UserDrizzleRepository Integration", () => {
   let testDb: Awaited<ReturnType<typeof setupSharedTestDatabase>>
@@ -15,7 +17,12 @@ describe("UserDrizzleRepository Integration", () => {
   beforeAll(async () => {
     // Setup shared database once for the entire test file
     testDb = await setupSharedTestDatabase()
-    userRepo = new UserDrizzleRepository(testDb.db)
+    
+    // Register test database in container
+    container.registerInstance(TOKENS.DATABASE_CONNECTION, testDb.db)
+    
+    // Resolve repository from container
+    userRepo = container.resolve(TOKENS.USER_REPOSITORY) as UserDrizzleRepository
   })
 
   afterAll(async () => {

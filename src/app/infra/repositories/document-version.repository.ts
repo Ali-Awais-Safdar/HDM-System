@@ -1,4 +1,5 @@
 import { Effect as E, Option as O, pipe, Clock } from "effect"
+import { injectable, inject } from "tsyringe"
 import { DocumentVersionEntity } from "@domain/documentVersion/document-version.entity"
 import { DocumentVersionRepository } from "@domain/documentVersion/document-version.repository"
 import {
@@ -15,12 +16,14 @@ import type { DatabaseInterface } from "@infra/db/interfaces"
 import { isUniqueConstraintError, getErrorMessage, translateDbError, translateQueryError } from "@infra/db/errors"
 import { DatabaseError } from "@domain/utils/base.errors"
 import { fetchSingle, fetchMultiple } from "./helpers"
+import { TOKENS } from "@infra/di/container"
 
 /**
  * Drizzle-based Document Version Repository Implementation
  */
+@injectable()
 export class DocumentVersionDrizzleRepository extends DocumentVersionRepository {
-  constructor(private readonly db: DatabaseInterface) { 
+  constructor(@inject(TOKENS.DATABASE_CONNECTION) private readonly db: DatabaseInterface) { 
     super() 
   }
 

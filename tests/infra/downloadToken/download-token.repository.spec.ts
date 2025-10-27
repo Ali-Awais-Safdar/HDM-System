@@ -7,6 +7,8 @@ import { generateDownloadToken, createDownloadTokenEntity } from "../../domain/f
 import { DownloadTokenDrizzleRepository } from "@infra/repositories/download-token.repository"
 import { calculateTotalPages } from "@domain/utils/pagination"
 import { DownloadTokenEntity } from "@domain/downloadToken/download-token.entity"
+import { container } from "tsyringe"
+import { TOKENS } from "@infra/di/container"
 
 describe("DownloadTokenDrizzleRepository Integration", () => {
   let testDb: Awaited<ReturnType<typeof setupSharedTestDatabase>>
@@ -15,7 +17,8 @@ describe("DownloadTokenDrizzleRepository Integration", () => {
   beforeAll(async () => {
     // Setup shared database once for the entire test file
     testDb = await setupSharedTestDatabase()
-    downloadTokenRepo = new DownloadTokenDrizzleRepository(testDb.db)
+    container.registerInstance(TOKENS.DATABASE_CONNECTION, testDb.db)
+    downloadTokenRepo = container.resolve(TOKENS.DOWNLOAD_TOKEN_REPOSITORY) as DownloadTokenDrizzleRepository
   })
 
   afterAll(async () => {

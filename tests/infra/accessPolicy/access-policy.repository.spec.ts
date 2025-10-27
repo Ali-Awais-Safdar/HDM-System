@@ -7,6 +7,8 @@ import { generateAccessPolicy, createAccessPolicyEntity, createRolePolicy } from
 import { AccessPolicyDrizzleRepository } from "@infra/repositories/access-policy.repository"
 import { calculateTotalPages } from "@domain/utils/pagination"
 import { Option } from "effect"
+import { container } from "tsyringe"
+import { TOKENS } from "@infra/di/container"
 
 describe("AccessPolicyDrizzleRepository Integration", () => {
   let testDb: Awaited<ReturnType<typeof setupSharedTestDatabase>>
@@ -15,7 +17,8 @@ describe("AccessPolicyDrizzleRepository Integration", () => {
   beforeAll(async () => {
     // Setup shared database once for the entire test file
     testDb = await setupSharedTestDatabase()
-    accessPolicyRepo = new AccessPolicyDrizzleRepository(testDb.db)
+    container.registerInstance(TOKENS.DATABASE_CONNECTION, testDb.db)
+    accessPolicyRepo = container.resolve(TOKENS.ACCESS_POLICY_REPOSITORY) as AccessPolicyDrizzleRepository
   })
 
   afterAll(async () => {

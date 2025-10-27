@@ -1,10 +1,11 @@
 import { Schema as S } from "effect"
-import { DocumentId, UserId } from "@domain/refined/ids"
+import { DocumentId, UserId, WorkspaceId } from "@domain/refined/ids"
 import { DocumentFields } from "@domain/document/document.schema"
 import { PermissionLevelSchema, AccessPolicyFields } from "@domain/accessPolicy/access-policy.schema"
 import { PageNumber, DocumentPageSize } from "@domain/utils/pagination"
 
 export const GetDocumentQuerySchema = S.Struct({
+  workspaceId: WorkspaceId,
   documentId: DocumentId,
   actorId: UserId
 })
@@ -14,6 +15,7 @@ export type GetDocumentQueryEncoded = S.Schema.Encoded<typeof GetDocumentQuerySc
 export const decodeGetDocumentQuery = S.decodeUnknown(GetDocumentQuerySchema)
 
 export const ListDocumentsQuerySchema = S.Struct({
+  workspaceId: WorkspaceId,
   actorId: UserId,
   ownerId: S.optional(DocumentFields.ownerId),
   tags: DocumentFields.tags,
@@ -32,6 +34,7 @@ export type ListDocumentsQueryEncoded = S.Schema.Encoded<typeof ListDocumentsQue
 export const decodeListDocumentsQuery = S.decodeUnknown(ListDocumentsQuerySchema)
 
 export const GetDocumentAccessQuerySchema = S.Struct({
+  workspaceId: WorkspaceId,
   documentId: DocumentId,
   actorId: UserId,
   requiredPermission: S.optional(PermissionLevelSchema)

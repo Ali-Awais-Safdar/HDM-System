@@ -11,6 +11,7 @@ export const toDb = (
     
     const dbRow: NewDocumentModel = {
       id: serialized.id,
+      workspaceId: serialized.workspaceId,
       ownerId: serialized.ownerId,
       title: serialized.title,
       description: serialized.description ?? null,
@@ -38,6 +39,7 @@ export const fromDb = (
 ): E.Effect<DocumentEntity, DocumentValidationError, Clock.Clock> => {
   const serialized: SerializedDocument = {
     id: row.id,
+    workspaceId: row.workspaceId,
     ownerId: row.ownerId,
     title: row.title,
     description: row.description ?? null,

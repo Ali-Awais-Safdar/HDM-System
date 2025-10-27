@@ -4,12 +4,15 @@ import { expectAsyncSuccess } from "../../utils/test.helpers"
 import { withTestClock } from "../../domain/setup/test-clock"
 import { createUserEntity } from "../../domain/factories/user.factory"
 import { UserDrizzleRepository } from "@infra/repositories/user.repository"
+import { container } from "tsyringe"
+import { TOKENS } from "@infra/di/container"
 
 describe("TestDatabase Setup", () => {
   let testDb: Awaited<ReturnType<typeof setupSharedTestDatabase>>
 
   beforeAll(async () => {
     testDb = await setupSharedTestDatabase()
+    container.registerInstance(TOKENS.DATABASE_CONNECTION, testDb.db)
   })
 
   afterAll(async () => {
@@ -22,7 +25,7 @@ describe("TestDatabase Setup", () => {
 
   it("should create a clean database with proper schema", async () => {
     // Test that we can create a user repository and perform basic operations
-    const userRepo = new UserDrizzleRepository(testDb.db)
+    const userRepo = container.resolve(TOKENS.USER_REPOSITORY) as UserDrizzleRepository
     
     // Create a user entity using the factory
     const user = createUserEntity({
@@ -42,7 +45,7 @@ describe("TestDatabase Setup", () => {
 
   it("should provide a clean database for each test", async () => {
     // This test verifies that each test gets a fresh database
-    const userRepo = new UserDrizzleRepository(testDb.db)
+    const userRepo = container.resolve(TOKENS.USER_REPOSITORY) as UserDrizzleRepository
     
     // Check that the database is empty
     const users = await expectAsyncSuccess(userRepo.list())

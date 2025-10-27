@@ -13,12 +13,15 @@ import { DocumentDrizzleRepository } from "@infra/repositories/document.reposito
 import { DocumentVersionDrizzleRepository } from "@infra/repositories/document-version.repository"
 import { DownloadTokenDrizzleRepository } from "@infra/repositories/download-token.repository"
 import { AccessPolicyDrizzleRepository } from "@infra/repositories/access-policy.repository"
+import { container } from "tsyringe"
+import { TOKENS } from "@infra/di/container"
 
 describe("Seed Helpers", () => {
   let testDb: Awaited<ReturnType<typeof setupSharedTestDatabase>>
 
   beforeAll(async () => {
     testDb = await setupSharedTestDatabase()
+    container.registerInstance(TOKENS.DATABASE_CONNECTION, testDb.db)
   })
 
   afterAll(async () => {
@@ -41,7 +44,7 @@ describe("Seed Helpers", () => {
       expect(user.createdAt).toEqual(SEED_TIMESTAMP)
 
       // Verify it's in the database
-      const userRepo = new UserDrizzleRepository(testDb.db)
+      const userRepo = container.resolve(TOKENS.USER_REPOSITORY) as UserDrizzleRepository
       const foundUser = await expectAsyncSuccess(userRepo.findById(user.id))
       
       expect(foundUser).toBeDefined()
@@ -57,7 +60,7 @@ describe("Seed Helpers", () => {
       expect(document.createdAt).toEqual(SEED_TIMESTAMP)
 
       // Verify it's in the database
-      const docRepo = new DocumentDrizzleRepository(testDb.db)
+      const docRepo = container.resolve(TOKENS.DOCUMENT_REPOSITORY) as DocumentDrizzleRepository
       const foundDoc = await expectAsyncSuccess(docRepo.findById(document.id))
       
       expect(foundDoc).toBeDefined()
@@ -74,7 +77,7 @@ describe("Seed Helpers", () => {
       expect(version.createdAt).toEqual(SEED_TIMESTAMP)
 
       // Verify it's in the database
-      const versionRepo = new DocumentVersionDrizzleRepository(testDb.db)
+      const versionRepo = container.resolve(TOKENS.DOCUMENT_VERSION_REPOSITORY) as DocumentVersionDrizzleRepository
       const foundVersion = await expectAsyncSuccess(versionRepo.findById(version.id))
       
       expect(foundVersion).toBeDefined()
@@ -97,7 +100,7 @@ describe("Seed Helpers", () => {
       expect(token.createdAt).toBeInstanceOf(Date)
 
       // Verify it's in the database
-      const tokenRepo = new DownloadTokenDrizzleRepository(testDb.db)
+      const tokenRepo = container.resolve(TOKENS.DOWNLOAD_TOKEN_REPOSITORY) as DownloadTokenDrizzleRepository
       const foundToken = await expectAsyncSuccess(tokenRepo.findById(token.id))
       
       expect(foundToken).toBeDefined()
@@ -121,7 +124,7 @@ describe("Seed Helpers", () => {
       expect(policy.createdAt).toEqual(SEED_TIMESTAMP)
 
       // Verify it's in the database
-      const policyRepo = new AccessPolicyDrizzleRepository(testDb.db)
+      const policyRepo = container.resolve(TOKENS.ACCESS_POLICY_REPOSITORY) as AccessPolicyDrizzleRepository
       const foundPolicy = await expectAsyncSuccess(policyRepo.findById(policy.id))
       
       expect(foundPolicy).toBeDefined()
@@ -141,9 +144,9 @@ describe("Seed Helpers", () => {
       expect(version.documentId).toBe(document.id)
 
       // Verify all entities are in the database
-      const userRepo = new UserDrizzleRepository(testDb.db)
-      const docRepo = new DocumentDrizzleRepository(testDb.db)
-      const versionRepo = new DocumentVersionDrizzleRepository(testDb.db)
+      const userRepo = container.resolve(TOKENS.USER_REPOSITORY) as UserDrizzleRepository
+      const docRepo = container.resolve(TOKENS.DOCUMENT_REPOSITORY) as DocumentDrizzleRepository
+      const versionRepo = container.resolve(TOKENS.DOCUMENT_VERSION_REPOSITORY) as DocumentVersionDrizzleRepository
 
       const foundOwner = await expectAsyncSuccess(userRepo.findById(owner.id))
       const foundDoc = await expectAsyncSuccess(docRepo.findById(document.id))

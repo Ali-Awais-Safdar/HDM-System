@@ -41,6 +41,7 @@ describe("UploadWorkflow", () => {
         document.id,
         actors.owner.id,
         {
+          workspaceId: document.workspaceId,
           contentRef: "test-content-ref" as FileKey,
           mimeType: "application/pdf" as any,
           size: 2048 as any
@@ -73,7 +74,7 @@ describe("UploadWorkflow", () => {
         actors.owner
       )
 
-      const request = makeInitiateUploadRequest(document.id, actors.owner.id)
+      const request = makeInitiateUploadRequest(document.id, actors.owner.id, { workspaceId: document.workspaceId })
 
       await expectAsyncSuccess(
         harness.uploadWorkflow.initiateUpload(request)
@@ -105,6 +106,7 @@ describe("UploadWorkflow", () => {
 
       // Initiate upload first
       const initiateRequest = makeInitiateUploadRequest(document.id, actors.owner.id, {
+        workspaceId: document.workspaceId,
         contentRef,
         mimeType: "application/pdf" as any,
         size: 1024 as any
@@ -121,6 +123,7 @@ describe("UploadWorkflow", () => {
         fileKey,
         contentRef,
         {
+          workspaceId: document.workspaceId,
           checksum,
           mimeType: "application/pdf" as any,
           size: 1024 as any
@@ -185,6 +188,7 @@ describe("UploadWorkflow", () => {
 
       // Initiate upload
       const initiateRequest = makeInitiateUploadRequest(document.id, actors.owner.id, {
+        workspaceId: document.workspaceId,
         contentRef,
         mimeType: "application/pdf" as any,
         size: 1024 as any
@@ -201,6 +205,7 @@ describe("UploadWorkflow", () => {
         fileKey,
         contentRef,
         {
+          workspaceId: document.workspaceId,
           checksum,
           mimeType: "application/pdf" as any,
           size: 1024 as any
@@ -241,6 +246,7 @@ describe("UploadWorkflow", () => {
 
       // Initiate upload
       const initiateRequest = makeInitiateUploadRequest(document.id, actors.owner.id, {
+        workspaceId: document.workspaceId,
         contentRef,
         mimeType: "application/pdf" as any,
         size: 1024 as any
@@ -261,6 +267,7 @@ describe("UploadWorkflow", () => {
         fileKey,
         contentRef,
         {
+          workspaceId: document.workspaceId,
           checksum: wrongChecksum, // Intentional mismatch (storage returns sha256:checksum-test)
           mimeType: "application/pdf" as any,
           size: 1024 as any
@@ -297,6 +304,7 @@ describe("UploadWorkflow", () => {
         fileKey,
         contentRef,
         {
+          workspaceId: document.workspaceId,
           checksum,
           mimeType: "application/pdf" as any,
           size: 1024 as any
@@ -310,6 +318,104 @@ describe("UploadWorkflow", () => {
         expect(error).toBeDefined()
       }
     })
+
+    it("should validate metadata and fail when expectedSize doesn't match stored metadata", async () => {
+      const { document } = await seedDocumentWithReadWriteAccess(
+        harness.db,
+        actors.owner,
+        actors.owner
+      )
+
+      const contentRef = "metadata-size-mismatch" as FileKey
+
+      // Initiate with specific metadata
+      const initiateRequest = makeInitiateUploadRequest(document.id, actors.owner.id, {
+        workspaceId: document.workspaceId,
+        contentRef,
+        mimeType: "application/pdf" as any,
+        size: 1024 as any
+      })
+
+      await expectAsyncSuccess(
+        harness.uploadWorkflow.initiateUpload(initiateRequest)
+      )
+
+      // Try to confirm with DIFFERENT size (should fail validation)
+      const fileKey = `files/${contentRef}` as FileKey
+      const checksum = Buffer.from(contentRef).toString('hex').padEnd(64, '0').substring(0, 64) as Sha256
+
+      const confirmRequest = makeConfirmUploadRequest(
+        document.id,
+        actors.owner.id,
+        fileKey,
+        contentRef,
+        {
+          workspaceId: document.workspaceId,
+          checksum,
+          mimeType: "application/pdf" as any,
+          size: 2048 as any // Different size than initiated
+        }
+      )
+
+      // This should fail due to size mismatch
+      try {
+        await expectAsyncSuccess(harness.uploadWorkflow.confirmUpload(confirmRequest))
+        throw new Error("Expected UploadConfirmationError")
+      } catch (error) {
+        expect(error).toBeDefined()
+        const errorMessage = String(error)
+        expect(errorMessage.toLowerCase()).toContain("size")
+      }
+    })
+
+    it("should validate metadata and fail when expectedMimeType doesn't match stored metadata", async () => {
+      const { document } = await seedDocumentWithReadWriteAccess(
+        harness.db,
+        actors.owner,
+        actors.owner
+      )
+
+      const contentRef = "metadata-mimetype-mismatch" as FileKey
+
+      // Initiate with specific metadata
+      const initiateRequest = makeInitiateUploadRequest(document.id, actors.owner.id, {
+        workspaceId: document.workspaceId,
+        contentRef,
+        mimeType: "application/pdf" as any,
+        size: 1024 as any
+      })
+
+      await expectAsyncSuccess(
+        harness.uploadWorkflow.initiateUpload(initiateRequest)
+      )
+
+      // Try to confirm with DIFFERENT mimeType (should fail validation)
+      const fileKey = `files/${contentRef}` as FileKey
+      const checksum = Buffer.from(contentRef).toString('hex').padEnd(64, '0').substring(0, 64) as Sha256
+
+      const confirmRequest = makeConfirmUploadRequest(
+        document.id,
+        actors.owner.id,
+        fileKey,
+        contentRef,
+        {
+          workspaceId: document.workspaceId,
+          checksum,
+          mimeType: "text/plain" as any, // Different MIME type than initiated
+          size: 1024 as any // Same size
+        }
+      )
+
+      // This should fail due to MIME type mismatch
+      try {
+        await expectAsyncSuccess(harness.uploadWorkflow.confirmUpload(confirmRequest))
+        throw new Error("Expected UploadConfirmationError")
+      } catch (error) {
+        expect(error).toBeDefined()
+        const errorMessage = String(error)
+        expect(errorMessage.toLowerCase()).toContain("mime")
+      }
+    })
   })
 
   describe("Permission Enforcement", () => {
@@ -321,7 +427,7 @@ describe("UploadWorkflow", () => {
         actors.collaborator
       )
 
-      const initiateRequest = makeInitiateUploadRequest(document.id, actors.collaborator.id)
+      const initiateRequest = makeInitiateUploadRequest(document.id, actors.collaborator.id, { workspaceId: document.workspaceId })
 
       try {
         await expectAsyncSuccess(harness.uploadWorkflow.initiateUpload(initiateRequest))
@@ -338,13 +444,133 @@ describe("UploadWorkflow", () => {
         actors.owner
       )
 
-      const request = makeInitiateUploadRequest(document.id, actors.owner.id)
+      const request = makeInitiateUploadRequest(document.id, actors.owner.id, { workspaceId: document.workspaceId })
 
       const response = await expectAsyncSuccess(
         harness.uploadWorkflow.initiateUpload(request)
       )
 
       expect(response.uploadUrl).toBeDefined()
+    })
+  })
+
+  describe("Workspace Enforcement", () => {
+    it("should fail when trying to initiate upload with wrong workspace", async () => {
+      const { document } = await seedDocumentWithReadWriteAccess(
+        harness.db,
+        actors.owner,
+        actors.owner
+      )
+
+      // Import TEST_WORKSPACE_ID_2 from fixtures
+      const { TEST_WORKSPACE_ID_2 } = await import("../fixtures/actors")
+
+      // Try to initiate upload with wrong workspace
+      const initiateRequest = makeInitiateUploadRequest(document.id, actors.owner.id, {
+        workspaceId: TEST_WORKSPACE_ID_2
+      })
+
+      try {
+        await expectAsyncSuccess(harness.uploadWorkflow.initiateUpload(initiateRequest))
+        throw new Error("Expected workspace validation error")
+      } catch (error) {
+        expect(error).toBeDefined()
+        const errorMessage = String(error)
+        // Should fail because document doesn't exist in the wrong workspace
+        expect(errorMessage.toLowerCase()).toMatch(/document|workspace/)
+      }
+    })
+
+    it("should fail when trying to confirm upload with wrong workspace", async () => {
+      const { document } = await seedDocumentWithReadWriteAccess(
+        harness.db,
+        actors.owner,
+        actors.owner
+      )
+
+      const contentRef = "wrong-workspace-test" as FileKey
+
+      // Initiate upload with correct workspace
+      const initiateRequest = makeInitiateUploadRequest(document.id, actors.owner.id, {
+        workspaceId: document.workspaceId,
+        contentRef,
+        mimeType: "application/pdf" as any,
+        size: 1024 as any
+      })
+
+      const initiateResponse = await expectAsyncSuccess(
+        harness.uploadWorkflow.initiateUpload(initiateRequest)
+      )
+
+      // Import TEST_WORKSPACE_ID_2 from fixtures
+      const { TEST_WORKSPACE_ID_2 } = await import("../fixtures/actors")
+
+      // Try to confirm upload with wrong workspace
+      const confirmRequest = makeConfirmUploadRequest(
+        document.id,
+        actors.owner.id,
+        initiateResponse.fileKey,
+        contentRef,
+        {
+          workspaceId: TEST_WORKSPACE_ID_2,
+          checksum: Buffer.from(contentRef).toString('hex').padEnd(64, '0').substring(0, 64) as Sha256,
+          mimeType: "application/pdf" as any,
+          size: 1024 as any
+        }
+      )
+
+      try {
+        await expectAsyncSuccess(harness.uploadWorkflow.confirmUpload(confirmRequest))
+        throw new Error("Expected workspace validation error")
+      } catch (error) {
+        expect(error).toBeDefined()
+        const errorMessage = String(error)
+        // Should fail because document doesn't exist in the wrong workspace
+        expect(errorMessage.toLowerCase()).toMatch(/document|workspace/)
+      }
+    })
+
+    it("should succeed when workspace matches document workspace", async () => {
+      const { document } = await seedDocumentWithReadWriteAccess(
+        harness.db,
+        actors.owner,
+        actors.owner
+      )
+
+      const contentRef = "correct-workspace-test" as FileKey
+
+      // Initiate upload with correct workspace
+      const initiateRequest = makeInitiateUploadRequest(document.id, actors.owner.id, {
+        workspaceId: document.workspaceId,
+        contentRef,
+        mimeType: "application/pdf" as any,
+        size: 1024 as any
+      })
+
+      const initiateResponse = await expectAsyncSuccess(
+        harness.uploadWorkflow.initiateUpload(initiateRequest)
+      )
+
+      // Confirm upload with correct workspace
+      const confirmRequest = makeConfirmUploadRequest(
+        document.id,
+        actors.owner.id,
+        initiateResponse.fileKey,
+        contentRef,
+        {
+          workspaceId: document.workspaceId,
+          checksum: Buffer.from(contentRef).toString('hex').padEnd(64, '0').substring(0, 64) as Sha256,
+          mimeType: "application/pdf" as any,
+          size: 1024 as any
+        }
+      )
+
+      const confirmResponse = await expectAsyncSuccess(
+        harness.uploadWorkflow.confirmUpload(confirmRequest)
+      )
+
+      expect(confirmResponse.version).toBeDefined()
+      expect(confirmResponse.documentId).toBe(document.id)
     })
   })
 })

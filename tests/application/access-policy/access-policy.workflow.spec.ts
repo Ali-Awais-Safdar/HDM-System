@@ -32,6 +32,7 @@ describe("AccessPolicyWorkflow", () => {
 
       // Create a policy command for collaborator with read permissions
       const addPolicyCommand = {
+        workspaceId: document.workspaceId,
         actorId: document.ownerId, // Owner is admin by default
         resourceType: "document" as const,
         resourceId: document.id,
@@ -78,6 +79,7 @@ describe("AccessPolicyWorkflow", () => {
       const { document } = await seedDocumentWithOwnerAndVersion(harness.db)
 
       const addPolicyCommand = {
+        workspaceId: document.workspaceId,
         actorId: document.ownerId,
         resourceType: "document" as const,
         resourceId: document.id,
@@ -113,6 +115,7 @@ describe("AccessPolicyWorkflow", () => {
       const { document } = await seedDocumentWithOwnerAndVersion(harness.db)
 
       const addPolicyCommand = {
+        workspaceId: document.workspaceId,
         actorId: document.ownerId,
         resourceType: "document" as const,
         resourceId: document.id,
@@ -145,6 +148,7 @@ describe("AccessPolicyWorkflow", () => {
       const { document } = await seedDocumentWithOwnerAndVersion(harness.db)
 
       const addPolicyCommand = {
+        workspaceId: document.workspaceId,
         actorId: actors.collaborator.id, // Non-admin actor
         resourceType: "document" as const,
         resourceId: document.id,
@@ -174,6 +178,7 @@ describe("AccessPolicyWorkflow", () => {
 
       // Create initial read-only policy
       const addPolicyCommand = {
+        workspaceId: document.workspaceId,
         actorId: document.ownerId,
         resourceType: "document" as const,
         resourceId: document.id,
@@ -201,6 +206,7 @@ describe("AccessPolicyWorkflow", () => {
 
       // Update to add write permission
       const updateCommand = {
+        workspaceId: document.workspaceId,
         actorId: document.ownerId,
         policyId: created.id,
         actions: ["read", "update"] as const
@@ -230,6 +236,7 @@ describe("AccessPolicyWorkflow", () => {
 
       // Create initial write policy
       const addPolicyCommand = {
+        workspaceId: document.workspaceId,
         actorId: document.ownerId,
         resourceType: "document" as const,
         resourceId: document.id,
@@ -257,6 +264,7 @@ describe("AccessPolicyWorkflow", () => {
 
       // Update to add admin permissions (delete or share)
       const updateCommand = {
+        workspaceId: document.workspaceId,
         actorId: document.ownerId,
         policyId: created.id,
         actions: ["read", "update", "delete", "share"] as const
@@ -285,6 +293,7 @@ describe("AccessPolicyWorkflow", () => {
 
       // Create admin policy
       const addPolicyCommand = {
+        workspaceId: document.workspaceId,
         actorId: document.ownerId,
         resourceType: "document" as const,
         resourceId: document.id,
@@ -304,6 +313,7 @@ describe("AccessPolicyWorkflow", () => {
 
       // Remove some actions but keep admin level (delete/share)
       const updateCommand = {
+        workspaceId: document.workspaceId,
         actorId: document.ownerId,
         policyId: created.id,
         actions: ["read", "delete"] as const
@@ -332,6 +342,7 @@ describe("AccessPolicyWorkflow", () => {
 
       // Create a policy
       const addPolicyCommand = {
+        workspaceId: document.workspaceId,
         actorId: document.ownerId,
         resourceType: "document" as const,
         resourceId: document.id,
@@ -351,6 +362,7 @@ describe("AccessPolicyWorkflow", () => {
 
       // Try to update as non-admin
       const updateCommand = {
+        workspaceId: document.workspaceId,
         actorId: actors.collaborator.id, // Not admin
         policyId: created.id,
         actions: ["read", "update"] as const
@@ -373,6 +385,7 @@ describe("AccessPolicyWorkflow", () => {
 
       // Create a policy
       const addPolicyCommand = {
+        workspaceId: document.workspaceId,
         actorId: document.ownerId,
         resourceType: "document" as const,
         resourceId: document.id,
@@ -398,6 +411,7 @@ describe("AccessPolicyWorkflow", () => {
 
       // Remove the policy
       const removeCommand = {
+        workspaceId: document.workspaceId,
         actorId: document.ownerId,
         policyId: created.id
       }
@@ -423,6 +437,7 @@ describe("AccessPolicyWorkflow", () => {
 
       // Create a policy as admin
       const addPolicyCommand = {
+        workspaceId: document.workspaceId,
         actorId: document.ownerId,
         resourceType: "document" as const,
         resourceId: document.id,
@@ -442,6 +457,7 @@ describe("AccessPolicyWorkflow", () => {
 
       // Attempt removal by non-admin to trigger PermissionCheckError
       const removeCommand = {
+        workspaceId: document.workspaceId,
         actorId: actors.collaborator.id, // Non-admin
         policyId: created.id
       }
@@ -468,6 +484,7 @@ describe("AccessPolicyWorkflow", () => {
 
       // Create a policy
       const addPolicyCommand = {
+        workspaceId: document.workspaceId,
         actorId: document.ownerId,
         resourceType: "document" as const,
         resourceId: document.id,
@@ -487,6 +504,7 @@ describe("AccessPolicyWorkflow", () => {
 
       // Remove as owner
       const removeCommand = {
+        workspaceId: document.workspaceId,
         actorId: document.ownerId, // Owner has admin rights
         policyId: created.id
       }
@@ -508,6 +526,7 @@ describe("AccessPolicyWorkflow", () => {
 
       // Create user-specific policy
       const userPolicyCommand = {
+        workspaceId: document.workspaceId,
         actorId: document.ownerId,
         resourceType: "document" as const,
         resourceId: document.id,
@@ -527,6 +546,7 @@ describe("AccessPolicyWorkflow", () => {
 
       // Create role-based policy
       const rolePolicyCommand = {
+        workspaceId: document.workspaceId,
         actorId: document.ownerId,
         resourceType: "document" as const,
         resourceId: document.id,
@@ -578,6 +598,7 @@ describe("AccessPolicyWorkflow", () => {
 
       // Create policy for a different user
       const otherUserPolicyCommand = {
+        workspaceId: document.workspaceId,
         actorId: document.ownerId,
         resourceType: "document" as const,
         resourceId: document.id,
@@ -597,6 +618,7 @@ describe("AccessPolicyWorkflow", () => {
 
       // Create policy for ADMIN role (collaborator doesn't have this role)
       const adminRolePolicyCommand = {
+        workspaceId: document.workspaceId,
         actorId: document.ownerId,
         resourceType: "document" as const,
         resourceId: document.id,
@@ -655,6 +677,7 @@ describe("AccessPolicyWorkflow", () => {
 
       // Create user-specific policy and verify serialized response
       const userPolicyCommand = {
+        workspaceId: document.workspaceId,
         actorId: document.ownerId,
         resourceType: "document" as const,
         resourceId: document.id,
@@ -678,6 +701,7 @@ describe("AccessPolicyWorkflow", () => {
 
       // Create role-based policy and verify serialized response
       const rolePolicyCommand = {
+        workspaceId: document.workspaceId,
         actorId: document.ownerId,
         resourceType: "document" as const,
         resourceId: document.id,
@@ -707,6 +731,7 @@ describe("AccessPolicyWorkflow", () => {
 
       // Create multiple policies
       const policy1Command = {
+        workspaceId: document.workspaceId,
         actorId: document.ownerId,
         resourceType: "document" as const,
         resourceId: document.id,
@@ -718,6 +743,7 @@ describe("AccessPolicyWorkflow", () => {
       }
 
       const policy2Command = {
+        workspaceId: document.workspaceId,
         actorId: document.ownerId,
         resourceType: "document" as const,
         resourceId: document.id,

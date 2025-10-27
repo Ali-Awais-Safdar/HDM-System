@@ -1,35 +1,25 @@
 // Error mapping
 export {
   mapToORPCError,
-  mapError,
-  mapErrorToHTTPResponse,
-  toHTTPResponse,
-  isDomainError,
-  getErrorCode,
-  getErrorTag,
-  type HTTPErrorResponse
+  mapError
 } from "./error-map"
 
 // Context
 export {
   createContext,
-  withActor,
   withActorAndWorkspace,
-  ensureWorkspace,
-  ensureRole,
-  ensureAdmin,
-  contextHasRole,
-  contextIsAdmin,
-  contextHasWorkspace,
-  getContextWorkspaceId,
   type RPCContext
 } from "./context"
 
 // Standard schema converters
 export {
-  toStandard,
-  toStandardEncoded
+  toStandard
 } from "./standard"
+
+// Effect adapter
+export {
+  executeEffect,
+} from "./effect-adapter"
 
 // Procedures
 export {

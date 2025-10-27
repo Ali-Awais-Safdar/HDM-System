@@ -71,6 +71,13 @@
       "when": 1761301918801,
       "tag": "0009_sweet_boom_boom",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1761580794955,
+      "tag": "0010_bright_pride",
+      "breakpoints": true
     }
   ]
 }

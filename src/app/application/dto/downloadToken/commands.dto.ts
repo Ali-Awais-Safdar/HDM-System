@@ -1,15 +1,16 @@
 import { Schema as S } from "effect"
-import { DownloadTokenId, UserId } from "@domain/refined/ids"
+import { DownloadTokenId, UserId, WorkspaceId } from "@domain/refined/ids"
 import { DownloadTokenStruct, DownloadTokenFields } from "@domain/downloadToken/download-token.schema"
 import { DownloadTokenString } from "@domain/downloadToken/download-token.string.vo"
 import { PageNumber, VersionPageSize } from "@domain/utils/pagination"
 
 export const CreateDownloadTokenCommandSchema = DownloadTokenStruct.pick("documentId", "issuedTo", "expiresAt")
-  .pipe(S.extend(S.Struct({ actorId: UserId })))
+  .pipe(S.extend(S.Struct({ workspaceId: WorkspaceId, actorId: UserId })))
 export type CreateDownloadTokenCommand = S.Schema.Type<typeof CreateDownloadTokenCommandSchema>
 export type CreateDownloadTokenCommandEncoded = S.Schema.Encoded<typeof CreateDownloadTokenCommandSchema>
 
 export const ValidateDownloadTokenQuerySchema = S.Struct({
+  workspaceId: WorkspaceId,
   token: DownloadTokenString,
   actorId: UserId
 })
@@ -17,6 +18,7 @@ export type ValidateDownloadTokenQuery = S.Schema.Type<typeof ValidateDownloadTo
 export type ValidateDownloadTokenQueryEncoded = S.Schema.Encoded<typeof ValidateDownloadTokenQuerySchema>
 
 export const ListDownloadTokensQuerySchema = S.Struct({
+  workspaceId: WorkspaceId,
   documentId: DownloadTokenFields.documentId,
   actorId: UserId,
   pageNum: S.optional(PageNumber),
@@ -26,6 +28,7 @@ export type ListDownloadTokensQuery = S.Schema.Type<typeof ListDownloadTokensQue
 export type ListDownloadTokensQueryEncoded = S.Schema.Encoded<typeof ListDownloadTokensQuerySchema>
 
 export const RevokeDownloadTokenCommandSchema = S.Struct({
+  workspaceId: WorkspaceId,
   tokenId: DownloadTokenId,
   actorId: UserId
 })
@@ -33,6 +36,7 @@ export type RevokeDownloadTokenCommand = S.Schema.Type<typeof RevokeDownloadToke
 export type RevokeDownloadTokenCommandEncoded = S.Schema.Encoded<typeof RevokeDownloadTokenCommandSchema>
 
 export const UseDownloadTokenCommandSchema = S.Struct({
+  workspaceId: WorkspaceId,
   token: DownloadTokenString,
   actorId: UserId
 })

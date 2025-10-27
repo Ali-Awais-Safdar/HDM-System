@@ -1,21 +1,18 @@
-import { Effect, Clock } from "effect"
 import { os } from "@orpc/server"
 import { resolveWorkflow } from "@infra/di/setup"
 import { TOKENS } from "@infra/di/container"
 import type { DocumentVersionWorkflow } from "@application/workflow/document-version.workflow"
 import type { RPCContext } from "../context"
-import { mapToORPCError } from "../error-map"
-import { toStandard, toStandardEncoded } from "../standard"
+import { executeEffect } from "../effect-adapter"
+import { withActorAndWorkspace } from "../context"
+import { toStandard } from "../standard"
 import { normalizeUpdatedAt } from "./utils"
 
 // DTOs
 import {
   GetDocumentVersionQuerySchema,
-  type GetDocumentVersionQueryEncoded,
   ListDocumentVersionsQuerySchema,
-  type ListDocumentVersionsQueryEncoded,
-  GetLatestDocumentVersionQuerySchema,
-  type GetLatestDocumentVersionQueryEncoded
+  GetLatestDocumentVersionQuerySchema
 } from "@application/dto/documentVersion/commands.dto"
 import {
   DocumentVersionResponseSchema,
@@ -35,82 +32,55 @@ import {
 export const getById = os
   .$context<RPCContext>()
   .input(toStandard(GetDocumentVersionQuerySchema))
-  .output(toStandardEncoded(DocumentVersionResponseSchema))
+  .output(toStandard(DocumentVersionResponseSchema))
   .handler(async ({ input, context }) => {
-    try {
-      const workflow = resolveWorkflow<DocumentVersionWorkflow>(TOKENS.DOCUMENT_VERSION_WORKFLOW)
-      
-      const query: GetDocumentVersionQueryEncoded = {
-        versionId: input.versionId,
-        actorId: context.actorId
-      }
-      
-      const result = await Effect.runPromise(
-        Effect.provideService(
-          workflow.getDocumentVersionById(query),
-          Clock.Clock,
-          Clock.make()
-        )
-      )
-      
-      return normalizeUpdatedAt(result)
-    } catch (error) {
-      throw mapToORPCError(error)
-    }
+    const workflow = resolveWorkflow<DocumentVersionWorkflow>(TOKENS.DOCUMENT_VERSION_WORKFLOW)
+    
+    const query = withActorAndWorkspace({
+      versionId: input.versionId
+    }, context)
+    
+    const result = await executeEffect(
+      workflow.getDocumentVersionById(query)
+    )
+    
+    return normalizeUpdatedAt(result)
   })
 
 export const getLatest = os
   .$context<RPCContext>()
   .input(toStandard(GetLatestDocumentVersionQuerySchema))
-  .output(toStandardEncoded(LatestDocumentVersionResponseSchema))
+  .output(toStandard(LatestDocumentVersionResponseSchema))
   .handler(async ({ input, context }) => {
-    try {
-      const workflow = resolveWorkflow<DocumentVersionWorkflow>(TOKENS.DOCUMENT_VERSION_WORKFLOW)
-      
-      const query: GetLatestDocumentVersionQueryEncoded = {
-        documentId: input.documentId,
-        actorId: context.actorId
-      }
-      
-      const result = await Effect.runPromise(
-        Effect.provideService(
-          workflow.getLatestDocumentVersion(query),
-          Clock.Clock,
-          Clock.make()
-        )
-      )
-      
-      return normalizeUpdatedAt(result)
-    } catch (error) {
-      throw mapToORPCError(error)
-    }
+    const workflow = resolveWorkflow<DocumentVersionWorkflow>(TOKENS.DOCUMENT_VERSION_WORKFLOW)
+    
+    const query = withActorAndWorkspace({
+      documentId: input.documentId
+    }, context)
+    
+    const result = await executeEffect(
+      workflow.getLatestDocumentVersion(query)
+    )
+    
+    return normalizeUpdatedAt(result)
   })
 
 export const list = os
   .$context<RPCContext>()
   .input(toStandard(ListDocumentVersionsQuerySchema))
-  .output(toStandardEncoded(PaginatedDocumentVersionsResponseSchema))
+  .output(toStandard(PaginatedDocumentVersionsResponseSchema))
   .handler(async ({ input, context }) => {
-    try {
-      const workflow = resolveWorkflow<DocumentVersionWorkflow>(TOKENS.DOCUMENT_VERSION_WORKFLOW)
-      
-      const query: ListDocumentVersionsQueryEncoded = {
-        documentId: input.documentId,
-        actorId: context.actorId,
-        pageNum: input.pageNum,
-        pageSize: input.pageSize
-      }
-      
-      return await Effect.runPromise(
-        Effect.provideService(
-          workflow.listDocumentVersions(query),
-          Clock.Clock,
-          Clock.make()
-        )
-      )
-    } catch (error) {
-      throw mapToORPCError(error)
-    }
+    const workflow = resolveWorkflow<DocumentVersionWorkflow>(TOKENS.DOCUMENT_VERSION_WORKFLOW)
+    
+    const query = withActorAndWorkspace({
+      documentId: input.documentId,
+      pageNum: input.pageNum,
+      pageSize: input.pageSize
+    }, context)
+    
+    return await executeEffect(
+      workflow.listDocumentVersions(query)
+    )
   })
 
 export const documentVersionProcedures = {

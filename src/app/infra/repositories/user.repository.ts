@@ -1,4 +1,5 @@
 import { Effect as E, Option as O, pipe, Clock } from "effect"
+import { injectable, inject } from "tsyringe"
 import { UserEntity } from "@domain/user/user.entity"
 import { UserRepository } from "@domain/user/user.repository"
 import {
@@ -17,12 +18,14 @@ import type { DatabaseInterface } from "@infra/db/interfaces"
 import { isUniqueConstraintError, getErrorMessage, translateDbError, translateQueryError } from "@infra/db/errors"
 import { DatabaseError } from "@domain/utils/base.errors"
 import { fetchSingle } from "./helpers"
+import { TOKENS } from "@infra/di/container"
 
 /**
  * Drizzle-based User Repository Implementation
  */
+@injectable()
 export class UserDrizzleRepository extends UserRepository {
-  constructor(private readonly db: DatabaseInterface) { 
+  constructor(@inject(TOKENS.DATABASE_CONNECTION) private readonly db: DatabaseInterface) { 
     super() 
   }
 

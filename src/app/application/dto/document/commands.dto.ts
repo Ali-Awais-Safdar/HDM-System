@@ -1,5 +1,5 @@
 import { Schema as S } from "effect"
-import { DocumentId, DocumentVersionId, UserId } from "@domain/refined/ids"
+import { DocumentId, DocumentVersionId, UserId, WorkspaceId } from "@domain/refined/ids"
 import { Sha256 } from "@domain/refined/checksum"
 import { FileKey } from "@domain/refined/file-reference"
 import { DocumentFields, DocumentStruct } from "@domain/document/document.schema"
@@ -9,6 +9,7 @@ import { VersionNumber } from "@domain/documentVersion/version-number.vo"
 import { Optional } from "@domain/utils/schema.utils"
 
 export const CreateDocumentCommandSchema = S.Struct({
+  workspaceId: WorkspaceId,
   ownerId: DocumentFields.ownerId,
   title: DocumentFields.title,
   description: DocumentFields.description,
@@ -20,6 +21,7 @@ export type CreateDocumentCommandEncoded = S.Schema.Encoded<typeof CreateDocumen
 export const decodeCreateDocumentCommand = S.decodeUnknown(CreateDocumentCommandSchema)
 
 export const InitiateUploadCommandSchema = S.Struct({
+  workspaceId: WorkspaceId,
   documentId: DocumentId,
   actorId: UserId,
   mimeType: FileMetadataFields.mimeType,
@@ -33,6 +35,7 @@ export type InitiateUploadCommandEncoded = S.Schema.Encoded<typeof InitiateUploa
 export const decodeInitiateUploadCommand = S.decodeUnknown(InitiateUploadCommandSchema)
 
 export const ConfirmUploadCommandSchema = S.Struct({
+  workspaceId: WorkspaceId,
   documentId: DocumentVersionFields.documentId,
   actorId: UserId,
   fileKey: FileKey,
@@ -48,6 +51,7 @@ export type ConfirmUploadCommandEncoded = S.Schema.Encoded<typeof ConfirmUploadC
 export const decodeConfirmUploadCommand = S.decodeUnknown(ConfirmUploadCommandSchema)
 
 export const PublishDocumentCommandSchema = S.Struct({
+  workspaceId: WorkspaceId,
   documentId: DocumentId,
   actorId: UserId,
   publishStatus: DocumentFields.publishStatus,
@@ -61,8 +65,9 @@ export const decodePublishDocumentCommand = S.decodeUnknown(PublishDocumentComma
 export const UpdateDocumentCommandSchema = DocumentStruct.pick("title", "description", "tags")
   .pipe(S.partialWith({ exact: true }))
   .pipe(S.extend(S.Struct({ 
+    workspaceId: WorkspaceId,
     id: DocumentId,
-    actorId: UserId 
+    actorId: UserId
   })))
 export type UpdateDocumentCommand = S.Schema.Type<typeof UpdateDocumentCommandSchema>
 export type UpdateDocumentCommandEncoded = S.Schema.Encoded<typeof UpdateDocumentCommandSchema>
@@ -70,6 +75,7 @@ export type UpdateDocumentCommandEncoded = S.Schema.Encoded<typeof UpdateDocumen
 export const decodeUpdateDocumentCommand = S.decodeUnknown(UpdateDocumentCommandSchema)
 
 export const DeleteDocumentCommandSchema = S.Struct({
+  workspaceId: WorkspaceId,
   id: DocumentId,
   actorId: UserId,
   force: S.optional(S.Boolean)

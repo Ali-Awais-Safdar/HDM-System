@@ -62,15 +62,6 @@ import {
   DownloadTokenAlreadyUsedError
 } from "@domain/downloadToken/download-token.error"
 
-export interface HTTPErrorResponse {
-  status: number
-  body: {
-    code: string
-    message: string
-    data?: unknown
-  }
-}
-
 export function mapToORPCError(error: unknown): ORPCError<string, unknown> {
   // Context errors and other ORPCErrors are thrown directly
   if (error instanceof ORPCError) {
@@ -135,10 +126,10 @@ export function mapToORPCError(error: unknown): ORPCError<string, unknown> {
         }
       })
     }
-    // Otherwise treat as unprocessable
-    return new ORPCError("UNPROCESSABLE_CONTENT", {
+    // Otherwise treat as internal server error
+    return new ORPCError("INTERNAL_SERVER_ERROR", {
       message: error.message,
-      status: 422,
+      status: 500,
       data: {
         code: error.code,
         dependency: error.dependency,
@@ -592,70 +583,6 @@ function isNotFoundDependency(error: WorkflowDependencyError): boolean {
     )
   
   return isRepositoryNotFound || Boolean(hasNotFoundDetails)
-}
-
-export function toHTTPResponse(error: ORPCError<string, unknown>): HTTPErrorResponse {
-  return {
-    status: error.status ?? 500,
-    body: {
-      code: error.code,
-      message: error.message,
-      data: error.data
-    }
-  }
-}
-
-export function mapErrorToHTTPResponse(error: unknown): HTTPErrorResponse {
-  const orpcError = mapToORPCError(error)
-  return toHTTPResponse(orpcError)
-}
-
-export function isDomainError(error: unknown): boolean {
-  return (
-    error instanceof ValidationError ||
-    error instanceof BusinessRuleViolationError ||
-    error instanceof DocumentNotFoundError ||
-    error instanceof DocumentValidationError ||
-    error instanceof DocumentVersionNotFoundError ||
-    error instanceof DocumentVersionValidationError ||
-    error instanceof UserNotFoundError ||
-    error instanceof UserAlreadyExistsError ||
-    error instanceof UserValidationError ||
-    error instanceof AccessPolicyNotFoundError ||
-    error instanceof AccessPolicyValidationError ||
-    error instanceof AccessPolicyConflictError ||
-    error instanceof DownloadTokenNotFoundError ||
-    error instanceof DomainDownloadTokenValidationError ||
-    error instanceof DownloadTokenAlreadyUsedError ||
-    error instanceof DocumentAccessDeniedError ||
-    error instanceof DocumentAccessInsufficientPermissionsError ||
-    error instanceof DocumentAccessContextInvalidError ||
-    error instanceof PermissionCheckError ||
-    error instanceof AccessPolicyCreationError ||
-    error instanceof UploadInitiationError ||
-    error instanceof UploadConfirmationError ||
-    error instanceof FileNotFoundError ||
-    error instanceof ChecksumValidationError ||
-    error instanceof DownloadTokenGenerationError ||
-    error instanceof AppDownloadTokenValidationError ||
-    error instanceof WorkflowDependencyError ||
-    error instanceof ORPCError ||
-    ParseResult.isParseError(error)
-  )
-}
-
-export function getErrorCode(error: unknown): string | undefined {
-  if (error && typeof error === "object" && "code" in error) {
-    return String((error as any).code)
-  }
-  return undefined
-}
-
-export function getErrorTag(error: unknown): string | undefined {
-  if (error && typeof error === "object" && "_tag" in error) {
-    return String((error as any)._tag)
-  }
-  return undefined
 }
 
 export const mapError = mapToORPCError

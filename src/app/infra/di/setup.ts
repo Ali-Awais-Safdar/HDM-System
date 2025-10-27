@@ -18,6 +18,9 @@ import { UserDrizzleRepository } from "@infra/repositories/user.repository"
 // Domain Services
 import { BcryptPasswordHasher } from "@infra/services/bcrypt-password-hasher"
 
+// Infrastructure Services
+import { LocalFileStorage } from "@infra/services/local-file-storage"
+
 // Application Workflows
 import { DocumentWorkflow } from "@application/workflow/document.workflow"
 import { DocumentVersionWorkflow } from "@application/workflow/document-version.workflow"
@@ -59,8 +62,7 @@ export function initContainer(): void {
 
   container.registerSingleton(TOKENS.PASSWORD_HASHER_PORT, BcryptPasswordHasher)
 
-  // TODO: Register FileStoragePort implementation when available
-  // FileStoragePort will be implemented as a local filesystem or S3 adapter
+  container.registerSingleton(TOKENS.FILE_STORAGE_PORT, LocalFileStorage)
 
   container.registerSingleton(TOKENS.DOCUMENT_WORKFLOW, DocumentWorkflow)
   container.registerSingleton(TOKENS.DOCUMENT_VERSION_WORKFLOW, DocumentVersionWorkflow)

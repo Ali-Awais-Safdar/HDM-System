@@ -4,7 +4,7 @@ import { addTags as TagListAdd, removeTags as TagListRemove } from "@domain/docu
 import { BusinessRuleViolationError, ValidationError } from "@domain/utils/base.errors"
 import { formatParseError, mapParseError } from "@domain/utils/option.utils"
 import { DocumentValidationError } from "@domain/document/document.error"
-import { DocumentId, UserId } from "@domain/refined/ids"
+import { DocumentId, UserId, WorkspaceId } from "@domain/refined/ids"
 import { DocumentTitle } from "@domain/document/document-title.vo"
 import { DocumentDescription } from "@domain/document/document-description.vo"
 import { DocumentPublishStatus } from "@domain/document/document-publish-status.vo"
@@ -17,6 +17,7 @@ export type SerializedDocument = S.Schema.Encoded<typeof DocumentSchema>
 
 export class DocumentEntity {
   readonly id!: DocumentId
+  readonly workspaceId!: WorkspaceId
   readonly ownerId!: UserId
   readonly title!: DocumentTitle
   readonly description!: Option.Option<DocumentDescription>
@@ -33,6 +34,7 @@ export class DocumentEntity {
       Effect.flatMap((now) => {
         const dataWithAudit = {
           ...input,
+          workspaceId: input.workspaceId,
           createdAt: input.createdAt || now.toISOString(),
           updatedAt: input.updatedAt
         }
@@ -50,6 +52,7 @@ export class DocumentEntity {
 
   private constructor(data: DocumentType) {
     this.id = data.id
+    this.workspaceId = data.workspaceId
     this.createdAt = data.createdAt
     this.updatedAt = data.updatedAt
     this.ownerId = data.ownerId

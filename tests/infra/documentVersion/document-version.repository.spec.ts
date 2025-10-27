@@ -9,6 +9,8 @@ import { DocumentVersionDrizzleRepository } from "@infra/repositories/document-v
 import { calculateTotalPages } from "@domain/utils/pagination"
 import { DocumentVersionEntity } from "@domain/documentVersion/document-version.entity"
 import { Option } from "effect"
+import { container } from "tsyringe"
+import { TOKENS } from "@infra/di/container"
 
 describe("DocumentVersionDrizzleRepository Integration", () => {
   let testDb: Awaited<ReturnType<typeof setupSharedTestDatabase>>
@@ -17,7 +19,8 @@ describe("DocumentVersionDrizzleRepository Integration", () => {
   beforeAll(async () => {
     // Setup shared database once for the entire test file
     testDb = await setupSharedTestDatabase()
-    documentVersionRepo = new DocumentVersionDrizzleRepository(testDb.db)
+    container.registerInstance(TOKENS.DATABASE_CONNECTION, testDb.db)
+    documentVersionRepo = container.resolve(TOKENS.DOCUMENT_VERSION_REPOSITORY) as DocumentVersionDrizzleRepository
   })
 
   afterAll(async () => {

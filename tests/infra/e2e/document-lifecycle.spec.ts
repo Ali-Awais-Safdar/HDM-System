@@ -3,6 +3,7 @@ import { setupSharedTestDatabase, cleanupSharedTestDatabase, clearTestDatabase }
 import { seedDocumentWithOwnerAndVersion } from "../setup/seed-helpers"
 import { expectAsyncSuccess, expectSome } from "../../utils/test.helpers"
 import { withTestClock } from "../../domain/setup/test-clock"
+import { TEST_WORKSPACE_ID } from "../../application/fixtures/actors"
 import { generateUser, createUserEntity } from "../../domain/factories/user.factory"
 import { generateDocument } from "../../domain/factories/document.factory"
 import { generateDocumentVersion } from "../../domain/factories/document-version.factory"
@@ -18,6 +19,8 @@ import { DocumentVersionEntity } from "@domain/documentVersion/document-version.
 import { calculateTotalPages } from "@domain/utils/pagination"
 import { Option } from "effect"
 import { sql } from "drizzle-orm"
+import { container } from "tsyringe"
+import { TOKENS } from "@infra/di/container"
 
 describe("Document Lifecycle E2E Integration", () => {
   let testDb: Awaited<ReturnType<typeof setupSharedTestDatabase>>
@@ -30,11 +33,16 @@ describe("Document Lifecycle E2E Integration", () => {
   beforeAll(async () => {
     // Setup shared database once for the entire test file
     testDb = await setupSharedTestDatabase()
-    userRepo = new UserDrizzleRepository(testDb.db)
-    documentRepo = new DocumentDrizzleRepository(testDb.db)
-    documentVersionRepo = new DocumentVersionDrizzleRepository(testDb.db)
-    accessPolicyRepo = new AccessPolicyDrizzleRepository(testDb.db)
-    downloadTokenRepo = new DownloadTokenDrizzleRepository(testDb.db)
+    
+    // Register test database in container
+    container.registerInstance(TOKENS.DATABASE_CONNECTION, testDb.db)
+    
+    // Resolve repositories from container
+    userRepo = container.resolve(TOKENS.USER_REPOSITORY) as UserDrizzleRepository
+    documentRepo = container.resolve(TOKENS.DOCUMENT_REPOSITORY) as DocumentDrizzleRepository
+    documentVersionRepo = container.resolve(TOKENS.DOCUMENT_VERSION_REPOSITORY) as DocumentVersionDrizzleRepository
+    accessPolicyRepo = container.resolve(TOKENS.ACCESS_POLICY_REPOSITORY) as AccessPolicyDrizzleRepository
+    downloadTokenRepo = container.resolve(TOKENS.DOWNLOAD_TOKEN_REPOSITORY) as DownloadTokenDrizzleRepository
   })
 
   afterAll(async () => {
@@ -191,6 +199,7 @@ describe("Document Lifecycle E2E Integration", () => {
     // Step 10: Test search functionality
     const searchResults = await expectAsyncSuccess(
       documentRepo.search({
+        workspaceId: TEST_WORKSPACE_ID,
         query: "E2E",
         ownerId: savedUser.id,
       })
@@ -202,6 +211,7 @@ describe("Document Lifecycle E2E Integration", () => {
     // Step 11: Test tag search
     const tagSearchResults = await expectAsyncSuccess(
       documentRepo.search({
+        workspaceId: TEST_WORKSPACE_ID,
         tags: ["e2e"],
         ownerId: savedUser.id,
       })
@@ -350,6 +360,7 @@ describe("Document Lifecycle E2E Integration", () => {
     // Test search with pagination
     const searchPage1 = await expectAsyncSuccess(
       documentRepo.search({
+        workspaceId: TEST_WORKSPACE_ID,
         query: "Pagination",
         ownerId: savedUser.id,
         paginationOptions: { pageNum: 1, pageSize: 3 }

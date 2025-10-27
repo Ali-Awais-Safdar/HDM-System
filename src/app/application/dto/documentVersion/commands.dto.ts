@@ -1,9 +1,10 @@
 import { Schema as S } from "effect"
-import { DocumentId, DocumentVersionId, UserId } from "@domain/refined/ids"
+import { DocumentId, DocumentVersionId, UserId, WorkspaceId } from "@domain/refined/ids"
 import { DocumentVersionFields } from "@domain/documentVersion/document-version.schema"
 import { PageNumber, VersionPageSize } from "@domain/utils/pagination"
 
 export const GetDocumentVersionQuerySchema = S.Struct({
+  workspaceId: WorkspaceId,
   versionId: DocumentVersionId,
   actorId: UserId
 })
@@ -13,6 +14,7 @@ export type GetDocumentVersionQueryEncoded = S.Schema.Encoded<typeof GetDocument
 export const decodeGetDocumentVersionQuery = S.decodeUnknown(GetDocumentVersionQuerySchema)
 
 export const ListDocumentVersionsQuerySchema = S.Struct({
+  workspaceId: WorkspaceId,
   documentId: DocumentVersionFields.documentId,
   actorId: UserId,
   pageNum: S.optional(PageNumber),
@@ -24,6 +26,7 @@ export type ListDocumentVersionsQueryEncoded = S.Schema.Encoded<typeof ListDocum
 export const decodeListDocumentVersionsQuery = S.decodeUnknown(ListDocumentVersionsQuerySchema)
 
 export const GetLatestDocumentVersionQuerySchema = S.Struct({
+  workspaceId: WorkspaceId,
   documentId: DocumentId,
   actorId: UserId
 })

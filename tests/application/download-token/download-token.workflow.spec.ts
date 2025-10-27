@@ -55,6 +55,7 @@ describe("DownloadTokenWorkflow", () => {
 
       // Validate the token
       const validateQuery = {
+        workspaceId: document.workspaceId,
         token: token.token,
         actorId: actors.collaborator.id
       }
@@ -80,6 +81,7 @@ describe("DownloadTokenWorkflow", () => {
 
       // Validate with a different user
       const validateQuery = {
+        workspaceId: document.workspaceId,
         token: token.token,
         actorId: actors.admin.id // Wrong user
       }
@@ -119,6 +121,7 @@ describe("DownloadTokenWorkflow", () => {
       // Validate immediately (within expiry window)
       const validationNow = await expectAsyncSuccess(
         harness.downloadTokenWorkflow.validateDownloadToken({
+          workspaceId: document.workspaceId,
           token: token.token,
           actorId: actors.collaborator.id
         })
@@ -146,6 +149,7 @@ describe("DownloadTokenWorkflow", () => {
 
       // List with pagination
       const listQuery = {
+        workspaceId: document.workspaceId,
         actorId: document.ownerId,
         documentId: document.id,
         pageNum: 1,
@@ -177,6 +181,7 @@ describe("DownloadTokenWorkflow", () => {
 
       // Test page 1
       const page1Query = {
+        workspaceId: document.workspaceId,
         actorId: document.ownerId,
         documentId: document.id,
         pageNum: 1,
@@ -193,6 +198,7 @@ describe("DownloadTokenWorkflow", () => {
 
       // Test page 3
       const page3Query = {
+        workspaceId: document.workspaceId,
         actorId: document.ownerId,
         documentId: document.id,
         pageNum: 3,
@@ -219,6 +225,7 @@ describe("DownloadTokenWorkflow", () => {
       }
 
       const listQuery = {
+        workspaceId: document.workspaceId,
         actorId: document.ownerId,
         documentId: document.id,
         pageNum: 2,
@@ -260,6 +267,7 @@ describe("DownloadTokenWorkflow", () => {
 
       // Use the token
       const useCommand = {
+        workspaceId: document.workspaceId,
         token: token.token,
         actorId: actors.collaborator.id
       }
@@ -304,6 +312,7 @@ describe("DownloadTokenWorkflow", () => {
 
       // Use the token first time
       const useCommand = {
+        workspaceId: document.workspaceId,
         token: token.token,
         actorId: actors.collaborator.id
       }
@@ -361,6 +370,7 @@ describe("DownloadTokenWorkflow", () => {
       // Try to use after expiry
       const afterExpiryTime = now + 61 * 60 * 1000 // 61 min after creation (after expiry)
       const useCommand = {
+        workspaceId: document.workspaceId,
         token: token.token,
         actorId: actors.collaborator.id
       }

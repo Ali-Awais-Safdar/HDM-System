@@ -1,4 +1,5 @@
 import { Effect as E, Option as O, pipe, Clock } from "effect"
+import { injectable, inject } from "tsyringe"
 import { DocumentEntity } from "@domain/document/document.entity"
 import {
   DocumentRepository,
@@ -10,20 +11,23 @@ import {
 } from "@domain/document/document.error"
 import { ValidationError } from "@domain/utils/base.errors"
 import { type Paginated, PaginationOptions, defaultPaginationOptions, calculateTotalPages } from "@domain/utils/pagination"
-import { DocumentId, UserId } from "@domain/refined/ids"
+import { DocumentId, UserId, WorkspaceId } from "@domain/refined/ids"
 import { documents, type DocumentModel } from "@infra/db/models/document.model"
+import { accessPolicies } from "@infra/db/models/access-policy.model"
 import { DocumentMapper } from "@infra/db/mappers"
 import { eq, and, or, sql, count, type SQL } from "drizzle-orm"
 import type { DatabaseInterface } from "@infra/db/interfaces"
 import { getErrorMessage, translateDbError, translateQueryError } from "@infra/db/errors"
 import { DatabaseError } from "@domain/utils/base.errors"
 import { fetchSingle, fetchMultiple } from "./helpers"
+import { TOKENS } from "@infra/di/container"
 
 /**
  * Drizzle-based Document Repository Implementation
  */
+@injectable()
 export class DocumentDrizzleRepository extends DocumentRepository {
-  constructor(private readonly db: DatabaseInterface) { 
+  constructor(@inject(TOKENS.DATABASE_CONNECTION) private readonly db: DatabaseInterface) { 
     super() 
   }
 
@@ -48,11 +52,17 @@ export class DocumentDrizzleRepository extends DocumentRepository {
   }
 
   findByOwner(
+    workspaceId: WorkspaceId,
     ownerId: UserId
   ): E.Effect<readonly DocumentEntity[], DocumentNotFoundError | ValidationError | DatabaseError, never> {
     return pipe(
       fetchMultiple(
-        () => this.db.select().from(documents).where(eq(documents.ownerId, ownerId)),
+        () => this.db.select().from(documents).where(
+          and(
+            eq(documents.workspaceId, workspaceId),
+            eq(documents.ownerId, ownerId)
+          )
+        ),
         DocumentMapper.fromDb,
         "Document",
         DocumentNotFoundError
@@ -68,9 +78,12 @@ export class DocumentDrizzleRepository extends DocumentRepository {
   // ========== Pure Helper Functions ==========
 
   private buildSearchConditions(filters: DocumentSearchFilters): SQL[] {
-    const { query, ownerId, tags, publishStatus } = filters
+    const { workspaceId, query, ownerId, tags, publishStatus } = filters
     
-    return [
+    const conditions: (SQL | undefined)[] = [
+      // Workspace filter - REQUIRED for tenant isolation
+      eq(documents.workspaceId, workspaceId),
+      
       // Owner filter
       ownerId ? eq(documents.ownerId, ownerId) : undefined,
       
@@ -86,7 +99,34 @@ export class DocumentDrizzleRepository extends DocumentRepository {
       tags && tags.length > 0
         ? this.buildTagSearchCondition(tags)
         : undefined
-    ].filter((condition): condition is SQL => condition !== undefined)
+    ]
+
+    return conditions.filter((condition): condition is SQL => condition !== undefined)
+  }
+
+  /**
+   * Builds SQL condition for document access based on actor permissions.
+   * Returns documents where:
+   * - Actor is the owner (full access)
+   * - OR Actor has explicit read access via access policies
+   * - OR Actor's roles have access via role-based policies
+   */
+  private buildAccessCondition(actorId: UserId): SQL {
+    // Access condition: user is owner OR has matching access policy
+    return or(
+      // Owner has full access
+      eq(documents.ownerId, actorId),
+      // OR has explicit user-based policy with read access
+      sql`EXISTS (
+        SELECT 1 FROM ${accessPolicies} 
+        WHERE ${accessPolicies.resourceId} = ${documents.id}
+          AND (
+            (${accessPolicies.subjectType} = 'user' AND ${accessPolicies.subjectId} = ${actorId})
+            OR (${accessPolicies.subjectType} = 'role' AND ${accessPolicies.role} IS NOT NULL)
+          )
+          AND ${accessPolicies.actions}::jsonb @> '["read"]'::jsonb
+      )`
+    )!
   }
 
   private buildTextSearchCondition(query: string): SQL {
@@ -118,7 +158,17 @@ export class DocumentDrizzleRepository extends DocumentRepository {
       E.tryPromise({
         try: async () => {
           const conditions = this.buildSearchConditions(filters)
-          const whereCondition = conditions.length ? and(...conditions) : undefined
+          
+          // Add access condition if actor context is provided
+          const accessCondition = filters.actorId 
+            ? this.buildAccessCondition(filters.actorId)
+            : undefined
+          
+          // Combine all conditions
+          const allConditions = [...conditions, accessCondition].filter(
+            (c): c is SQL => c !== undefined
+          )
+          const whereCondition = allConditions.length ? and(...allConditions) : undefined
 
           // Execute query with pagination
           const [data, totalResult] = await Promise.all([

@@ -5,6 +5,7 @@ import { users } from "./user.model"
 
 export const documents = pgTable("documents", {
   ...SharedColumns,
+  workspaceId: UuidCol("workspace_id").notNull(),
   ownerId: UuidCol("owner_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
@@ -14,7 +15,9 @@ export const documents = pgTable("documents", {
   publishStatus: varchar("publish_status", { length: 20 }).notNull().default("draft"),
   publishNotes: text("publish_notes"),
 }, (table) => ({
+  workspaceIdx: index("documents_workspace_idx").on(table.workspaceId),
   ownerIdx: index("documents_owner_idx").on(table.ownerId),
+  workspaceOwnerIdx: index("documents_workspace_owner_idx").on(table.workspaceId, table.ownerId),
   titleIdx: index("documents_title_idx").on(table.title),
   createdAtIdx: index("documents_created_at_idx").on(table.createdAt),
   tagsGinIdx: index("documents_tags_gin_idx").using("gin", sql`(${table.tags}::jsonb)`),

@@ -2,6 +2,7 @@ import { Hono } from "hono"
 import { cors } from "hono/cors"
 import { Effect } from "effect"
 import { RPCHandler } from "@orpc/server/fetch"
+import { onError } from "@orpc/server"
 import { HTTP_CONFIG, JWT_CONFIG } from "@infra/config"
 import { createContext, type RPCContext } from "./orpc/context"
 import { mapToORPCError } from "./orpc/error-map"
@@ -22,30 +23,15 @@ type Variables = {
  * 4. Build RPC context
  * 5. Attach to Hono context via c.set('rpcContext')
  * 
- * On failure, throws ORPCError that will be caught and returned as HTTP error
+ * On failure, errors bubble up to app.onError for centralized handling
  */
 const contextMiddleware: MiddlewareHandler<{ Variables: Variables }> = async (c, next) => {
-  try {
-    // Create RPC context using Effect-based chain
-    const rpcContext = await Effect.runPromise(createContext(c))
-    
-    // Attach to Hono context for downstream handlers
-    c.set("rpcContext", rpcContext)
-    
-    await next()
-  } catch (error) {
-    // Map errors to proper HTTP responses
-    const orpcError = mapToORPCError(error)
-    const status = orpcError.status ?? 500
-    return c.json(
-      {
-        code: orpcError.code,
-        message: orpcError.message,
-        data: orpcError.data
-      },
-      status as any // Hono's type system requires explicit status codes
-    )
-  }
+
+  const rpcContext = await Effect.runPromise(createContext(c))
+  
+  c.set("rpcContext", rpcContext)
+  
+  await next()
 }
 
 /**
@@ -55,7 +41,6 @@ const contextMiddleware: MiddlewareHandler<{ Variables: Variables }> = async (c,
  * - CORS middleware (configured from env)
  * - Context middleware (JWT authentication)
  * - oRPC handler (RPC endpoint)
- * - Health check endpoint
  */
 export function buildServer(): Hono<{ Variables: Variables }> {
   const app = new Hono<{ Variables: Variables }>()
@@ -92,7 +77,14 @@ export function buildServer(): Hono<{ Variables: Variables }> {
 
   app.use(`${HTTP_CONFIG.RPC_PREFIX}/*`, contextMiddleware)
 
-  const rpcHandler = new RPCHandler(procedures)
+  const rpcHandler = new RPCHandler(procedures, {
+    adapterInterceptors: [
+      onError((error) => {
+        // Log errors at the adapter level for diagnostics
+        console.error("RPC adapter error:", error)
+      })
+    ]
+  })
 
   app.use(`${HTTP_CONFIG.RPC_PREFIX}/*`, async (c) => {
     const rpcContext = c.get("rpcContext")
@@ -134,8 +126,17 @@ export function buildServer(): Hono<{ Variables: Variables }> {
   })
 
   app.onError((error, c) => {
-    console.error("Unhandled server error:", error)
+    // Always log error details for diagnostics
+    console.error("Unhandled server error:", {
+      error,
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      path: c.req.path,
+      method: c.req.method,
+      timestamp: new Date().toISOString()
+    })
     
+    // Map errors to ORPCError format for consistent error responses
     const orpcError = mapToORPCError(error)
     const status = orpcError.status ?? 500
     return c.json(

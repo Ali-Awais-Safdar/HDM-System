@@ -7,14 +7,16 @@ import {
 import { ValidationError, DatabaseError } from "@domain/utils/base.errors"
 import { Paginated, PaginationOptions } from "@domain/utils/pagination"
 import { BaseRepository } from "@domain/utils/base.repository"
-import { UserId } from "@domain/refined/ids"
+import { UserId, WorkspaceId } from "@domain/refined/ids"
 
 export interface DocumentSearchFilters {
+  readonly workspaceId: WorkspaceId  // Required for multi-tenant filtering
   readonly query?: string
   readonly tags?: readonly string[]
   readonly ownerId?: UserId
   readonly publishStatus?: "draft" | "published" | "unpublished"
   readonly paginationOptions?: PaginationOptions
+  readonly actorId?: UserId // Actor context for permission-based filtering
 }
 
 export abstract class DocumentRepository extends BaseRepository<
@@ -25,8 +27,9 @@ export abstract class DocumentRepository extends BaseRepository<
 
   protected readonly entityName = "Document"
 
-  // Domain-specific read operations
+  // Domain-specific read operations - workspaceId is required for tenant isolation
   abstract findByOwner(
+    workspaceId: WorkspaceId,
     ownerId: UserId
   ): Effect.Effect<readonly DocumentEntity[], DocumentNotFoundError | ValidationError | DatabaseError>
 

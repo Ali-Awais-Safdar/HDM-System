@@ -108,10 +108,10 @@ export class DownloadTokenWorkflow {
       // 1. Decode DTO using schema validation
       S.decodeUnknown(CreateDownloadTokenCommandSchema)(input),
       Effect.flatMap((dto) =>
-        // 2. Load actor and document in parallel
+        // 2. Load actor and document in parallel (with workspace validation)
         Effect.all([
           loadActor(this.userRepository, dto.actorId),
-          loadDocument(this.documentRepository, dto.documentId)
+          loadDocument(this.documentRepository, dto.documentId, dto.workspaceId)
         ]).pipe(
           Effect.flatMap(([actor, document]) =>
             // 3. Ensure download permission (read level)
@@ -220,8 +220,8 @@ export class DownloadTokenWorkflow {
                 })
               ),
               Effect.flatMap((token) =>
-                // 5. Load document for permission check
-                loadDocument(this.documentRepository, token.documentId).pipe(
+                // 5. Load document for permission check (with workspace validation)
+                loadDocument(this.documentRepository, token.documentId, dto.workspaceId).pipe(
                   Effect.flatMap((document) =>
                     // 6. Ensure download permission (read level)
                     ensurePermission(this.accessPolicyRepository, actor, document, "read").pipe(
@@ -273,10 +273,10 @@ export class DownloadTokenWorkflow {
       // 1. Decode query DTO using schema validation
       S.decodeUnknown(ListDownloadTokensQuerySchema)(input),
       Effect.flatMap((dto) =>
-        // 2. Load actor and document in parallel
+        // 2. Load actor and document in parallel (with workspace validation)
         Effect.all([
           loadActor(this.userRepository, dto.actorId),
-          loadDocument(this.documentRepository, dto.documentId)
+          loadDocument(this.documentRepository, dto.documentId, dto.workspaceId)
         ]).pipe(
           Effect.flatMap(([actor, document]) =>
             // 3. Ensure download permission (read level)
@@ -346,8 +346,8 @@ export class DownloadTokenWorkflow {
                 })
               ),
               Effect.flatMap((token) =>
-                // 4. Load document and ensure permission
-                loadDocument(this.documentRepository, token.documentId).pipe(
+                // 4. Load document and ensure permission (with workspace validation)
+                loadDocument(this.documentRepository, token.documentId, dto.workspaceId).pipe(
                   Effect.flatMap((document) =>
                     ensurePermission(this.accessPolicyRepository, actor, document, "read").pipe(
                       Effect.flatMap(() =>
@@ -412,8 +412,8 @@ export class DownloadTokenWorkflow {
                 })
               ),
               Effect.flatMap((token) =>
-                // 4. Load document and ensure permission
-                loadDocument(this.documentRepository, token.documentId).pipe(
+                // 4. Load document and ensure permission (with workspace validation)
+                loadDocument(this.documentRepository, token.documentId, dto.workspaceId).pipe(
                   Effect.flatMap((document) =>
                     ensurePermission(this.accessPolicyRepository, actor, document, "read").pipe(
                       Effect.flatMap(() =>

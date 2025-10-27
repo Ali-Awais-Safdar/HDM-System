@@ -1,15 +1,16 @@
 import { Schema as S } from "effect"
-import { DocumentId, UserId, AccessPolicyId } from "@domain/refined/ids"
+import { DocumentId, UserId, AccessPolicyId, WorkspaceId } from "@domain/refined/ids"
 import { AccessPolicyStruct } from "@domain/accessPolicy/access-policy.schema"
 
 export const AddPolicyCommandSchema = AccessPolicyStruct.pick("resourceType", "resourceId", "subjectType", "subjectId", "role", "actions", "effect")
-  .pipe(S.extend(S.Struct({ actorId: UserId })))
+  .pipe(S.extend(S.Struct({ workspaceId: WorkspaceId, actorId: UserId })))
 export type AddPolicyCommand = S.Schema.Type<typeof AddPolicyCommandSchema>
 export type AddPolicyCommandEncoded = S.Schema.Encoded<typeof AddPolicyCommandSchema>
 
 export const decodeAddPolicyCommand = S.decodeUnknown(AddPolicyCommandSchema)
 
 export const RemovePolicyCommandSchema = S.Struct({
+  workspaceId: WorkspaceId,
   policyId: AccessPolicyId,
   documentId: S.optional(DocumentId), // Optional for bulk operations
   actorId: UserId // Required for all operations
@@ -21,6 +22,7 @@ export const decodeRemovePolicyCommand = S.decodeUnknown(RemovePolicyCommandSche
 
 export const UpdatePolicyActionsCommandSchema = AccessPolicyStruct.pick("actions")
   .pipe(S.extend(S.Struct({ 
+    workspaceId: WorkspaceId,
     policyId: AccessPolicyId,
     documentId: S.optional(DocumentId), // Optional for bulk operations
     actorId: UserId // Required for all operations

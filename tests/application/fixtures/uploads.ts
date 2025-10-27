@@ -2,7 +2,7 @@ import type {
   InitiateUploadCommandEncoded,
   ConfirmUploadCommandEncoded
 } from "@application/dto/document/commands.dto"
-import type { DocumentId, UserId } from "@domain/refined/ids"
+import type { DocumentId, UserId, WorkspaceId } from "@domain/refined/ids"
 import type { FileKey, MimeType, FileSize } from "@domain/refined/file-reference"
 import type { Sha256 } from "@domain/refined/checksum"
 
@@ -12,13 +12,14 @@ import type { Sha256 } from "@domain/refined/checksum"
 export function makeInitiateUploadRequest(
   documentId: DocumentId,
   actorId: UserId,
-  overrides: Partial<InitiateUploadCommandEncoded> = {}
+  overrides: Partial<InitiateUploadCommandEncoded> & { workspaceId?: WorkspaceId } = {}
 ): InitiateUploadCommandEncoded {
   const contentRef = overrides.contentRef || `test-upload-${Date.now()}`
   
   return {
     documentId,
     actorId,
+    workspaceId: overrides.workspaceId!,
     mimeType: "application/pdf" as MimeType,
     size: 1024 as FileSize,
     contentRef: contentRef as FileKey,
@@ -35,7 +36,7 @@ export function makeConfirmUploadRequest(
   actorId: UserId,
   fileKey: FileKey,
   contentRef: FileKey,
-  overrides: Partial<ConfirmUploadCommandEncoded> = {}
+  overrides: Partial<ConfirmUploadCommandEncoded> & { workspaceId?: WorkspaceId } = {}
 ): ConfirmUploadCommandEncoded {
   // Default checksum based on contentRef for deterministic testing
   const defaultChecksum = `sha256:${contentRef}` as Sha256
@@ -43,6 +44,7 @@ export function makeConfirmUploadRequest(
   return {
     documentId,
     actorId,
+    workspaceId: overrides.workspaceId!,
     fileKey,
     checksum: overrides.checksum || defaultChecksum,
     mimeType: "application/pdf" as MimeType,
@@ -59,6 +61,7 @@ export function makeConfirmUploadRequest(
 export function makeMatchedUploadRequests(
   documentId: DocumentId,
   actorId: UserId,
+  workspaceId: WorkspaceId,
   contentRef?: FileKey
 ): {
   initiate: InitiateUploadCommandEncoded
@@ -67,6 +70,7 @@ export function makeMatchedUploadRequests(
   const ref = contentRef || (`test-upload-${Date.now()}` as FileKey)
   
   const initiate = makeInitiateUploadRequest(documentId, actorId, {
+    workspaceId,
     contentRef: ref
   })
   
@@ -74,7 +78,8 @@ export function makeMatchedUploadRequests(
     documentId,
     actorId,
     fileKey,
-    ref
+    ref,
+    { workspaceId }
   )
   
   return { initiate, confirm }

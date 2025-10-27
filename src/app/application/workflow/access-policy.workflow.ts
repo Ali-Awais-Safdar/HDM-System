@@ -137,8 +137,8 @@ export class AccessPolicyWorkflow {
           this.loadPolicy(dto.policyId)
         ]).pipe(
           Effect.flatMap(([actor, policy]) =>
-            // 3. Load document from policy's resourceId
-            loadDocument(this.documentRepository, policy.resourceId).pipe(
+            // 3. Load document from policy's resourceId (workspace from DTO)
+            loadDocument(this.documentRepository, policy.resourceId, dto.workspaceId).pipe(
               Effect.flatMap((document) =>
                 // 4. Check admin permission
                 this.ensureAdmin(actor, document).pipe(
@@ -169,8 +169,8 @@ export class AccessPolicyWorkflow {
           this.loadPolicy(dto.policyId)
         ]).pipe(
           Effect.flatMap(([actor, policy]) =>
-            // 3. Load document from policy's resourceId
-            loadDocument(this.documentRepository, policy.resourceId).pipe(
+            // 3. Load document from policy's resourceId (workspace from DTO)
+            loadDocument(this.documentRepository, policy.resourceId, dto.workspaceId).pipe(
               Effect.flatMap((document) =>
                 // 4. Check admin permission
                 this.ensureAdmin(actor, document).pipe(
@@ -231,10 +231,10 @@ export class AccessPolicyWorkflow {
       // 1. Decode DTO using schema validation
       S.decodeUnknown(AddPolicyCommandSchema)(input),
       Effect.flatMap((dto) =>
-        // 2. Load actor and document in parallel
+        // 2. Load actor and document in parallel (with workspace validation)
         Effect.all([
           loadActor(this.userRepository, dto.actorId),
-          loadDocument(this.documentRepository, dto.resourceId)
+          loadDocument(this.documentRepository, dto.resourceId, dto.workspaceId)
         ]).pipe(
           Effect.flatMap(([actor, document]) =>
             // 3. Validate subjectId user exists (if user-specific policy) to prevent orphan policies

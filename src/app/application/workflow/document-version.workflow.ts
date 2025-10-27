@@ -75,10 +75,10 @@ export class DocumentVersionWorkflow {
       // 1. Decode query DTO using schema validation
       S.decodeUnknown(ListDocumentVersionsQuerySchema)(input),
       Effect.flatMap((dto) =>
-        // 2. Load actor and document in parallel
+        // 2. Load actor and document in parallel (with workspace validation)
         Effect.all([
           loadActor(this.userRepository, dto.actorId),
-          loadDocument(this.documentRepository, dto.documentId)
+          loadDocument(this.documentRepository, dto.documentId, dto.workspaceId)
         ]).pipe(
           Effect.flatMap(([actor, document]) =>
             // 3. Check read permission
@@ -141,10 +141,10 @@ export class DocumentVersionWorkflow {
       // 1. Decode query DTO using schema validation
       S.decodeUnknown(GetLatestDocumentVersionQuerySchema)(input),
       Effect.flatMap((dto) =>
-        // 2. Load actor and document in parallel
+        // 2. Load actor and document in parallel (with workspace validation)
         Effect.all([
           loadActor(this.userRepository, dto.actorId),
-          loadDocument(this.documentRepository, dto.documentId)
+          loadDocument(this.documentRepository, dto.documentId, dto.workspaceId)
         ]).pipe(
           Effect.flatMap(([actor, document]) =>
             // 3. Check read permission
@@ -207,8 +207,8 @@ export class DocumentVersionWorkflow {
             loadDocumentVersion(this.documentVersionRepository, dto.versionId).pipe(
               Effect.mapError(mapDocumentVersionError("getVersion")),
               Effect.flatMap((version) =>
-                // 4. Load parent document to check access
-                loadDocument(this.documentRepository, version.documentId).pipe(
+                // 4. Load parent document to check access (with workspace validation)
+                loadDocument(this.documentRepository, version.documentId, dto.workspaceId).pipe(
                   Effect.flatMap((document) =>
                     // 5. Ensure read permission for parent document
                     ensureRead(this.accessPolicyRepository, actor, document).pipe(

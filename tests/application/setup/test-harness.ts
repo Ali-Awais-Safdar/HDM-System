@@ -88,6 +88,19 @@ export class InMemoryFileStoragePort extends FileStoragePort {
       ))
     }
     
+    // Validate metadata against request
+    const contentRefMatch = uploadMetadata.contentRef === request.contentRef
+    const sizeMatch = uploadMetadata.expectedSize === request.expectedSize
+    const mimeTypeMatch = uploadMetadata.expectedMimeType === request.expectedMimeType
+    
+    // ContentRef mismatch is critical - fail immediately
+    if (!contentRefMatch) {
+      return Effect.fail(new FileStorageError(
+        `ContentRef mismatch: expected ${request.contentRef}, got ${uploadMetadata.contentRef}`,
+        "INVALID_REQUEST"
+      ))
+    }
+    
     // Mark as completed
     // Use a deterministic hex checksum based on contentRef for testing
     const deterministicHash = (seed: string): Sha256 => {
@@ -111,9 +124,9 @@ export class InMemoryFileStoragePort extends FileStoragePort {
       checksum,
       completedAt: new Date(),
       verificationMetadata: {
-        sizeValid: true,
-        mimeTypeValid: true,
-        contentRefValid: true,
+        sizeValid: sizeMatch,
+        mimeTypeValid: mimeTypeMatch,
+        contentRefValid: contentRefMatch,
         warnings: []
       }
     }

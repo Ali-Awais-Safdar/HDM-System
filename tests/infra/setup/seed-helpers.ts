@@ -8,6 +8,7 @@ import { DocumentEntity, type SerializedDocument } from "@domain/document/docume
 import { DocumentVersionEntity, type SerializedDocumentVersion } from "@domain/documentVersion/document-version.entity"
 import { DownloadTokenEntity, type SerializedDownloadToken } from "@domain/downloadToken/download-token.entity"
 import { AccessPolicyEntity, type SerializedAccessPolicy } from "@domain/accessPolicy/access-policy.entity"
+import { TEST_WORKSPACE_ID } from "../../application/fixtures/actors"
 
 // Import mappers
 import * as UserMapper from "@infra/db/mappers/user.mapper"
@@ -76,7 +77,10 @@ export async function seedDocument(
   db: DatabaseInterface,
   overrides: Partial<SerializedDocument> = {}
 ): Promise<DocumentEntity> {
-  const documentData = generateDocument(overrides)
+  const documentData = generateDocument({
+    workspaceId: TEST_WORKSPACE_ID,
+    ...overrides
+  })
   
   const entity = expectSuccess(
     withTestClock(DocumentEntity.create(documentData), SEED_TIMESTAMP_MS)
@@ -199,6 +203,7 @@ export async function seedDocumentWithOwnerAndVersion(
   const documentData = generateDocument({
     id: documentId,
     ownerId: owner.id,
+    workspaceId: TEST_WORKSPACE_ID,
   })
   
   const documentEntity = expectSuccess(

@@ -37,7 +37,7 @@ import { DocumentVersionNotFoundError } from "@domain/documentVersion/document-v
 import { DatabaseError } from "@domain/utils/base.errors"
 import { DocumentAccessDeniedError, DocumentAccessInsufficientPermissionsError, DocumentAccessContextInvalidError } from "@domain/accessPolicy/document-access.error"
 import { PermissionCheckError, WorkflowDependencyError } from "@application/errors/application.errors"
-import { UserId, DocumentId, DocumentVersionId } from "@domain/refined/ids"
+import { UserId, DocumentId, DocumentVersionId, WorkspaceId } from "@domain/refined/ids"
 import { Schema as S } from "effect"
 import { AccessPolicySchema } from "@domain/accessPolicy/access-policy.schema"
 
@@ -74,7 +74,8 @@ export const loadActor = (
 
 export const loadDocument = (
   documentRepository: DocumentRepository,
-  documentId: DocumentId
+  documentId: DocumentId,
+  workspaceId: WorkspaceId
 ): Effect.Effect<DocumentEntity, DocumentNotFoundError | WorkflowDependencyError> => {
   return pipe(
     documentRepository.findById(documentId),
@@ -101,7 +102,22 @@ export const loadDocument = (
           "id",
           documentId
         )),
-        onSome: (document) => Effect.succeed(document)
+        onSome: (document) => {
+          // Validate workspace isolation
+          if (document.workspaceId !== workspaceId) {
+            return Effect.fail(new DocumentNotFoundError(
+              `Document not found in workspace: ${documentId}`,
+              "id",
+              documentId,
+              { 
+                reason: "workspace_mismatch",
+                expectedWorkspace: workspaceId,
+                actualWorkspace: document.workspaceId
+              }
+            ))
+          }
+          return Effect.succeed(document)
+        }
       })
     )
   )

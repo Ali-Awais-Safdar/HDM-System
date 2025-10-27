@@ -1,7 +1,7 @@
 import { Schema as S } from "effect"
 import { faker } from "../factories/common"
 import { Document as DocumentSchema } from "@domain/document/document.schema"
-import { DocumentId, UserId } from "@domain/refined/ids"
+import { DocumentId, UserId, WorkspaceId } from "@domain/refined/ids"
 
 type EncodedDocument = S.Schema.Encoded<typeof DocumentSchema>
 
@@ -10,6 +10,7 @@ const FIXED_CREATED_AT = new Date("2025-01-03T00:00:00.000Z")
 const deterministicDefaults = (): EncodedDocument => {
   return {
     id: faker.string.uuid() as DocumentId,
+    workspaceId: "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa" as WorkspaceId,
     ownerId: faker.string.uuid() as UserId,
     title: `Document ${faker.string.alphanumeric(8)}`,
     description: undefined,

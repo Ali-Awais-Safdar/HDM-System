@@ -1,4 +1,5 @@
 import { Effect as E, Option as O, pipe, Clock } from "effect"
+import { injectable, inject } from "tsyringe"
 import { DownloadTokenEntity } from "@domain/downloadToken/download-token.entity"
 import { DownloadTokenRepository } from "@domain/downloadToken/download-token.repository"
 import {
@@ -16,12 +17,14 @@ import type { DatabaseInterface } from "@infra/db/interfaces"
 import { isUniqueConstraintError, getErrorMessage, translateDbError, translateQueryError } from "@infra/db/errors"
 import { DatabaseError } from "@domain/utils/base.errors"
 import { fetchSingle, fetchMultiple } from "./helpers"
+import { TOKENS } from "@infra/di/container"
 
 /**
  * Drizzle-based Download Token Repository Implementation
  */
+@injectable()
 export class DownloadTokenDrizzleRepository extends DownloadTokenRepository {
-  constructor(private readonly db: DatabaseInterface) { 
+  constructor(@inject(TOKENS.DATABASE_CONNECTION) private readonly db: DatabaseInterface) { 
     super() 
   }
 

@@ -91,10 +91,10 @@ export class UploadWorkflow {
       S.decodeUnknown(InitiateUploadCommandSchema)(input),
       Effect.flatMap((dto) =>
         pipe(
-          // 2. Load actor and document in parallel
+          // 2. Load actor and document in parallel (with workspace validation)
           Effect.all([
             loadActor(this.userRepository, dto.actorId),
-            loadDocument(this.documentRepository, dto.documentId)
+            loadDocument(this.documentRepository, dto.documentId, dto.workspaceId)
           ]).pipe(
             Effect.flatMap(([actor, document]) =>
               // 3. Check write permission
@@ -126,10 +126,10 @@ export class UploadWorkflow {
       S.decodeUnknown(ConfirmUploadCommandSchema)(input),
       Effect.flatMap((dto) =>
         pipe(
-          // 2. Load actor and document
+          // 2. Load actor and document (with workspace validation)
           Effect.all([
             loadActor(this.userRepository, dto.actorId),
-            loadDocument(this.documentRepository, dto.documentId)
+            loadDocument(this.documentRepository, dto.documentId, dto.workspaceId)
           ]).pipe(
             Effect.flatMap(([actor, document]) =>
               // 3. Recheck write permission

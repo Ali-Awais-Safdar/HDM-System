@@ -7,10 +7,10 @@ import {
   type JWTPayload as AppJWTPayload,
   decodeJWTPayload,
   getUserIdFromPayload,
-  getWorkspaceId,
-  hasWorkspace
+  getWorkspaceId
 } from "@infra/config"
 import type { UserId, WorkspaceId } from "@domain/refined/ids"
+import { makeWorkspaceId } from "@domain/refined/ids"
 import type { Role } from "@domain/accessPolicy/access-policy.schema"
 
 /**
@@ -153,13 +153,70 @@ function verifyJWT(token: string): Effect.Effect<AppJWTPayload, ORPCError<string
 /**
  * Chain-of-Responsibility Step 3: Derive Workspace Context
  * 
- * Extracts workspace information from the JWT payload.
+ * Extracts workspace information from the JWT payload and x-workspace-id header.
+ * 1. Prefer header if present and validate with makeWorkspaceId
+ * 2. If JWT workspace exists and header exists, ensure equality; else error
+ * 3. If no header, use JWT Option directly
+ * 4. If both absent, error "FORBIDDEN"
+ * 
  * Returns Option<WorkspaceId> - workspace may be present or absent.
  */
 function deriveWorkspace(
-  payload: AppJWTPayload
-): Effect.Effect<Option.Option<WorkspaceId>, never> {
-  return Effect.succeed(getWorkspaceId(payload))
+  payload: AppJWTPayload,
+  honoContext: HonoContext
+): Effect.Effect<Option.Option<WorkspaceId>, ORPCError<string, unknown>> {
+  return Effect.gen(function* () {
+    // Get workspace from JWT
+    const jwtWorkspace = getWorkspaceId(payload)
+    
+    // Read x-workspace-id header (case-insensitive)
+    const headerValue = honoContext.req.header("x-workspace-id")
+    
+    // If no header, use JWT workspace or fail if absent
+    if (!headerValue) {
+      if (Option.isNone(jwtWorkspace)) {
+        return yield* Effect.fail(new ORPCError("FORBIDDEN", {
+          message: "Workspace context is required for this operation",
+          status: 403,
+          data: {
+            code: "MISSING_WORKSPACE",
+            details: "This operation requires either an x-workspace-id header or a workspace-scoped JWT token"
+          }
+        }))
+      }
+      return jwtWorkspace
+    }
+    
+    // Header exists - validate it
+    const headerWorkspace = yield* makeWorkspaceId(headerValue).pipe(
+      Effect.mapError((error) => {
+        return new ORPCError("BAD_REQUEST", {
+          message: "Invalid workspace ID in x-workspace-id header",
+          status: 400,
+          data: {
+            code: "INVALID_WORKSPACE_ID",
+            details: error.message
+          }
+        })
+      })
+    )
+    
+    // If JWT also has workspace, ensure they match
+    if (Option.isSome(jwtWorkspace) && headerWorkspace !== jwtWorkspace.value) {
+      return yield* Effect.fail(new ORPCError("FORBIDDEN", {
+        message: "Workspace mismatch: x-workspace-id header does not match JWT workspace",
+        status: 403,
+        data: {
+          code: "WORKSPACE_MISMATCH",
+          headerWorkspace: headerWorkspace,
+          jwtWorkspace: jwtWorkspace.value
+        }
+      }))
+    }
+    
+    // Header validated (and matched JWT if present) - return it
+    return Option.some(headerWorkspace)
+  })
 }
 
 /**
@@ -194,27 +251,14 @@ export function createContext(c: HonoContext): Effect.Effect<RPCContext, ORPCErr
     // Step 2: Verify JWT signature and decode payload
     const payload = yield* verifyJWT(token)
     
-    // Step 3: Derive workspace context from payload
-    const workspaceId = yield* deriveWorkspace(payload)
+    // Step 3: Derive workspace context from header and JWT payload
+    const workspaceId = yield* deriveWorkspace(payload, c)
     
     // Step 4: Build final RPC context
     const context = yield* buildContext(payload, workspaceId, c)
     
     return context
   })
-}
-
-/**
- * Helper: Attach Actor ID to DTO
- */
-export function withActor<T extends Record<string, unknown>>(
-  input: T,
-  context: RPCContext
-): T & { actorId: UserId } {
-  return {
-    ...input,
-    actorId: context.actorId
-  }
 }
 
 /**
@@ -241,84 +285,4 @@ export function withActorAndWorkspace<T extends Record<string, unknown>>(
       workspaceId
     })
   })
-}
-
-/**
- * Helper: Ensure Workspace Exists
- */
-export function ensureWorkspace(context: RPCContext): WorkspaceId {
-  return Option.match(context.workspaceId, {
-    onNone: () => {
-      throw new ORPCError("FORBIDDEN", {
-        message: "Workspace context is required for this operation",
-        status: 403,
-        data: {
-          code: "MISSING_WORKSPACE",
-          details: "This operation requires a workspace-scoped JWT token"
-        }
-      })
-    },
-    onSome: (workspaceId) => workspaceId
-  })
-}
-
-/**
- * Helper: Check if context has specific role
- */
-export function contextHasRole(context: RPCContext, role: Role): boolean {
-  return context.roles.includes(role)
-}
-
-/**
- * Helper: Check if context user is admin
- */
-export function contextIsAdmin(context: RPCContext): boolean {
-  return context.roles.includes("ADMIN")
-}
-
-/**
- * Helper: Ensure user has specific role
- */
-export function ensureRole(context: RPCContext, role: Role): void {
-  if (!contextHasRole(context, role)) {
-    throw new ORPCError("FORBIDDEN", {
-      message: `This operation requires the ${role} role`,
-      status: 403,
-      data: {
-        code: "INSUFFICIENT_ROLE",
-        required: role,
-        actual: context.roles
-      }
-    })
-  }
-}
-
-/**
- * Helper: Ensure user is admin
- */
-export function ensureAdmin(context: RPCContext): void {
-  if (!contextIsAdmin(context)) {
-    throw new ORPCError("FORBIDDEN", {
-      message: "This operation requires administrator privileges",
-      status: 403,
-      data: {
-        code: "ADMIN_REQUIRED",
-        actual: context.roles
-      }
-    })
-  }
-}
-
-/**
- * Type guard: Check if context has workspace
- */
-export function contextHasWorkspace(context: RPCContext): boolean {
-  return hasWorkspace(context.rawPayload)
-}
-
-/**
- * Helper: Get workspace ID from context (returns Option)
- */
-export function getContextWorkspaceId(context: RPCContext): Option.Option<WorkspaceId> {
-  return context.workspaceId
 }
