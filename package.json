@@ -4,8 +4,10 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "tsx watch src/_boot/server.ts",
-    "start": "node dist/_boot/server.js",
+    "dev": "tsx watch src/presentation/http/main.ts",
+    "dev:http": "tsx watch src/presentation/http/main.ts",
+    "start": "node dist/presentation/http/main.js",
+    "start:http": "node dist/presentation/http/main.js",
     "build": "tsc -p tsconfig.json",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
@@ -38,6 +40,9 @@
     "vitest": "^3.2.4"
   },
   "dependencies": {
+    "@hono/node-server": "^1.19.5",
+    "@orpc/client": "^1.10.2",
+    "@orpc/server": "^1.10.2",
     "@types/bcrypt": "^6.0.0",
     "@types/multer": "^2.0.0",
     "bcrypt": "^6.0.0",
@@ -48,6 +53,7 @@
     "express": "^5.1.0",
     "fast-check": "^3.23.2",
     "helmet": "^8.1.0",
+    "hono": "^4.10.3",
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.2",
     "pg": "^8.16.3",

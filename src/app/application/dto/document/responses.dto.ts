@@ -14,7 +14,7 @@ export const DocumentResponseSchema = S.Struct({
   publishStatus: DocumentFields.publishStatus,
   publishNotes: DocumentFields.publishNotes,
   createdAt: DateTimeFromString, // ISO date string
-  updatedAt: DateTimeFromString // ISO date string
+  updatedAt: S.optional(DateTimeFromString) // ISO date string, optional
 })
 export type DocumentResponse = S.Schema.Type<typeof DocumentResponseSchema>
 export type DocumentResponseEncoded = S.Schema.Encoded<typeof DocumentResponseSchema>

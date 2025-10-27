@@ -45,8 +45,7 @@ import {
   mapDocumentVersionPersistenceError,
   mapDocumentPersistenceError,
   mapUploadInitiationError,
-  mapUploadConfirmationError,
-  optionToUndefined
+  mapUploadConfirmationError
 } from "@application/workflow/helpers"
 
 // Refined types
@@ -215,7 +214,7 @@ export class UploadWorkflow {
         uploadUrl: storageResponse.uploadUrl,
         fileKey: storageResponse.fileKey,
         contentRef: dto.contentRef, // Keep contentRef matching DTO-supplied value
-        expiresAt: storageResponse.expiresAt,
+        expiresAt: storageResponse.expiresAt.toISOString(), // Convert Date to ISO string
         uploadToken: storageResponse.contentRef // Expose storage-generated token separately
       })),
       Effect.mapError((error) => new UploadInitiationError(
@@ -439,15 +438,18 @@ export class UploadWorkflow {
   private buildConfirmUploadResponse(
     version: DocumentVersionEntity
   ): Effect.Effect<ConfirmUploadResponse, WorkflowDependencyError, Clock.Clock> {
-    // Build response directly from entity properties
+    // Build response directly from entity properties, converting Date to ISO string
     return Effect.succeed({
       versionId: version.id,
       documentId: version.documentId,
-      version: version.version as any, // Cast to satisfy branded type
+      version: version.version,
       file: version.file,
       createdBy: version.createdBy,
-      createdAt: version.createdAt,
-      updatedAt: optionToUndefined(version.updatedAt)
+      createdAt: version.createdAt.toISOString(), // Convert Date to ISO string
+      updatedAt: Option.match(version.updatedAt, {
+        onNone: () => undefined,
+        onSome: (date) => date.toISOString()
+      })
     } as ConfirmUploadResponse)
   }
 }

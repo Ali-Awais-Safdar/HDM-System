@@ -6,6 +6,7 @@ import { DocumentFields, DocumentStruct } from "@domain/document/document.schema
 import { FileMetadataFields } from "@domain/documentVersion/file-metadata.vo"
 import { DocumentVersionFields } from "@domain/documentVersion/document-version.schema"
 import { VersionNumber } from "@domain/documentVersion/version-number.vo"
+import { Optional } from "@domain/utils/schema.utils"
 
 export const CreateDocumentCommandSchema = S.Struct({
   ownerId: DocumentFields.ownerId,
@@ -82,7 +83,7 @@ export const InitiateUploadResponseSchema = S.Struct({
   uploadUrl: S.String,
   fileKey: FileKey,
   contentRef: FileKey,
-  expiresAt: S.Date,
+  expiresAt: S.String, // ISO date string (workflow converts Date to ISO)
   uploadToken: S.String
 })
 export type InitiateUploadResponse = S.Schema.Type<typeof InitiateUploadResponseSchema>
@@ -95,9 +96,9 @@ export const ConfirmUploadResponseSchema = S.Struct({
   documentId: DocumentVersionFields.documentId,
   version: DocumentVersionFields.version,
   file: DocumentVersionFields.file,
-  createdBy: DocumentVersionFields.createdBy,
-  createdAt: S.Date,
-  updatedAt: S.optional(S.Date)
+  createdBy: Optional(UserId), // Optional (converted to null in presentation layer)
+  createdAt: S.String, // ISO date string (workflow converts Date to ISO)
+  updatedAt: S.optional(S.String) // Optional ISO date string
 })
 export type ConfirmUploadResponse = S.Schema.Type<typeof ConfirmUploadResponseSchema>
 export type ConfirmUploadResponseEncoded = S.Schema.Encoded<typeof ConfirmUploadResponseSchema>

@@ -1,0 +1,661 @@
+import { ORPCError } from "@orpc/server"
+import { ParseResult } from "effect"
+
+// Application errors
+import {
+  type WorkflowError,
+  WorkflowDependencyError,
+  PermissionCheckError,
+  AccessPolicyCreationError,
+  UploadInitiationError,
+  UploadConfirmationError,
+  FileNotFoundError,
+  ChecksumValidationError,
+  DownloadTokenGenerationError,
+  DownloadTokenValidationError as AppDownloadTokenValidationError
+} from "@application/errors/application.errors"
+
+// Domain base errors
+import {
+  ValidationError,
+  BusinessRuleViolationError,
+  DatabaseError
+} from "@domain/utils/base.errors"
+
+// Document errors
+import {
+  DocumentNotFoundError,
+  DocumentValidationError
+} from "@domain/document/document.error"
+
+// Document version errors
+import {
+  DocumentVersionNotFoundError,
+  DocumentVersionValidationError
+} from "@domain/documentVersion/document-version.error"
+
+// User errors
+import {
+  UserNotFoundError,
+  UserAlreadyExistsError,
+  UserValidationError
+} from "@domain/user/user.error"
+
+// Access policy errors
+import {
+  AccessPolicyNotFoundError,
+  AccessPolicyValidationError,
+  AccessPolicyConflictError
+} from "@domain/accessPolicy/access-policy.error"
+
+// Document access errors
+import {
+  DocumentAccessDeniedError,
+  DocumentAccessInsufficientPermissionsError,
+  DocumentAccessContextInvalidError
+} from "@domain/accessPolicy/document-access.error"
+
+// Download token errors
+import {
+  DownloadTokenNotFoundError,
+  DownloadTokenValidationError as DomainDownloadTokenValidationError,
+  DownloadTokenAlreadyUsedError
+} from "@domain/downloadToken/download-token.error"
+
+export interface HTTPErrorResponse {
+  status: number
+  body: {
+    code: string
+    message: string
+    data?: unknown
+  }
+}
+
+export function mapToORPCError(error: unknown): ORPCError<string, unknown> {
+  // Context errors and other ORPCErrors are thrown directly
+  if (error instanceof ORPCError) {
+    return error
+  }
+
+  // PermissionCheckError - user is authenticated but lacks permission (403 FORBIDDEN)
+  if (error instanceof PermissionCheckError) {
+    return new ORPCError("FORBIDDEN", {
+      message: error.message,
+      status: 403,
+      data: {
+        code: error.code,
+        documentId: error.documentId,
+        userId: error.userId,
+        requiredPermission: error.requiredPermission,
+        details: error.details
+      }
+    })
+  }
+
+  if (error instanceof DocumentAccessDeniedError) {
+    return new ORPCError("FORBIDDEN", {
+      message: error.message,
+      status: 403,
+      data: {
+        code: error.code,
+        userId: error.userId,
+        documentId: error.documentId,
+        requiredLevel: error.requiredLevel,
+        reason: error.reason
+      }
+    })
+  }
+
+  if (error instanceof DocumentAccessInsufficientPermissionsError) {
+    return new ORPCError("FORBIDDEN", {
+      message: error.message,
+      status: 403,
+      data: {
+        code: error.code,
+        userId: error.userId,
+        documentId: error.documentId,
+        currentLevel: error.currentLevel,
+        requiredLevel: error.requiredLevel
+      }
+    })
+  }
+
+  // WorkflowDependencyError - check if it wraps a not-found scenario
+  if (error instanceof WorkflowDependencyError) {
+    const isNotFoundWrapper = isNotFoundDependency(error)
+    if (isNotFoundWrapper) {
+      return new ORPCError("NOT_FOUND", {
+        message: error.message,
+        status: 404,
+        data: {
+          code: error.code,
+          dependency: error.dependency,
+          operation: error.operation,
+          details: error.details
+        }
+      })
+    }
+    // Otherwise treat as unprocessable
+    return new ORPCError("UNPROCESSABLE_CONTENT", {
+      message: error.message,
+      status: 422,
+      data: {
+        code: error.code,
+        dependency: error.dependency,
+        operation: error.operation,
+        details: error.details
+      }
+    })
+  }
+
+  // Document not found
+  if (error instanceof DocumentNotFoundError) {
+    return new ORPCError("NOT_FOUND", {
+      message: error.message,
+      status: 404,
+      data: {
+        code: error.code,
+        field: error.field,
+        value: error.value,
+        details: error.details
+      }
+    })
+  }
+
+  // Document version not found
+  if (error instanceof DocumentVersionNotFoundError) {
+    return new ORPCError("NOT_FOUND", {
+      message: error.message,
+      status: 404,
+      data: {
+        code: error.code,
+        field: error.field,
+        value: error.value,
+        details: error.details
+      }
+    })
+  }
+
+  // User not found
+  if (error instanceof UserNotFoundError) {
+    return new ORPCError("NOT_FOUND", {
+      message: error.message,
+      status: 404,
+      data: {
+        code: error.code,
+        field: error.field,
+        value: error.value,
+        details: error.details
+      }
+    })
+  }
+
+  // Access policy not found
+  if (error instanceof AccessPolicyNotFoundError) {
+    return new ORPCError("NOT_FOUND", {
+      message: error.message,
+      status: 404,
+      data: {
+        code: error.code,
+        field: error.field,
+        value: error.value,
+        details: error.details
+      }
+    })
+  }
+
+  // Download token not found
+  if (error instanceof DownloadTokenNotFoundError) {
+    return new ORPCError("NOT_FOUND", {
+      message: error.message,
+      status: 404,
+      data: {
+        code: error.code,
+        field: error.field,
+        value: error.value,
+        details: error.details
+      }
+    })
+  }
+
+  // File not found
+  if (error instanceof FileNotFoundError) {
+    return new ORPCError("NOT_FOUND", {
+      message: error.message,
+      status: 404,
+      data: {
+        code: error.code,
+        fileKey: error.fileKey,
+        details: error.details
+      }
+    })
+  }
+
+  // ValidationError - generic validation failures
+  if (error instanceof ValidationError) {
+    return new ORPCError("BAD_REQUEST", {
+      message: error.message,
+      status: 400,
+      data: {
+        code: error.code,
+        field: error.field,
+        value: error.value,
+        details: error.details
+      }
+    })
+  }
+
+  // DocumentValidationError
+  if (error instanceof DocumentValidationError) {
+    return new ORPCError("BAD_REQUEST", {
+      message: error.message,
+      status: 400,
+      data: {
+        code: error.code,
+        field: error.field,
+        value: error.value,
+        details: error.details
+      }
+    })
+  }
+
+  // DocumentVersionValidationError
+  if (error instanceof DocumentVersionValidationError) {
+    return new ORPCError("BAD_REQUEST", {
+      message: error.message,
+      status: 400,
+      data: {
+        code: error.code,
+        field: error.field,
+        value: error.value,
+        details: error.details
+      }
+    })
+  }
+
+  // UserValidationError
+  if (error instanceof UserValidationError) {
+    return new ORPCError("BAD_REQUEST", {
+      message: error.message,
+      status: 400,
+      data: {
+        code: error.code,
+        field: error.field,
+        value: error.value,
+        details: error.details
+      }
+    })
+  }
+
+  // AccessPolicyValidationError
+  if (error instanceof AccessPolicyValidationError) {
+    return new ORPCError("BAD_REQUEST", {
+      message: error.message,
+      status: 400,
+      data: {
+        code: error.code,
+        field: error.field,
+        value: error.value,
+        details: error.details
+      }
+    })
+  }
+
+  // DomainDownloadTokenValidationError
+  if (error instanceof DomainDownloadTokenValidationError) {
+    return new ORPCError("BAD_REQUEST", {
+      message: error.message,
+      status: 400,
+      data: {
+        code: error.code,
+        field: error.field,
+        value: error.value,
+        details: error.details
+      }
+    })
+  }
+
+  // DocumentAccessContextInvalidError
+  if (error instanceof DocumentAccessContextInvalidError) {
+    return new ORPCError("BAD_REQUEST", {
+      message: error.message,
+      status: 400,
+      data: {
+        code: error.code,
+        field: error.field,
+        details: error.details
+      }
+    })
+  }
+
+  // BusinessRuleViolationError - map to BAD_REQUEST per requirements
+  if (error instanceof BusinessRuleViolationError) {
+    return new ORPCError("BAD_REQUEST", {
+      message: error.message,
+      status: 400,
+      data: {
+        code: error.code,
+        details: error.details
+      }
+    })
+  }
+
+  // UploadConfirmationError - map to BAD_REQUEST per requirements
+  if (error instanceof UploadConfirmationError) {
+    return new ORPCError("BAD_REQUEST", {
+      message: error.message,
+      status: 400,
+      data: {
+        code: error.code,
+        documentId: error.documentId,
+        versionId: error.versionId,
+        reason: error.reason,
+        details: error.details
+      }
+    })
+  }
+
+  // Application DownloadTokenValidationError - conditional mapping based on reason
+  if (error instanceof AppDownloadTokenValidationError) {
+    // EXPIRED → UNAUTHORIZED (401)
+    if (error.reason === "EXPIRED") {
+      return new ORPCError("UNAUTHORIZED", {
+        message: error.message,
+        status: 401,
+        data: {
+          code: error.code,
+          token: error.token,
+          reason: error.reason,
+          details: error.details
+        }
+      })
+    }
+    // NOT_FOUND → NOT_FOUND (404)
+    if (error.reason === "NOT_FOUND") {
+      return new ORPCError("NOT_FOUND", {
+        message: error.message,
+        status: 404,
+        data: {
+          code: error.code,
+          token: error.token,
+          reason: error.reason,
+          details: error.details
+        }
+      })
+    }
+    // ALREADY_USED → PRECONDITION_FAILED (412)
+    if (error.reason === "ALREADY_USED") {
+      return new ORPCError("PRECONDITION_FAILED", {
+        message: error.message,
+        status: 412,
+        data: {
+          code: error.code,
+          token: error.token,
+          reason: error.reason,
+          details: error.details
+        }
+      })
+    }
+    // INVALID and others → BAD_REQUEST (400)
+    return new ORPCError("BAD_REQUEST", {
+      message: error.message,
+      status: 400,
+      data: {
+        code: error.code,
+        token: error.token,
+        reason: error.reason,
+        details: error.details
+      }
+    })
+  }
+
+  // Effect ParseResult.ParseError (Schema validation errors)
+  if (ParseResult.isParseError(error)) {
+    return new ORPCError("BAD_REQUEST", {
+      message: "Schema validation failed",
+      status: 400,
+      data: {
+        code: "SCHEMA_VALIDATION_ERROR",
+        details: error.message
+      }
+    })
+  }
+
+  // UserAlreadyExistsError
+  if (error instanceof UserAlreadyExistsError) {
+    return new ORPCError("CONFLICT", {
+      message: error.message,
+      status: 409,
+      data: {
+        code: error.code,
+        field: error.field,
+        value: error.value,
+        details: error.details
+      }
+    })
+  }
+
+  // AccessPolicyConflictError
+  if (error instanceof AccessPolicyConflictError) {
+    return new ORPCError("CONFLICT", {
+      message: error.message,
+      status: 409,
+      data: {
+        code: error.code,
+        field: error.field,
+        value: error.value,
+        details: error.details
+      }
+    })
+  }
+
+  // DownloadTokenAlreadyUsedError - semantic PRECONDITION_FAILED
+  if (error instanceof DownloadTokenAlreadyUsedError) {
+    return new ORPCError("PRECONDITION_FAILED", {
+      message: error.message,
+      status: 412,
+      data: {
+        code: error.code,
+        field: error.field,
+        value: error.value,
+        details: error.details
+      }
+    })
+  }
+
+  // UploadInitiationError
+  if (error instanceof UploadInitiationError) {
+    return new ORPCError("UNPROCESSABLE_CONTENT", {
+      message: error.message,
+      status: 422,
+      data: {
+        code: error.code,
+        documentId: error.documentId,
+        fileName: error.fileName,
+        details: error.details
+      }
+    })
+  }
+
+  // ChecksumValidationError
+  if (error instanceof ChecksumValidationError) {
+    return new ORPCError("UNPROCESSABLE_CONTENT", {
+      message: error.message,
+      status: 422,
+      data: {
+        code: error.code,
+        expectedChecksum: error.expectedChecksum,
+        actualChecksum: error.actualChecksum,
+        fileKey: error.fileKey,
+        details: error.details
+      }
+    })
+  }
+
+  // AccessPolicyCreationError
+  if (error instanceof AccessPolicyCreationError) {
+    return new ORPCError("UNPROCESSABLE_CONTENT", {
+      message: error.message,
+      status: 422,
+      data: {
+        code: error.code,
+        documentId: error.documentId,
+        subjectId: error.subjectId,
+        role: error.role,
+        details: error.details
+      }
+    })
+  }
+
+  // DownloadTokenGenerationError
+  if (error instanceof DownloadTokenGenerationError) {
+    return new ORPCError("UNPROCESSABLE_CONTENT", {
+      message: error.message,
+      status: 422,
+      data: {
+        code: error.code,
+        documentId: error.documentId,
+        userId: error.userId,
+        details: error.details
+      }
+    })
+  }
+
+  if (error instanceof DatabaseError) {
+    // Don't expose internal database details to clients for security
+    return new ORPCError("INTERNAL_SERVER_ERROR", {
+      message: "A database error occurred",
+      status: 500,
+      data: {
+        code: error.code
+      }
+    })
+  }
+
+  // Check if it's a WorkflowError by duck typing
+  if (
+    error &&
+    typeof error === "object" &&
+    "_tag" in error &&
+    "code" in error &&
+    error instanceof Error
+  ) {
+    const workflowError = error as WorkflowError
+    return new ORPCError("UNPROCESSABLE_CONTENT", {
+      message: workflowError.message,
+      status: 422,
+      data: {
+        code: workflowError.code,
+        tag: workflowError._tag,
+        details: (workflowError as any).details
+      }
+    })
+  }
+
+  // Fallback for unexpected errors
+  const errorMessage = error instanceof Error ? error.message : String(error)
+  
+  return new ORPCError("INTERNAL_SERVER_ERROR", {
+    message: "An unexpected error occurred",
+    status: 500,
+    data: {
+      code: "UNKNOWN_ERROR",
+      message: errorMessage
+    }
+  })
+}
+
+/**
+ * Helper: Check if WorkflowDependencyError wraps a not-found scenario
+ */
+function isNotFoundDependency(error: WorkflowDependencyError): boolean {
+  // Check if the dependency name contains "Repository" and operation is "findById"
+  const isRepositoryNotFound = 
+    error.dependency.includes("Repository") && 
+    error.operation === "findById"
+  
+  // Check if details contain a not-found indicator
+  const hasNotFoundDetails = 
+    error.details &&
+    typeof error.details === "object" &&
+    "originalError" in error.details &&
+    (
+      error.details.originalError instanceof DocumentNotFoundError ||
+      error.details.originalError instanceof UserNotFoundError ||
+      error.details.originalError instanceof DocumentVersionNotFoundError ||
+      error.details.originalError instanceof AccessPolicyNotFoundError ||
+      error.details.originalError instanceof DownloadTokenNotFoundError ||
+      (typeof error.details.originalError === "object" && 
+       error.details.originalError !== null &&
+       "_tag" in error.details.originalError &&
+       String((error.details.originalError as any)._tag).includes("NotFound"))
+    )
+  
+  return isRepositoryNotFound || Boolean(hasNotFoundDetails)
+}
+
+export function toHTTPResponse(error: ORPCError<string, unknown>): HTTPErrorResponse {
+  return {
+    status: error.status ?? 500,
+    body: {
+      code: error.code,
+      message: error.message,
+      data: error.data
+    }
+  }
+}
+
+export function mapErrorToHTTPResponse(error: unknown): HTTPErrorResponse {
+  const orpcError = mapToORPCError(error)
+  return toHTTPResponse(orpcError)
+}
+
+export function isDomainError(error: unknown): boolean {
+  return (
+    error instanceof ValidationError ||
+    error instanceof BusinessRuleViolationError ||
+    error instanceof DocumentNotFoundError ||
+    error instanceof DocumentValidationError ||
+    error instanceof DocumentVersionNotFoundError ||
+    error instanceof DocumentVersionValidationError ||
+    error instanceof UserNotFoundError ||
+    error instanceof UserAlreadyExistsError ||
+    error instanceof UserValidationError ||
+    error instanceof AccessPolicyNotFoundError ||
+    error instanceof AccessPolicyValidationError ||
+    error instanceof AccessPolicyConflictError ||
+    error instanceof DownloadTokenNotFoundError ||
+    error instanceof DomainDownloadTokenValidationError ||
+    error instanceof DownloadTokenAlreadyUsedError ||
+    error instanceof DocumentAccessDeniedError ||
+    error instanceof DocumentAccessInsufficientPermissionsError ||
+    error instanceof DocumentAccessContextInvalidError ||
+    error instanceof PermissionCheckError ||
+    error instanceof AccessPolicyCreationError ||
+    error instanceof UploadInitiationError ||
+    error instanceof UploadConfirmationError ||
+    error instanceof FileNotFoundError ||
+    error instanceof ChecksumValidationError ||
+    error instanceof DownloadTokenGenerationError ||
+    error instanceof AppDownloadTokenValidationError ||
+    error instanceof WorkflowDependencyError ||
+    error instanceof ORPCError ||
+    ParseResult.isParseError(error)
+  )
+}
+
+export function getErrorCode(error: unknown): string | undefined {
+  if (error && typeof error === "object" && "code" in error) {
+    return String((error as any).code)
+  }
+  return undefined
+}
+
+export function getErrorTag(error: unknown): string | undefined {
+  if (error && typeof error === "object" && "_tag" in error) {
+    return String((error as any)._tag)
+  }
+  return undefined
+}
+
+export const mapError = mapToORPCError
