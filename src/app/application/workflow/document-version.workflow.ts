@@ -150,21 +150,22 @@ export class DocumentVersionWorkflow {
             // 3. Check read permission
             ensureRead(this.accessPolicyRepository, actor, document).pipe(
               Effect.flatMap(() =>
-                // 4. Fetch latest version
+                // 4. Fetch latest version, carrying dto through the pipeline
                 this.documentVersionRepository.findLatestByDocumentId(dto.documentId).pipe(
-                  Effect.mapError(mapDocumentVersionPersistenceError("findLatestByDocumentId"))
+                  Effect.mapError(mapDocumentVersionPersistenceError("findLatestByDocumentId")),
+                  Effect.map((versionOption) => ({ dto, versionOption }))
                 )
               )
             )
           ),
           Effect.mapError(mapDocumentVersionError("findLatestByDocumentId")),
-          Effect.flatMap((versionOption) =>
-            // 5. Handle Option.none case
+          Effect.flatMap(({ dto, versionOption }) =>
+            // 5. Handle Option.none case using decoded dto.documentId
             Option.match(versionOption, {
               onNone: () => Effect.fail(new DocumentVersionNotFoundError(
-                `No versions found for document: ${input.documentId}`,
+                `No versions found for document: ${dto.documentId}`,
                 "documentId",
-                input.documentId
+                dto.documentId
               )),
               onSome: (version) => Effect.succeed(version)
             })

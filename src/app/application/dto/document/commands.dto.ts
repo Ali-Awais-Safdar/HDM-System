@@ -1,12 +1,11 @@
 import { Schema as S } from "effect"
-import { DocumentId, DocumentVersionId, UserId, WorkspaceId } from "@domain/refined/ids"
+import { DocumentId, UserId, WorkspaceId } from "@domain/refined/ids"
 import { Sha256 } from "@domain/refined/checksum"
 import { FileKey } from "@domain/refined/file-reference"
 import { DocumentFields, DocumentStruct } from "@domain/document/document.schema"
 import { FileMetadataFields } from "@domain/documentVersion/file-metadata.vo"
 import { DocumentVersionFields } from "@domain/documentVersion/document-version.schema"
 import { VersionNumber } from "@domain/documentVersion/version-number.vo"
-import { Optional } from "@domain/utils/schema.utils"
 
 // ===== INPUT SCHEMAS (Client-supplied, no auth/workspace fields) =====
 
@@ -121,24 +120,3 @@ export const DeleteDocumentCommandSchema = S.Struct({
 })
 export type DeleteDocumentCommand = S.Schema.Type<typeof DeleteDocumentCommandSchema>
 export type DeleteDocumentCommandEncoded = S.Schema.Encoded<typeof DeleteDocumentCommandSchema>
-
-export const InitiateUploadResponseSchema = S.Struct({
-  uploadUrl: S.String,
-  fileKey: FileKey,
-  contentRef: FileKey,
-  expiresAt: S.String, // ISO date string (workflow converts Date to ISO)
-  uploadToken: S.String
-})
-export type InitiateUploadResponse = S.Schema.Type<typeof InitiateUploadResponseSchema>
-
-export const ConfirmUploadResponseSchema = S.Struct({
-  versionId: DocumentVersionId,
-  documentId: DocumentVersionFields.documentId,
-  version: DocumentVersionFields.version,
-  file: DocumentVersionFields.file,
-  createdBy: Optional(UserId), // Optional (converted to null in presentation layer)
-  createdAt: S.String, // ISO date string (workflow converts Date to ISO)
-  updatedAt: S.optional(S.String) // Optional ISO date string
-})
-export type ConfirmUploadResponse = S.Schema.Type<typeof ConfirmUploadResponseSchema>
-

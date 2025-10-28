@@ -19,6 +19,10 @@ import { DocumentAccessService } from "@domain/accessPolicy/document-access.serv
 
 // Domain errors
 import { DocumentNotFoundError } from "@domain/document/document.error"
+import { DocumentVersionNotFoundError } from "@domain/documentVersion/document-version.error"
+import { DownloadTokenNotFoundError } from "@domain/downloadToken/download-token.error"
+import { AccessPolicyNotFoundError } from "@domain/accessPolicy/access-policy.error"
+import { DatabaseError } from "@domain/utils/base.errors"
 
 // Application errors
 import { PermissionCheckError, WorkflowError, WorkflowDependencyError } from "@application/errors/application.errors"
@@ -61,6 +65,7 @@ import {
   optionToUndefined,
   optionToNull,
   optionArrayToUndefined,
+  filterUndefined,
   recordAudit
 } from "@application/workflow/helpers"
 
@@ -315,11 +320,7 @@ export class DocumentWorkflow {
                   Effect.flatMap((doc) =>
                     dto.description !== undefined
                       ? pipe(
-                          // Convert Option<string | undefined> to Option<string>
-                          Option.match(dto.description, {
-                            onNone: () => Option.none<string>(),
-                            onSome: (desc) => desc !== undefined ? Option.some(desc) : Option.none<string>()
-                          }),
+                          filterUndefined(dto.description),
                           (descriptionOption) => doc.updateDescription(descriptionOption)
                         )
                       : Effect.succeed(doc)
@@ -414,11 +415,7 @@ export class DocumentWorkflow {
                   Effect.flatMap((doc) =>
                     dto.publishNotes !== undefined
                       ? pipe(
-                          // Convert Option<string | undefined> to Option<string>
-                          Option.match(dto.publishNotes, {
-                            onNone: () => Option.none<string>(),
-                            onSome: (note) => note !== undefined ? Option.some(note) : Option.none<string>()
-                          }),
+                          filterUndefined(dto.publishNotes),
                           (notesOption) => doc.updatePublishNotes(notesOption)
                         )
                       : Effect.succeed(doc)
@@ -565,21 +562,42 @@ export class DocumentWorkflow {
 
   private checkDocumentDependencies(
     documentId: DocumentId
-  ): Effect.Effect<void, WorkflowDependencyError> {
+  ): Effect.Effect<void, WorkflowDependencyError | DatabaseError> {
     return pipe(
       // Check for versions, tokens, and policies in parallel
       Effect.all([
         this.documentVersionRepository.findByDocumentId(documentId).pipe(
           Effect.map((versions) => ({ type: "versions" as const, count: versions.length })),
-          Effect.catchAll(() => Effect.succeed({ type: "versions" as const, count: 0 }))
+          Effect.catchSome((error) => {
+            // Treat "not found" errors as zero count (dependency missing)
+            if (error instanceof DocumentVersionNotFoundError) {
+              return Option.some(Effect.succeed({ type: "versions" as const, count: 0 }))
+            }
+            // Let infrastructure errors (DatabaseError, etc.) bubble up
+            return Option.none()
+          })
         ),
         this.downloadTokenRepository.findByDocumentId(documentId).pipe(
           Effect.map((tokens) => ({ type: "tokens" as const, count: tokens.length })),
-          Effect.catchAll(() => Effect.succeed({ type: "tokens" as const, count: 0 }))
+          Effect.catchSome((error) => {
+            // Treat "not found" errors as zero count (dependency missing)
+            if (error instanceof DownloadTokenNotFoundError) {
+              return Option.some(Effect.succeed({ type: "tokens" as const, count: 0 }))
+            }
+            // Let infrastructure errors (DatabaseError, etc.) bubble up
+            return Option.none()
+          })
         ),
         this.accessPolicyWorkflow.getPoliciesForDocument(documentId).pipe(
           Effect.map((policies) => ({ type: "policies" as const, count: policies.length })),
-          Effect.catchAll(() => Effect.succeed({ type: "policies" as const, count: 0 }))
+          Effect.catchSome((error) => {
+            // Treat "not found" errors as zero count (dependency missing)
+            if (error instanceof AccessPolicyNotFoundError) {
+              return Option.some(Effect.succeed({ type: "policies" as const, count: 0 }))
+            }
+            // Let infrastructure errors (DatabaseError, etc.) bubble up
+            return Option.none()
+          })
         )
       ]),
       Effect.flatMap((results: Array<{ type: string; count: number }>) => {
@@ -596,6 +614,18 @@ export class DocumentWorkflow {
         }
         
         return Effect.void
+      }),
+      Effect.mapError((error) => {
+        // Map unhandled errors (like ValidationError) to WorkflowDependencyError
+        if (error instanceof WorkflowDependencyError || error instanceof DatabaseError) {
+          return error
+        }
+        return new WorkflowDependencyError(
+          `Failed to check document dependencies: ${error instanceof Error ? error.message : String(error)}`,
+          "Document",
+          "checkDependencies",
+          { originalError: error }
+        )
       })
     )
   }

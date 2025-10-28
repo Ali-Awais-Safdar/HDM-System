@@ -142,11 +142,40 @@ describe("DocumentVersionWorkflow", () => {
         await expectAsyncSuccess(resultEffect)
         throw new Error("Expected error")
       } catch (error) {
-        // Should fail with an error (likely DocumentVersionNotFoundError or WorkflowDependencyError)
+        // Should fail with an error (likely DocumentVersionNotFoundError)
         expect(error).toBeDefined()
-        // Check that the error message contains relevant information
+        // Check that the error message contains the decoded/normalized documentId from the DTO
+        // not the raw input - this ensures we're using dto.documentId in the error
         const errorMessage = String(error)
         expect(errorMessage).toBeTruthy()
+        expect(errorMessage).toContain(document.id)
+      }
+    })
+
+    it("should use DTO-documentId in error message, not raw input", async () => {
+      const owner = actors.owner
+      const document = await seedDocument(harness.db, { ownerId: owner.id })
+
+      const query = {
+        workspaceId: document.workspaceId,
+        documentId: document.id, // Valid UUID that will pass schema validation
+        actorId: owner.id
+      }
+
+      const resultEffect = harness.documentVersionWorkflow.getLatestDocumentVersion(query)
+
+      try {
+        await expectAsyncSuccess(resultEffect)
+        throw new Error("Expected error")
+      } catch (error) {
+        // Verify the error uses the decoded DTO's documentId (validated UUID format)
+        const errorMessage = String(error)
+        expect(errorMessage).toBeTruthy()
+        // The error should contain the properly formatted document ID from dto.documentId
+        // This ensures the Option.none branch uses the decoded value
+        expect(errorMessage).toContain(document.id)
+        // Additionally verify the error is DocumentVersionNotFoundError
+        expect(errorMessage).toContain("No versions found")
       }
     })
   })

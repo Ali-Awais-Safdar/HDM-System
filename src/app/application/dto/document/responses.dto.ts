@@ -1,8 +1,11 @@
 import { Schema as S } from "effect"
-import { DocumentId, UserId } from "@domain/refined/ids"
+import { DocumentId, DocumentVersionId, UserId } from "@domain/refined/ids"
 import { DocumentFields } from "@domain/document/document.schema"
 import { DateTimeFromString } from "@domain/refined/date-time"
+import { FileKey } from "@domain/refined/file-reference"
+import { DocumentVersionFields } from "@domain/documentVersion/document-version.schema"
 import { PageNumber, DocumentPageSize } from "@domain/utils/pagination"
+import { Optional } from "@domain/utils/schema.utils"
 
 
 export const DocumentResponseSchema = S.Struct({
@@ -36,5 +39,25 @@ export const PaginatedDocumentsResponseSchema = S.Struct({
   totalPages: S.Number
 })
 export type PaginatedDocumentsResponseEncoded = S.Schema.Encoded<typeof PaginatedDocumentsResponseSchema>
+
+export const InitiateUploadResponseSchema = S.Struct({
+  uploadUrl: S.String,
+  fileKey: FileKey,
+  contentRef: FileKey,
+  expiresAt: S.String, // ISO date string (workflow converts Date to ISO)
+  uploadToken: S.String
+})
+export type InitiateUploadResponse = S.Schema.Type<typeof InitiateUploadResponseSchema>
+
+export const ConfirmUploadResponseSchema = S.Struct({
+  versionId: DocumentVersionId,
+  documentId: DocumentVersionFields.documentId,
+  version: DocumentVersionFields.version,
+  file: DocumentVersionFields.file,
+  createdBy: Optional(UserId), // Optional (converted to null in presentation layer)
+  createdAt: S.String, // ISO date string (workflow converts Date to ISO)
+  updatedAt: S.optional(S.String) // Optional ISO date string
+})
+export type ConfirmUploadResponse = S.Schema.Type<typeof ConfirmUploadResponseSchema>
 
 

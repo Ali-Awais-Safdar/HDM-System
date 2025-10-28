@@ -1,6 +1,23 @@
-import { Effect, Option, pipe } from "effect"
+import { Effect, Option, pipe, Schema as S } from "effect"
 import type { AuditPort, AuditEvent } from "@application/services/ports/audit.port"
 import type { LoggerPort } from "@application/services/ports/logger.port"
+import { DocumentEntity, SerializedDocument } from "@domain/document/document.entity"
+import { DocumentVersionEntity, SerializedDocumentVersion } from "@domain/documentVersion/document-version.entity"
+import { UserEntity } from "@domain/user/user.entity"
+import { AccessPolicyEntity } from "@domain/accessPolicy/access-policy.entity"
+import { DocumentRepository } from "@domain/document/document.repository"
+import { DocumentVersionRepository } from "@domain/documentVersion/document-version.repository"
+import { AccessPolicyRepository } from "@domain/accessPolicy/access-policy.repository"
+import { UserRepository } from "@domain/user/user.repository"
+import { DocumentAccessService } from "@domain/accessPolicy/document-access.service"
+import { DocumentAccessPolicy } from "@domain/accessPolicy/document-access.policy"
+import { DocumentNotFoundError } from "@domain/document/document.error"
+import { DocumentVersionNotFoundError } from "@domain/documentVersion/document-version.error"
+import { DatabaseError } from "@domain/utils/base.errors"
+import { DocumentAccessDeniedError, DocumentAccessInsufficientPermissionsError, DocumentAccessContextInvalidError } from "@domain/accessPolicy/document-access.error"
+import { PermissionCheckError, WorkflowDependencyError } from "@application/errors/application.errors"
+import { UserId, DocumentId, DocumentVersionId, WorkspaceId } from "@domain/refined/ids"
+import { AccessPolicySchema } from "@domain/accessPolicy/access-policy.schema"
 
 // ===== OPTION CONVERSION HELPERS =====
 
@@ -24,24 +41,13 @@ export const optionArrayToUndefined = <T>(option: Option.Option<readonly T[]>): 
     onSome: (arr) => arr
   })
 }
-import { DocumentEntity, SerializedDocument } from "@domain/document/document.entity"
-import { DocumentVersionEntity, SerializedDocumentVersion } from "@domain/documentVersion/document-version.entity"
-import { UserEntity } from "@domain/user/user.entity"
-import { AccessPolicyEntity } from "@domain/accessPolicy/access-policy.entity"
-import { DocumentRepository } from "@domain/document/document.repository"
-import { DocumentVersionRepository } from "@domain/documentVersion/document-version.repository"
-import { AccessPolicyRepository } from "@domain/accessPolicy/access-policy.repository"
-import { UserRepository } from "@domain/user/user.repository"
-import { DocumentAccessService } from "@domain/accessPolicy/document-access.service"
-import { DocumentAccessPolicy } from "@domain/accessPolicy/document-access.policy"
-import { DocumentNotFoundError } from "@domain/document/document.error"
-import { DocumentVersionNotFoundError } from "@domain/documentVersion/document-version.error"
-import { DatabaseError } from "@domain/utils/base.errors"
-import { DocumentAccessDeniedError, DocumentAccessInsufficientPermissionsError, DocumentAccessContextInvalidError } from "@domain/accessPolicy/document-access.error"
-import { PermissionCheckError, WorkflowDependencyError } from "@application/errors/application.errors"
-import { UserId, DocumentId, DocumentVersionId, WorkspaceId } from "@domain/refined/ids"
-import { Schema as S } from "effect"
-import { AccessPolicySchema } from "@domain/accessPolicy/access-policy.schema"
+
+export const filterUndefined = <T>(option: Option.Option<T | undefined>): Option.Option<T> => {
+  return Option.match(option, {
+    onNone: () => Option.none<T>(),
+    onSome: (value) => value !== undefined ? Option.some(value) : Option.none<T>()
+  })
+}
 
 // ===== ACTOR LOADING =====
 

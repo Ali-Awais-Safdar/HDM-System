@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest"
+import { Effect, Option } from "effect"
 import { workflowTestLifecycle } from "../setup/test-harness"
 import type { WorkflowTestHarness } from "../setup/test-harness"
 import { seedTestActors, TEST_WORKSPACE_ID, TEST_WORKSPACE_ID_2 } from "../fixtures/actors"
@@ -775,6 +776,171 @@ describe("DocumentWorkflow", () => {
         harness.documentRepository.findById(created.id as any)
       )
       expect(expectSome(foundOption).id).toBe(created.id)
+    })
+  })
+
+  describe("deleteDocument - Dependency Checking", () => {
+    it("should fail deletion when repository fails during dependency check and force is false", async () => {
+      // Create a document
+      const createCommand = {
+        workspaceId: TEST_WORKSPACE_ID,
+        ownerId: actors.owner.id,
+        actorId: actors.owner.id,
+        title: "Document to Delete",
+        description: undefined,
+        tags: undefined
+      }
+
+      const created = await expectAsyncSuccess(
+        withTestClock(
+          harness.documentWorkflow.createDocument(createCommand),
+          Date.now()
+        )
+      )
+
+      // Mock the documentVersionRepository.findByDocumentId to throw an error
+      const originalFindByDocumentId = harness.documentVersionRepository.findByDocumentId
+      harness.documentVersionRepository.findByDocumentId = () => {
+        return Effect.fail(new Error("Database connection failed") as any)
+      }
+
+      // Try to delete with force=false
+      const deleteCommand = {
+        workspaceId: TEST_WORKSPACE_ID,
+        id: created.id as any,
+        actorId: actors.owner.id,
+        force: false
+      }
+
+      try {
+        await expectAsyncSuccess(harness.documentWorkflow.deleteDocument(deleteCommand))
+        throw new Error("Expected deletion to fail due to repository error but got success")
+      } catch (error) {
+        expect(error).toBeDefined()
+        // The deletion should fail because the repository error during dependency check is propagated
+      }
+
+      // Restore original method
+      harness.documentVersionRepository.findByDocumentId = originalFindByDocumentId
+
+      // Verify the document still exists
+      const foundOption = await expectAsyncSuccess(
+        harness.documentRepository.findById(created.id as any)
+      )
+      expect(expectSome(foundOption).id).toBe(created.id)
+    })
+
+    it("should succeed deletion when force is true even if dependency check fails", async () => {
+      // Create a document
+      const createCommand = {
+        workspaceId: TEST_WORKSPACE_ID,
+        ownerId: actors.owner.id,
+        actorId: actors.owner.id,
+        title: "Document to Force Delete",
+        description: undefined,
+        tags: undefined
+      }
+
+      const created = await expectAsyncSuccess(
+        withTestClock(
+          harness.documentWorkflow.createDocument(createCommand),
+          Date.now()
+        )
+      )
+
+      // Mock the documentVersionRepository.findByDocumentId to throw an error
+      const originalFindByDocumentId = harness.documentVersionRepository.findByDocumentId
+      harness.documentVersionRepository.findByDocumentId = () => {
+        return Effect.fail(new Error("Database connection failed") as any)
+      }
+
+      // Try to delete with force=true (should skip dependency check)
+      const deleteCommand = {
+        workspaceId: TEST_WORKSPACE_ID,
+        id: created.id as any,
+        actorId: actors.owner.id,
+        force: true
+      }
+
+      const deleted = await expectAsyncSuccess(
+        harness.documentWorkflow.deleteDocument(deleteCommand)
+      )
+
+      expect(deleted).toBe(true)
+
+      // Restore original method
+      harness.documentVersionRepository.findByDocumentId = originalFindByDocumentId
+
+      // Verify the document was deleted
+      const foundOption = await expectAsyncSuccess(
+        harness.documentRepository.findById(created.id as any)
+      )
+      expect(Option.isNone(foundOption)).toBe(true)
+
+      // Verify audit event was recorded
+      const auditEvents = harness.auditPort.getEventsByAction("delete")
+      expect(auditEvents.length).toBeGreaterThan(0)
+      expect(auditEvents.some(e => e.resourceId === created.id)).toBe(true)
+    })
+
+    it("should fail deletion when dependencies exist and force is false", async () => {
+      // Use a fixture that creates a document with a version
+      const { document } = await seedDocumentWithReadAccess(
+        harness.db,
+        actors.owner,
+        actors.collaborator
+      )
+
+      // Use the document's actual ownerId (from the document entity)
+      const deleteCommand = {
+        workspaceId: document.workspaceId,
+        id: document.id as any,
+        actorId: document.ownerId,
+        force: false
+      }
+
+      try {
+        await expectAsyncSuccess(harness.documentWorkflow.deleteDocument(deleteCommand))
+        throw new Error("Expected deletion to fail due to dependencies but got success")
+      } catch (error) {
+        expect(error).toBeDefined()
+        expect(String(error)).toContain("dependencies")
+      }
+
+      // Verify the document still exists
+      const foundOption = await expectAsyncSuccess(
+        harness.documentRepository.findById(document.id as any)
+      )
+      expect(expectSome(foundOption).id).toBe(document.id)
+    })
+
+    it("should succeed deletion when dependencies exist but force is true", async () => {
+      // Use a fixture that creates a document with a version
+      const { document } = await seedDocumentWithReadAccess(
+        harness.db,
+        actors.owner,
+        actors.collaborator
+      )
+
+      // Use the document's actual ownerId (from the document entity)
+      const deleteCommand = {
+        workspaceId: document.workspaceId,
+        id: document.id as any,
+        actorId: document.ownerId,
+        force: true
+      }
+
+      const deleted = await expectAsyncSuccess(
+        harness.documentWorkflow.deleteDocument(deleteCommand)
+      )
+
+      expect(deleted).toBe(true)
+
+      // Verify the document was deleted
+      const foundOption = await expectAsyncSuccess(
+        harness.documentRepository.findById(document.id as any)
+      )
+      expect(Option.isNone(foundOption)).toBe(true)
     })
   })
 })

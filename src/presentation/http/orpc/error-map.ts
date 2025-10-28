@@ -110,13 +110,13 @@ export function mapToORPCError(error: unknown, options?: ErrorMappingOptions): O
     return new ORPCError("FORBIDDEN", {
       message: error.message,
       status: 403,
-      data: {
+      data: enrichErrorData({
         code: error.code,
         userId: error.userId,
         documentId: error.documentId,
         requiredLevel: error.requiredLevel,
         reason: error.reason
-      }
+      }, options)
     })
   }
 
@@ -124,13 +124,13 @@ export function mapToORPCError(error: unknown, options?: ErrorMappingOptions): O
     return new ORPCError("FORBIDDEN", {
       message: error.message,
       status: 403,
-      data: {
+      data: enrichErrorData({
         code: error.code,
         userId: error.userId,
         documentId: error.documentId,
         currentLevel: error.currentLevel,
         requiredLevel: error.requiredLevel
-      }
+      }, options)
     })
   }
 
@@ -141,24 +141,24 @@ export function mapToORPCError(error: unknown, options?: ErrorMappingOptions): O
       return new ORPCError("NOT_FOUND", {
         message: error.message,
         status: 404,
-        data: {
+        data: enrichErrorData({
           code: error.code,
           dependency: error.dependency,
           operation: error.operation,
           details: error.details
-        }
+        }, options)
       })
     }
     // Otherwise treat as internal server error
     return new ORPCError("INTERNAL_SERVER_ERROR", {
       message: error.message,
       status: 500,
-      data: {
+      data: enrichErrorData({
         code: error.code,
         dependency: error.dependency,
         operation: error.operation,
         details: error.details
-      }
+      }, options)
     })
   }
 
@@ -167,12 +167,12 @@ export function mapToORPCError(error: unknown, options?: ErrorMappingOptions): O
     return new ORPCError("NOT_FOUND", {
       message: error.message,
       status: 404,
-      data: {
+      data: enrichErrorData({
         code: error.code,
         field: error.field,
         value: error.value,
         details: error.details
-      }
+      }, options)
     })
   }
 
@@ -181,12 +181,12 @@ export function mapToORPCError(error: unknown, options?: ErrorMappingOptions): O
     return new ORPCError("NOT_FOUND", {
       message: error.message,
       status: 404,
-      data: {
+      data: enrichErrorData({
         code: error.code,
         field: error.field,
         value: error.value,
         details: error.details
-      }
+      }, options)
     })
   }
 
@@ -195,12 +195,12 @@ export function mapToORPCError(error: unknown, options?: ErrorMappingOptions): O
     return new ORPCError("NOT_FOUND", {
       message: error.message,
       status: 404,
-      data: {
+      data: enrichErrorData({
         code: error.code,
         field: error.field,
         value: error.value,
         details: error.details
-      }
+      }, options)
     })
   }
 
@@ -209,12 +209,12 @@ export function mapToORPCError(error: unknown, options?: ErrorMappingOptions): O
     return new ORPCError("NOT_FOUND", {
       message: error.message,
       status: 404,
-      data: {
+      data: enrichErrorData({
         code: error.code,
         field: error.field,
         value: error.value,
         details: error.details
-      }
+      }, options)
     })
   }
 
@@ -223,12 +223,12 @@ export function mapToORPCError(error: unknown, options?: ErrorMappingOptions): O
     return new ORPCError("NOT_FOUND", {
       message: error.message,
       status: 404,
-      data: {
+      data: enrichErrorData({
         code: error.code,
         field: error.field,
         value: error.value,
         details: error.details
-      }
+      }, options)
     })
   }
 
@@ -237,11 +237,11 @@ export function mapToORPCError(error: unknown, options?: ErrorMappingOptions): O
     return new ORPCError("NOT_FOUND", {
       message: error.message,
       status: 404,
-      data: {
+      data: enrichErrorData({
         code: error.code,
         fileKey: error.fileKey,
         details: error.details
-      }
+      }, options)
     })
   }
 
@@ -250,12 +250,12 @@ export function mapToORPCError(error: unknown, options?: ErrorMappingOptions): O
     return new ORPCError("BAD_REQUEST", {
       message: error.message,
       status: 400,
-      data: {
+      data: enrichErrorData({
         code: error.code,
         field: error.field,
         value: error.value,
         details: error.details
-      }
+      }, options)
     })
   }
 
@@ -264,12 +264,12 @@ export function mapToORPCError(error: unknown, options?: ErrorMappingOptions): O
     return new ORPCError("BAD_REQUEST", {
       message: error.message,
       status: 400,
-      data: {
+      data: enrichErrorData({
         code: error.code,
         field: error.field,
         value: error.value,
         details: error.details
-      }
+      }, options)
     })
   }
 
@@ -278,12 +278,12 @@ export function mapToORPCError(error: unknown, options?: ErrorMappingOptions): O
     return new ORPCError("BAD_REQUEST", {
       message: error.message,
       status: 400,
-      data: {
+      data: enrichErrorData({
         code: error.code,
         field: error.field,
         value: error.value,
         details: error.details
-      }
+      }, options)
     })
   }
 
@@ -292,12 +292,12 @@ export function mapToORPCError(error: unknown, options?: ErrorMappingOptions): O
     return new ORPCError("BAD_REQUEST", {
       message: error.message,
       status: 400,
-      data: {
+      data: enrichErrorData({
         code: error.code,
         field: error.field,
         value: error.value,
         details: error.details
-      }
+      }, options)
     })
   }
 
@@ -306,12 +306,12 @@ export function mapToORPCError(error: unknown, options?: ErrorMappingOptions): O
     return new ORPCError("BAD_REQUEST", {
       message: error.message,
       status: 400,
-      data: {
+      data: enrichErrorData({
         code: error.code,
         field: error.field,
         value: error.value,
         details: error.details
-      }
+      }, options)
     })
   }
 
@@ -320,12 +320,12 @@ export function mapToORPCError(error: unknown, options?: ErrorMappingOptions): O
     return new ORPCError("BAD_REQUEST", {
       message: error.message,
       status: 400,
-      data: {
+      data: enrichErrorData({
         code: error.code,
         field: error.field,
         value: error.value,
         details: error.details
-      }
+      }, options)
     })
   }
 
@@ -334,11 +334,11 @@ export function mapToORPCError(error: unknown, options?: ErrorMappingOptions): O
     return new ORPCError("BAD_REQUEST", {
       message: error.message,
       status: 400,
-      data: {
+      data: enrichErrorData({
         code: error.code,
         field: error.field,
         details: error.details
-      }
+      }, options)
     })
   }
 
@@ -347,10 +347,10 @@ export function mapToORPCError(error: unknown, options?: ErrorMappingOptions): O
     return new ORPCError("BAD_REQUEST", {
       message: error.message,
       status: 400,
-      data: {
+      data: enrichErrorData({
         code: error.code,
         details: error.details
-      }
+      }, options)
     })
   }
 
@@ -359,13 +359,13 @@ export function mapToORPCError(error: unknown, options?: ErrorMappingOptions): O
     return new ORPCError("BAD_REQUEST", {
       message: error.message,
       status: 400,
-      data: {
+      data: enrichErrorData({
         code: error.code,
         documentId: error.documentId,
         versionId: error.versionId,
         reason: error.reason,
         details: error.details
-      }
+      }, options)
     })
   }
 
@@ -376,12 +376,12 @@ export function mapToORPCError(error: unknown, options?: ErrorMappingOptions): O
       return new ORPCError("UNAUTHORIZED", {
         message: error.message,
         status: 401,
-        data: {
+        data: enrichErrorData({
           code: error.code,
           token: error.token,
           reason: error.reason,
           details: error.details
-        }
+        }, options)
       })
     }
     // NOT_FOUND → NOT_FOUND (404)
@@ -389,12 +389,12 @@ export function mapToORPCError(error: unknown, options?: ErrorMappingOptions): O
       return new ORPCError("NOT_FOUND", {
         message: error.message,
         status: 404,
-        data: {
+        data: enrichErrorData({
           code: error.code,
           token: error.token,
           reason: error.reason,
           details: error.details
-        }
+        }, options)
       })
     }
     // ALREADY_USED → PRECONDITION_FAILED (412)
@@ -402,24 +402,24 @@ export function mapToORPCError(error: unknown, options?: ErrorMappingOptions): O
       return new ORPCError("PRECONDITION_FAILED", {
         message: error.message,
         status: 412,
-        data: {
+        data: enrichErrorData({
           code: error.code,
           token: error.token,
           reason: error.reason,
           details: error.details
-        }
+        }, options)
       })
     }
     // INVALID and others → BAD_REQUEST (400)
     return new ORPCError("BAD_REQUEST", {
       message: error.message,
       status: 400,
-      data: {
+      data: enrichErrorData({
         code: error.code,
         token: error.token,
         reason: error.reason,
         details: error.details
-      }
+      }, options)
     })
   }
 
@@ -428,10 +428,10 @@ export function mapToORPCError(error: unknown, options?: ErrorMappingOptions): O
     return new ORPCError("BAD_REQUEST", {
       message: "Schema validation failed",
       status: 400,
-      data: {
+      data: enrichErrorData({
         code: "SCHEMA_VALIDATION_ERROR",
         details: error.message
-      }
+      }, options)
     })
   }
 
@@ -440,12 +440,12 @@ export function mapToORPCError(error: unknown, options?: ErrorMappingOptions): O
     return new ORPCError("CONFLICT", {
       message: error.message,
       status: 409,
-      data: {
+      data: enrichErrorData({
         code: error.code,
         field: error.field,
         value: error.value,
         details: error.details
-      }
+      }, options)
     })
   }
 
@@ -454,12 +454,12 @@ export function mapToORPCError(error: unknown, options?: ErrorMappingOptions): O
     return new ORPCError("CONFLICT", {
       message: error.message,
       status: 409,
-      data: {
+      data: enrichErrorData({
         code: error.code,
         field: error.field,
         value: error.value,
         details: error.details
-      }
+      }, options)
     })
   }
 
@@ -468,12 +468,12 @@ export function mapToORPCError(error: unknown, options?: ErrorMappingOptions): O
     return new ORPCError("PRECONDITION_FAILED", {
       message: error.message,
       status: 412,
-      data: {
+      data: enrichErrorData({
         code: error.code,
         field: error.field,
         value: error.value,
         details: error.details
-      }
+      }, options)
     })
   }
 
@@ -482,12 +482,12 @@ export function mapToORPCError(error: unknown, options?: ErrorMappingOptions): O
     return new ORPCError("UNPROCESSABLE_CONTENT", {
       message: error.message,
       status: 422,
-      data: {
+      data: enrichErrorData({
         code: error.code,
         documentId: error.documentId,
         fileName: error.fileName,
         details: error.details
-      }
+      }, options)
     })
   }
 
@@ -496,13 +496,13 @@ export function mapToORPCError(error: unknown, options?: ErrorMappingOptions): O
     return new ORPCError("UNPROCESSABLE_CONTENT", {
       message: error.message,
       status: 422,
-      data: {
+      data: enrichErrorData({
         code: error.code,
         expectedChecksum: error.expectedChecksum,
         actualChecksum: error.actualChecksum,
         fileKey: error.fileKey,
         details: error.details
-      }
+      }, options)
     })
   }
 
@@ -511,13 +511,13 @@ export function mapToORPCError(error: unknown, options?: ErrorMappingOptions): O
     return new ORPCError("UNPROCESSABLE_CONTENT", {
       message: error.message,
       status: 422,
-      data: {
+      data: enrichErrorData({
         code: error.code,
         documentId: error.documentId,
         subjectId: error.subjectId,
         role: error.role,
         details: error.details
-      }
+      }, options)
     })
   }
 
@@ -526,12 +526,12 @@ export function mapToORPCError(error: unknown, options?: ErrorMappingOptions): O
     return new ORPCError("UNPROCESSABLE_CONTENT", {
       message: error.message,
       status: 422,
-      data: {
+      data: enrichErrorData({
         code: error.code,
         documentId: error.documentId,
         userId: error.userId,
         details: error.details
-      }
+      }, options)
     })
   }
 
@@ -558,11 +558,11 @@ export function mapToORPCError(error: unknown, options?: ErrorMappingOptions): O
     return new ORPCError("UNPROCESSABLE_CONTENT", {
       message: workflowError.message,
       status: 422,
-      data: {
+      data: enrichErrorData({
         code: workflowError.code,
         tag: workflowError._tag,
         details: (workflowError as any).details
-      }
+      }, options)
     })
   }
 

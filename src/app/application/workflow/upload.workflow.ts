@@ -31,11 +31,13 @@ import {
 import {
   InitiateUploadCommandSchema,
   InitiateUploadCommandEncoded,
-  InitiateUploadResponse,
   ConfirmUploadCommandSchema,
-  ConfirmUploadCommandEncoded,
-  ConfirmUploadResponse
+  ConfirmUploadCommandEncoded
 } from "@application/dto/document/commands.dto"
+import {
+  InitiateUploadResponse,
+  ConfirmUploadResponse
+} from "@application/dto/document/responses.dto"
 
 // Application workflow helpers
 import {

@@ -132,57 +132,57 @@ function extractAuthHeader(c: HonoContext): Effect.Effect<string, ORPCError<stri
  * Throws ORPCError with UNAUTHORIZED if verification fails.
  */
 function verifyJWT(token: string): Effect.Effect<AppJWTPayload, ORPCError<string, unknown>> {
-  return Effect.tryPromise({
-    try: async () => {
-      // Verify JWT signature using configured secret and algorithm
-      const rawPayload = await verify(token, JWT_CONFIG.SECRET, JWT_CONFIG.ALGORITHM)
-      
-      // Validate payload structure using Effect Schema
-      return await Effect.runPromise(
-        decodeJWTPayload(rawPayload).pipe(
-          Effect.mapError((error) => 
-            new ORPCError("UNAUTHORIZED", {
-              message: "JWT payload validation failed",
-              status: 401,
-              data: {
-                code: "INVALID_JWT_PAYLOAD",
-                details: error.message
-              }
-            })
-          )
-        )
-      )
-    },
-    catch: (error) => {
-      // Handle ORPCError from payload validation
-      if (error instanceof ORPCError) {
-        return error
-      }
-      
-      const errorMessage = error instanceof Error ? error.message : String(error)
-      
-      // Check for expired token
-      if (errorMessage.includes("expired") || errorMessage.includes("exp")) {
+  return Effect.gen(function* () {
+    // Step 1: Verify JWT signature using configured secret and algorithm
+    const rawPayload = yield* Effect.tryPromise({
+      try: () => verify(token, JWT_CONFIG.SECRET, JWT_CONFIG.ALGORITHM),
+      catch: (error) => {
+        // Handle ORPCError from payload validation
+        if (error instanceof ORPCError) {
+          return error
+        }
+        
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        
+        // Check for expired token
+        if (errorMessage.includes("expired") || errorMessage.includes("exp")) {
+          return new ORPCError("UNAUTHORIZED", {
+            message: "JWT token has expired",
+            status: 401,
+            data: {
+              code: "EXPIRED_TOKEN",
+              details: "Please obtain a new token"
+            }
+          })
+        }
+        
+        // Invalid token (signature verification failed)
         return new ORPCError("UNAUTHORIZED", {
-          message: "JWT token has expired",
+          message: "JWT token verification failed",
           status: 401,
           data: {
-            code: "EXPIRED_TOKEN",
-            details: "Please obtain a new token"
+            code: "INVALID_TOKEN",
+            details: errorMessage
           }
         })
       }
-      
-      // Invalid token (signature verification failed)
-      return new ORPCError("UNAUTHORIZED", {
-        message: "JWT token verification failed",
-        status: 401,
-        data: {
-          code: "INVALID_TOKEN",
-          details: errorMessage
-        }
-      })
-    }
+    })
+    
+    // Step 2: Validate payload structure using Effect Schema
+    const payload = yield* decodeJWTPayload(rawPayload).pipe(
+      Effect.mapError((error) => 
+        new ORPCError("UNAUTHORIZED", {
+          message: "JWT payload validation failed",
+          status: 401,
+          data: {
+            code: "INVALID_JWT_PAYLOAD",
+            details: error.message
+          }
+        })
+      )
+    )
+    
+    return payload
   })
 }
 
@@ -316,27 +316,29 @@ function buildContext(
   workspaceId: Option.Option<WorkspaceId>,
   honoContext: HonoContext
 ): Effect.Effect<RPCContext, never> {
-  const requestContext = buildRequestContext(honoContext)
-  const actor = buildActorInfo(payload, workspaceId)
-  
-  // Resolve singleton logger once
-  const logger = resolveService<LoggerPort>(TOKENS.LOGGER_PORT)
-  
-  // Create request-scoped logger with correlation metadata
-  const requestLogger = logger.child({
-    requestId: requestContext.requestId,
-    actorId: getUserIdFromPayload(payload),
-    workspaceId: workspaceId ? Option.getOrNull(workspaceId) : undefined
-  })
-  
-  return Effect.succeed({
-    actorId: getUserIdFromPayload(payload),
-    workspaceId,
-    roles: payload.roles,
-    requestContext,
-    actor,
-    hono: honoContext,
-    logger: requestLogger
+  return Effect.gen(function* () {
+    const requestContext = buildRequestContext(honoContext)
+    const actor = buildActorInfo(payload, workspaceId)
+    
+    // Resolve singleton logger once (lifted into Effect chain)
+    const logger = yield* Effect.sync(() => resolveService<LoggerPort>(TOKENS.LOGGER_PORT))
+    
+    // Create request-scoped logger with correlation metadata
+    const requestLogger = logger.child({
+      requestId: requestContext.requestId,
+      actorId: getUserIdFromPayload(payload),
+      workspaceId: workspaceId ? Option.getOrNull(workspaceId) : undefined
+    })
+    
+    return {
+      actorId: getUserIdFromPayload(payload),
+      workspaceId,
+      roles: payload.roles,
+      requestContext,
+      actor,
+      hono: honoContext,
+      logger: requestLogger
+    }
   })
 }
 

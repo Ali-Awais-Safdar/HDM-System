@@ -11,15 +11,11 @@ import { toStandard } from "../standard"
 import {
   AddPolicyInputSchema,
   RemovePolicyInputSchema,
-  UpdatePolicyActionsInputSchema
-} from "@application/dto/accessPolicy/commands.dto"
-import {
+  UpdatePolicyActionsInputSchema,
   GetDocumentPoliciesInputSchema,
-  GetActorPoliciesInputSchema
-} from "@application/dto/accessPolicy/queries.dto"
-import {
+  GetActorPoliciesInputSchema,
   AccessPolicyResponseSchema
-} from "@application/dto/accessPolicy/responses.dto"
+} from "@application/dto/accessPolicy"
 
 /**
  * Access Policy Procedures

@@ -17,14 +17,14 @@ import { LoggerPort } from "@application/services/ports/logger.port"
 
 async function bootstrap() {
   try {
-    console.log("Starting DMS Headless HTTP Server...")
-    console.log(`Environment: ${env.NODE_ENV}`)
-    console.log(`Port: ${env.PORT}`)
-    
-    console.log("\n  Initializing dependency injection container...")
     initContainer()
     
     const logger = resolveService<LoggerPort>(TOKENS.LOGGER_PORT)
+    
+    logger.info("Starting DMS Headless HTTP Server...", {
+      environment: env.NODE_ENV,
+      port: env.PORT
+    })
     
     logger.info("Building Hono server...")
     const app = buildServer()
@@ -103,7 +103,15 @@ async function bootstrap() {
     })
     
   } catch (error) {
-    console.error("❌ Failed to start server:", error)
+    try {
+      const logger = resolveService<LoggerPort>(TOKENS.LOGGER_PORT)
+      logger.fatal("Failed to start server", { 
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined
+      })
+    } catch {
+      console.error("❌ Failed to start server:", error)
+    }
     process.exit(1)
   }
 }

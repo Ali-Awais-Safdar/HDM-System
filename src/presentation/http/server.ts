@@ -47,6 +47,8 @@ const contextMiddleware: MiddlewareHandler<{ Variables: Variables }> = async (c,
 export function buildServer(): Hono<{ Variables: Variables }> {
   const app = new Hono<{ Variables: Variables }>()
 
+  const logger = resolveService<LoggerPort>(TOKENS.LOGGER_PORT)
+
   const corsOrigins = HTTP_CONFIG.CORS.ORIGINS
   
   app.use("*", cors({
@@ -162,8 +164,6 @@ export function buildServer(): Hono<{ Variables: Variables }> {
     )
   })
 
-  const logger = resolveService<LoggerPort>(TOKENS.LOGGER_PORT)
-  
   logger.info("Hono server built successfully", {
     healthCheckPath: "/health",
     rpcEndpoint: `${HTTP_CONFIG.RPC_PREFIX}/*`,

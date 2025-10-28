@@ -144,20 +144,20 @@ export class DownloadTokenWorkflow {
                     "validation",
                     { originalError: error, generatedId: generatedIdString }
                   )),
-                  Effect.flatMap((validatedId) =>
-                    // 6. Build token data
-                    {
-                      const tokenData: Partial<SerializedDownloadToken> = {
-                        id: validatedId,
-                        token: tokenString,
-                        documentId: dto.documentId,
-                        issuedTo: dto.issuedTo,
-                        expiresAt: dto.expiresAt // Already an ISO string from DTO
-                      }
-                      
-                      return DownloadTokenEntity.create(tokenData as SerializedDownloadToken)
+                  Effect.flatMap((validatedId) => {
+                    // 6. Build token data and return { dto, token }
+                    const tokenData: Partial<SerializedDownloadToken> = {
+                      id: validatedId,
+                      token: tokenString,
+                      documentId: dto.documentId,
+                      issuedTo: dto.issuedTo,
+                      expiresAt: dto.expiresAt // Already an ISO string from DTO
                     }
-                  )
+                    
+                    return DownloadTokenEntity.create(tokenData as SerializedDownloadToken).pipe(
+                      Effect.map((token) => ({ dto, token }))
+                    )
+                  })
                 )
               )
             )
@@ -182,21 +182,20 @@ export class DownloadTokenWorkflow {
         }
         return error as unknown as WorkflowError
       }),
-      Effect.flatMap((token) => {
-        const dto = input as CreateDownloadTokenCommandEncoded
-        return this.downloadTokenRepository.save(token).pipe(
+      Effect.flatMap(({ dto, token }) =>
+        this.downloadTokenRepository.save(token).pipe(
           Effect.mapError((error) => new DownloadTokenGenerationError(
             `Failed to save download token: ${error instanceof Error ? error.message : String(error)}`,
             dto.documentId,
             dto.issuedTo,
             { originalError: error }
-          ))
+          )),
+          Effect.map((savedToken) => ({ dto, savedToken }))
         )
-      }),
-      Effect.flatMap((savedToken) => {
-        const dto = input as CreateDownloadTokenCommandEncoded
+      ),
+      Effect.flatMap(({ dto, savedToken }) =>
         // Record success audit event after token creation
-        return recordAudit(this.audit, {
+        recordAudit(this.audit, {
           actorId: dto.actorId,
           workspaceId: dto.workspaceId,
           resourceType: "download_token",
@@ -211,28 +210,27 @@ export class DownloadTokenWorkflow {
         }).pipe(
           Effect.map(() => savedToken)
         )
-      }),
+      ),
       Effect.flatMap((savedToken) =>
         // Return serialized token
         this.serializeToken(savedToken)
       ),
       Effect.catchAll((error) => {
         // Record failure audit event for token creation failures
-        const dto = input as CreateDownloadTokenCommandEncoded
         const errorMessage = error instanceof Error ? error.message : String(error)
         
         // Record audit for authenticated actors only
         return recordAudit(this.audit, {
-          actorId: dto.actorId,
-          workspaceId: dto.workspaceId,
+          actorId: input.actorId,
+          workspaceId: input.workspaceId,
           resourceType: "download_token",
-          resourceId: dto.documentId, // Use documentId as resourceId when token creation fails
+          resourceId: input.documentId, // Use documentId as resourceId when token creation fails
           action: "create",
           outcome: "failure" as const,
           reason: errorMessage,
           metadata: {
-            documentId: dto.documentId,
-            issuedTo: dto.issuedTo,
+            documentId: input.documentId,
+            issuedTo: input.issuedTo,
             errorMessage
           }
         }).pipe(

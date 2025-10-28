@@ -30,17 +30,13 @@ import {
   UpdatePolicyActionsCommandSchema,
   UpdatePolicyActionsCommandEncoded,
   RemovePolicyCommandSchema,
-  RemovePolicyCommandEncoded
-} from "@application/dto/accessPolicy/commands.dto"
-import {
+  RemovePolicyCommandEncoded,
   GetDocumentPoliciesQuerySchema,
   GetDocumentPoliciesQueryEncoded,
   GetActorPoliciesQuerySchema,
-  GetActorPoliciesQueryEncoded
-} from "@application/dto/accessPolicy/queries.dto"
-import {
+  GetActorPoliciesQueryEncoded,
   AccessPolicyResponseEncoded
-} from "@application/dto/accessPolicy/responses.dto"
+} from "@application/dto/accessPolicy"
 
 // Application workflow helpers
 import {

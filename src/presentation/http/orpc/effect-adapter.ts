@@ -66,6 +66,17 @@ export const executeEffect = async <A>(
     const errorCode = (error as any)?.code || "UNKNOWN_ERROR"
     const errorMessage = error instanceof Error ? error.message : String(error)
     
+    logger.error(`RPC call failed: ${procedureName}`, {
+      requestId,
+      actorId,
+      workspaceId: workspaceId || undefined,
+      procedure: procedureName,
+      duration,
+      errorCode,
+      errorMessage,
+      timestamp: new Date().toISOString()
+    })
+    
     // Record audit event for authenticated requests with significant errors
     const workspaceIdString = workspaceId ? String(workspaceId) : undefined
     const shouldAudit = actorId && 
@@ -94,7 +105,15 @@ export const executeEffect = async <A>(
       
       auditEvent.correlationId = requestId
       
-      Effect.runPromiseExit(audit.record(auditEvent)).catch(() => {
+      Effect.runPromiseExit(audit.record(auditEvent)).catch((auditError) => {
+        logger.warn("Failed to record audit event", {
+          requestId,
+          actorId,
+          workspaceId: workspaceIdString,
+          procedure: procedureName,
+          auditError: auditError instanceof Error ? auditError.message : String(auditError),
+          timestamp: new Date().toISOString()
+        })
       })
     }
     

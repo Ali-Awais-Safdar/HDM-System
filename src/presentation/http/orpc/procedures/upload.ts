@@ -10,10 +10,12 @@ import { normalizeUploadResponse } from "./utils"
 
 import {
   InitiateUploadInputSchema,
-  ConfirmUploadInputSchema,
+  ConfirmUploadInputSchema
+} from "@application/dto/document/commands.dto"
+import {
   InitiateUploadResponseSchema,
   ConfirmUploadResponseSchema
-} from "@application/dto/document/commands.dto"
+} from "@application/dto/document/responses.dto"
 
 /**
  * Upload Procedures
