@@ -29,6 +29,7 @@ describe("DocumentWorkflow", () => {
       const createCommand = {
         workspaceId: TEST_WORKSPACE_ID,
         ownerId: actors.owner.id,
+        actorId: actors.owner.id,
         title: "Test Document",
         description: "A test description",
         tags: ["tag1", "tag2"] as readonly string[]
@@ -60,12 +61,25 @@ describe("DocumentWorkflow", () => {
       expect(found.title).toBe("Test Document")
       expect(found.descriptionOrEmpty).toBe("A test description")
       expect(found.tagsOrEmpty).toEqual(["tag1", "tag2"])
+
+      // Verify audit event recorded
+      const auditEvents = harness.auditPort.getEventsByAction("create")
+      expect(auditEvents).toHaveLength(1)
+      expect(auditEvents[0]).toMatchObject({
+        actorId: actors.owner.id,
+        workspaceId: TEST_WORKSPACE_ID,
+        resourceType: "document",
+        resourceId: response.id,
+        action: "create",
+        outcome: "success"
+      })
     })
 
     it("should create document with optional fields set to undefined", async () => {
         const createCommand = {
           workspaceId: TEST_WORKSPACE_ID,
           ownerId: actors.owner.id,
+          actorId: actors.owner.id,
           title: "Minimal Document",
           description: undefined,
           tags: undefined
@@ -89,6 +103,7 @@ describe("DocumentWorkflow", () => {
       const createCommand = {
         workspaceId: TEST_WORKSPACE_ID,
         ownerId: actors.owner.id,
+        actorId: actors.owner.id,
         title: "Original Title",
         description: "Original description",
         tags: ["original"] as readonly string[]
@@ -135,6 +150,7 @@ describe("DocumentWorkflow", () => {
       const createCommand = {
         workspaceId: TEST_WORKSPACE_ID,
         ownerId: actors.owner.id,
+        actorId: actors.owner.id,
         title: "Test Document",
         description: "Has description",
         tags: ["tag1"] as readonly string[]
@@ -193,6 +209,7 @@ describe("DocumentWorkflow", () => {
       const createCommand = {
         workspaceId: TEST_WORKSPACE_ID,
         ownerId: actors.owner.id,
+        actorId: actors.owner.id,
         title: "Draft Document",
         description: undefined,
         tags: undefined
@@ -231,6 +248,21 @@ describe("DocumentWorkflow", () => {
       const found = expectSome(foundOption)
       expect(found.publishStatus).toBe("published")
       expect(found.publishNotesOrEmpty).toBe("Ready for publication")
+
+      // Verify audit event recorded
+      const auditEvents = harness.auditPort.getEventsByAction("publish")
+      expect(auditEvents).toHaveLength(1)
+      expect(auditEvents[0]).toMatchObject({
+        actorId: actors.owner.id,
+        workspaceId: TEST_WORKSPACE_ID,
+        resourceType: "document",
+        resourceId: created.id,
+        action: "publish",
+        outcome: "success",
+        metadata: expect.objectContaining({
+          publishStatus: "published"
+        })
+      })
     })
   })
 
@@ -242,6 +274,7 @@ describe("DocumentWorkflow", () => {
         const createCommand = {
           workspaceId: TEST_WORKSPACE_ID,
           ownerId: actors.owner.id,
+          actorId: actors.owner.id,
           title: `Document ${i}`,
           tags: [`tag${i}`] as readonly string[],
           description: undefined
@@ -310,6 +343,7 @@ describe("DocumentWorkflow", () => {
               harness.documentWorkflow.createDocument({
                 workspaceId: TEST_WORKSPACE_ID,
                 ownerId: actors.owner.id,
+                actorId: actors.owner.id,
                 title,
                 description: undefined,
                 tags: undefined
@@ -342,6 +376,7 @@ describe("DocumentWorkflow", () => {
           harness.documentWorkflow.createDocument({
             workspaceId: TEST_WORKSPACE_ID,
             ownerId: actors.owner.id,
+            actorId: actors.owner.id,
             title: "Frontend Doc",
             tags: ["frontend", "react"] as readonly string[],
             description: undefined
@@ -355,6 +390,7 @@ describe("DocumentWorkflow", () => {
           harness.documentWorkflow.createDocument({
             workspaceId: TEST_WORKSPACE_ID,
             ownerId: actors.owner.id,
+            actorId: actors.owner.id,
             title: "Backend Doc",
             tags: ["backend", "node"] as readonly string[],
             description: undefined
@@ -524,6 +560,7 @@ describe("DocumentWorkflow", () => {
       const createCommand = {
         workspaceId: TEST_WORKSPACE_ID,
         ownerId: actors.owner.id,
+        actorId: actors.owner.id,
         title: "Private Document",
         description: undefined,
         tags: undefined
@@ -561,6 +598,7 @@ describe("DocumentWorkflow", () => {
       const createCommand = {
         workspaceId: TEST_WORKSPACE_ID,
         ownerId: actors.owner.id,
+        actorId: actors.owner.id,
         title: "Workspace 1 Document",
         description: undefined,
         tags: undefined
@@ -598,6 +636,7 @@ describe("DocumentWorkflow", () => {
             harness.documentWorkflow.createDocument({
               workspaceId: TEST_WORKSPACE_ID,
               ownerId: actors.owner.id,
+              actorId: actors.owner.id,
               title: `WS1 Document ${i}`,
               description: undefined,
               tags: undefined
@@ -614,6 +653,7 @@ describe("DocumentWorkflow", () => {
             harness.documentWorkflow.createDocument({
               workspaceId: TEST_WORKSPACE_ID_2,
               ownerId: actors.owner.id,
+              actorId: actors.owner.id,
               title: `WS2 Document ${i}`,
               description: undefined,
               tags: undefined
@@ -661,6 +701,7 @@ describe("DocumentWorkflow", () => {
       const createCommand = {
         workspaceId: TEST_WORKSPACE_ID,
         ownerId: actors.owner.id,
+        actorId: actors.owner.id,
         title: "Original Title",
         description: undefined,
         tags: undefined
@@ -701,6 +742,7 @@ describe("DocumentWorkflow", () => {
       const createCommand = {
         workspaceId: TEST_WORKSPACE_ID,
         ownerId: actors.owner.id,
+        actorId: actors.owner.id,
         title: "Document to Delete",
         description: undefined,
         tags: undefined

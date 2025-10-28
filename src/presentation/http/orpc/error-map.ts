@@ -62,9 +62,32 @@ import {
   DownloadTokenAlreadyUsedError
 } from "@domain/downloadToken/download-token.error"
 
-export function mapToORPCError(error: unknown): ORPCError<string, unknown> {
-  // Context errors and other ORPCErrors are thrown directly
+
+export interface ErrorMappingOptions {
+  requestId?: string
+  actorId?: string
+  logDetails?: boolean
+}
+
+function enrichErrorData(data: Record<string, unknown>, options?: ErrorMappingOptions): Record<string, unknown> {
+  const enriched = { ...data }
+  
+  if (options?.requestId) {
+    enriched.requestId = options.requestId
+  }
+  
+  return enriched
+}
+
+export function mapToORPCError(error: unknown, options?: ErrorMappingOptions): ORPCError<string, unknown> {
   if (error instanceof ORPCError) {
+    if (options?.requestId && error.data) {
+      return new ORPCError(error.code, {
+        message: error.message,
+        status: error.status,
+        data: enrichErrorData(error.data as Record<string, unknown>, options)
+      })
+    }
     return error
   }
 
@@ -73,13 +96,13 @@ export function mapToORPCError(error: unknown): ORPCError<string, unknown> {
     return new ORPCError("FORBIDDEN", {
       message: error.message,
       status: 403,
-      data: {
+      data: enrichErrorData({
         code: error.code,
         documentId: error.documentId,
         userId: error.userId,
         requiredPermission: error.requiredPermission,
         details: error.details
-      }
+      }, options)
     })
   }
 
@@ -515,11 +538,11 @@ export function mapToORPCError(error: unknown): ORPCError<string, unknown> {
   if (error instanceof DatabaseError) {
     // Don't expose internal database details to clients for security
     return new ORPCError("INTERNAL_SERVER_ERROR", {
-      message: "A database error occurred",
+      message: "A database error occurred. Please contact support if this persists.",
       status: 500,
-      data: {
-        code: error.code
-      }
+      data: enrichErrorData({
+        code: "DATABASE_ERROR"
+      }, options)
     })
   }
 
@@ -543,22 +566,16 @@ export function mapToORPCError(error: unknown): ORPCError<string, unknown> {
     })
   }
 
-  // Fallback for unexpected errors
-  const errorMessage = error instanceof Error ? error.message : String(error)
-  
+  // Sanitized message for client - no internal details
   return new ORPCError("INTERNAL_SERVER_ERROR", {
-    message: "An unexpected error occurred",
+    message: "An unexpected error occurred. Please try again or contact support if this persists.",
     status: 500,
-    data: {
-      code: "UNKNOWN_ERROR",
-      message: errorMessage
-    }
+    data: enrichErrorData({
+      code: "UNKNOWN_ERROR"
+    }, options)
   })
 }
 
-/**
- * Helper: Check if WorkflowDependencyError wraps a not-found scenario
- */
 function isNotFoundDependency(error: WorkflowDependencyError): boolean {
   // Check if the dependency name contains "Repository" and operation is "findById"
   const isRepositoryNotFound = 
@@ -584,5 +601,3 @@ function isNotFoundDependency(error: WorkflowDependencyError): boolean {
   
   return isRepositoryNotFound || Boolean(hasNotFoundDetails)
 }
-
-export const mapError = mapToORPCError

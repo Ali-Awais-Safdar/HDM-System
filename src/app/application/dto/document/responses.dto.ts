@@ -16,11 +16,7 @@ export const DocumentResponseSchema = S.Struct({
   createdAt: DateTimeFromString, // ISO date string
   updatedAt: S.optional(DateTimeFromString) // ISO date string, optional
 })
-export type DocumentResponse = S.Schema.Type<typeof DocumentResponseSchema>
 export type DocumentResponseEncoded = S.Schema.Encoded<typeof DocumentResponseSchema>
-
-export const decodeDocumentResponse = S.decodeUnknown(DocumentResponseSchema)
-
 
 export const DocumentSummarySchema = S.Struct({
   id: DocumentId,
@@ -31,11 +27,6 @@ export const DocumentSummarySchema = S.Struct({
   publishStatus: DocumentFields.publishStatus,
   createdAt: DateTimeFromString
 })
-export type DocumentSummary = S.Schema.Type<typeof DocumentSummarySchema>
-export type DocumentSummaryEncoded = S.Schema.Encoded<typeof DocumentSummarySchema>
-
-export const decodeDocumentSummary = S.decodeUnknown(DocumentSummarySchema)
-
 
 export const PaginatedDocumentsResponseSchema = S.Struct({
   data: S.Array(DocumentSummarySchema),
@@ -44,19 +35,6 @@ export const PaginatedDocumentsResponseSchema = S.Struct({
   pageSize: DocumentPageSize,
   totalPages: S.Number
 })
-export type PaginatedDocumentsResponse = S.Schema.Type<typeof PaginatedDocumentsResponseSchema>
 export type PaginatedDocumentsResponseEncoded = S.Schema.Encoded<typeof PaginatedDocumentsResponseSchema>
 
-export const decodePaginatedDocumentsResponse = S.decodeUnknown(PaginatedDocumentsResponseSchema)
 
-export const DocumentResponseDTO = {
-  // Response Schemas
-  DocumentResponseSchema,
-  DocumentSummarySchema,
-  PaginatedDocumentsResponseSchema,
-  
-  // Response Decoders
-  decodeDocumentResponse,
-  decodeDocumentSummary,
-  decodePaginatedDocumentsResponse
-} as const

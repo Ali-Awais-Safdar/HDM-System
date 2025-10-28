@@ -15,16 +15,5 @@ export const AccessPolicyResponseSchema = S.Struct({
   createdAt: DateTimeFromString, // ISO date string
   updatedAt: S.optional(DateTimeFromString) // ISO date string or undefined
 })
-export type AccessPolicyResponse = S.Schema.Type<typeof AccessPolicyResponseSchema>
 export type AccessPolicyResponseEncoded = S.Schema.Encoded<typeof AccessPolicyResponseSchema>
-
-export const decodeAccessPolicyResponse = S.decodeUnknown(AccessPolicyResponseSchema)
-
-export const AccessPolicyDTO = {
-  // Response Schemas
-  AccessPolicyResponseSchema,
-  
-  // Response Decoders
-  decodeAccessPolicyResponse
-} as const
 

@@ -45,8 +45,10 @@ import {
   mapDocumentVersionPersistenceError,
   mapDocumentPersistenceError,
   mapUploadInitiationError,
-  mapUploadConfirmationError
+  mapUploadConfirmationError,
+  recordAudit
 } from "@application/workflow/helpers"
+import { LoggerPort } from "@application/services/ports/logger.port"
 
 // Refined types
 import { DocumentId, makeDocumentVersionId } from "@domain/refined/ids"
@@ -55,6 +57,9 @@ import { FileKey } from "@domain/refined/file-reference"
 
 // DI tokens
 import { TOKENS } from "@infra/di/container"
+
+// Audit
+import { AuditPort } from "@application/services/ports/audit.port"
 
 /**
  * Responsibilities:
@@ -80,12 +85,18 @@ export class UploadWorkflow {
     private readonly userRepository: UserRepository,
 
     @inject(TOKENS.FILE_STORAGE_PORT)
-    private readonly fileStoragePort: FileStoragePort
+    private readonly fileStoragePort: FileStoragePort,
+
+    @inject(TOKENS.AUDIT_PORT)
+    private readonly audit: AuditPort,
+
+    @inject(TOKENS.LOGGER_PORT)
+    private readonly logger: LoggerPort
   ) {}
 
   initiateUpload(
     input: InitiateUploadCommandEncoded
-  ): Effect.Effect<InitiateUploadResponse, WorkflowError | ParseResult.ParseError, never> {
+  ): Effect.Effect<InitiateUploadResponse, WorkflowError | ParseResult.ParseError, Clock.Clock> {
     return pipe(
       // 1. Decode DTO using schema validation
       S.decodeUnknown(InitiateUploadCommandSchema)(input),
@@ -111,16 +122,15 @@ export class UploadWorkflow {
               )
             )
           ),
-          Effect.provideService(Clock.Clock, Clock.make()),
           Effect.mapError(mapUploadInitiationError({ documentId: dto.documentId }))
         )
       )
-    ) as Effect.Effect<InitiateUploadResponse, WorkflowError | ParseResult.ParseError, never>
+    ) as Effect.Effect<InitiateUploadResponse, WorkflowError | ParseResult.ParseError, Clock.Clock>
   }
 
   confirmUpload(
     input: ConfirmUploadCommandEncoded
-  ): Effect.Effect<ConfirmUploadResponse, WorkflowError | ParseResult.ParseError, never> {
+  ): Effect.Effect<ConfirmUploadResponse, WorkflowError | ParseResult.ParseError, Clock.Clock> {
     return pipe(
       // 1. Decode DTO using schema validation
       S.decodeUnknown(ConfirmUploadCommandSchema)(input),
@@ -137,6 +147,46 @@ export class UploadWorkflow {
                 Effect.flatMap(() =>
                   // 4. Complete upload and verify file metadata
                   this.completeUploadVerification(dto).pipe(
+                    // Log and fail on verification issues
+                    Effect.flatMap((verifiedMetadata) => {
+                      // Log verification details for traceability
+                      return Effect.sync(() => {
+                        this.logger.info("Upload verification completed", {
+                          documentId: dto.documentId,
+                          fileKey: dto.fileKey,
+                          contentRefValid: verifiedMetadata.contentRefValid,
+                          checksum: verifiedMetadata.checksum,
+                          actualSize: verifiedMetadata.actualSize,
+                          actualMimeType: verifiedMetadata.actualMimeType,
+                          expectedSize: dto.size,
+                          expectedMimeType: dto.mimeType
+                        })
+                      }).pipe(
+                        Effect.flatMap(() => {
+                          // Check for critical mismatches
+                          if (!verifiedMetadata.contentRefValid) {
+                            // Fail upload if contentRef doesn't match (security issue)
+                            const error = new UploadConfirmationError(
+                              `Content reference mismatch: file uploaded with mismatched contentRef`,
+                              dto.documentId,
+                              "",
+                              "CONTENT_REF_MISMATCH",
+                              {
+                                expectedContentRef: dto.contentRef,
+                                fileKey: dto.fileKey
+                              }
+                            )
+                            this.logger.error("Upload verification failed: content reference mismatch", {
+                              documentId: dto.documentId,
+                              fileKey: dto.fileKey,
+                              error: error.message
+                            })
+                            return Effect.fail(error)
+                          }
+                          return Effect.succeed(verifiedMetadata)
+                        })
+                      )
+                    }),
                     Effect.flatMap((verifiedMetadata) =>
                       // 5. Check for existing version with same checksum (idempotency)
                       // Combines checksum + contentRef validation: identical content with different metadata won't duplicate
@@ -153,8 +203,31 @@ export class UploadWorkflow {
                                   // 7. Update document timestamp
                                   this.updateDocumentTimestamp(document).pipe(
                                     Effect.flatMap(() =>
-                                      // 8. Return version response
-                                      this.buildConfirmUploadResponse(newVersion)
+                                    // 8. Record audit event
+                                    recordAudit(this.audit, {
+                                      actorId: dto.actorId,
+                                      workspaceId: dto.workspaceId,
+                                      resourceType: "document_version",
+                                      resourceId: newVersion.id,
+                                      action: "upload_confirm",
+                                      outcome: "success" as const,
+                                      metadata: {
+                                        documentId: document.id,
+                                        version: newVersion.version,
+                                        mimeType: dto.mimeType,
+                                        expectedMimeType: dto.mimeType,
+                                        actualMimeType: verifiedMetadata.actualMimeType,
+                                        size: verifiedMetadata.actualSize,
+                                        expectedSize: dto.size,
+                                        contentRefValid: verifiedMetadata.contentRefValid,
+                                        checksum: verifiedMetadata.checksum
+                                      }
+                                    }).pipe(
+                                        Effect.flatMap(() =>
+                                          // 9. Return version response
+                                          this.buildConfirmUploadResponse(newVersion)
+                                        )
+                                      )
                                     )
                                   )
                                 )
@@ -168,11 +241,10 @@ export class UploadWorkflow {
               )
             )
           ),
-          Effect.provideService(Clock.Clock, Clock.make()),
           Effect.mapError(mapUploadConfirmationError({ documentId: dto.documentId }))
         )
       )
-    ) as Effect.Effect<ConfirmUploadResponse, WorkflowError | ParseResult.ParseError, never>
+    ) as Effect.Effect<ConfirmUploadResponse, WorkflowError | ParseResult.ParseError, Clock.Clock>
   }
 
   // ===== PRIVATE HELPER METHODS =====

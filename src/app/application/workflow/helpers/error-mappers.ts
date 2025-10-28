@@ -1,6 +1,6 @@
 import { ParseResult } from "effect"
 import { DocumentValidationError, DocumentNotFoundError } from "@domain/document/document.error"
-import { DocumentVersionValidationError, DocumentVersionNotFoundError } from "@domain/documentVersion/document-version.error"
+import { DocumentVersionNotFoundError } from "@domain/documentVersion/document-version.error"
 import { DownloadTokenValidationError, DownloadTokenNotFoundError, DownloadTokenAlreadyUsedError } from "@domain/downloadToken/download-token.error"
 import { AccessPolicyValidationError, AccessPolicyNotFoundError, AccessPolicyConflictError } from "@domain/accessPolicy/access-policy.error"
 import { ValidationError, DatabaseError, BusinessRuleViolationError } from "@domain/utils/base.errors"
@@ -175,42 +175,6 @@ export const mapDocumentDomainError = (context: string) => {
   }
 }
 
-export const mapDocumentVersionDomainError = (context: string) => {
-  return (error: unknown): WorkflowError => {
-    if (error instanceof DocumentVersionValidationError) {
-      return new WorkflowDependencyError(
-        `Document version ${context} failed: ${error.message}`,
-        "DocumentVersionEntity",
-        context,
-        { originalError: error }
-      )
-    }
-    if (error instanceof BusinessRuleViolationError) {
-      return new WorkflowDependencyError(
-        `Document version ${context} failed: ${error.message}`,
-        "DocumentVersionEntity",
-        context,
-        { originalError: error }
-      )
-    }
-    if (error instanceof DocumentVersionNotFoundError) {
-      return new WorkflowDependencyError(
-        `Document version not found: ${error.message}`,
-        "DocumentVersionRepository",
-        "findById",
-        { originalError: error }
-      )
-    }
-    if (error instanceof PermissionCheckError) {
-      return error
-    }
-    if (error instanceof WorkflowDependencyError) {
-      return error
-    }
-    return error as unknown as WorkflowError
-  }
-}
-
 // ===== GENERIC ERROR MAPPERS =====
 
 export const mapToWorkflowDependencyError = (
@@ -224,25 +188,6 @@ export const mapToWorkflowDependencyError = (
     return new WorkflowDependencyError(
       `${operation} failed: ${error instanceof Error ? error.message : String(error)}`,
       component,
-      operation,
-      { originalError: error }
-    )
-  }
-}
-
-export const mapToPermissionCheckError = (
-  resourceId: string,
-  actorId: string,
-  operation: string
-) => {
-  return (error: unknown): PermissionCheckError => {
-    if (error instanceof PermissionCheckError) {
-      return error
-    }
-    return new PermissionCheckError(
-      `Permission check failed: ${error instanceof Error ? error.message : String(error)}`,
-      resourceId,
-      actorId,
       operation,
       { originalError: error }
     )

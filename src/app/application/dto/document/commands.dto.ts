@@ -8,9 +8,20 @@ import { DocumentVersionFields } from "@domain/documentVersion/document-version.
 import { VersionNumber } from "@domain/documentVersion/version-number.vo"
 import { Optional } from "@domain/utils/schema.utils"
 
+// ===== INPUT SCHEMAS (Client-supplied, no auth/workspace fields) =====
+
+export const CreateDocumentInputSchema = S.Struct({
+  title: DocumentFields.title,
+  description: DocumentFields.description,
+  tags: DocumentFields.tags
+})
+
+// ===== COMMAND SCHEMAS (Internal, with injected auth/workspace fields) =====
+
 export const CreateDocumentCommandSchema = S.Struct({
   workspaceId: WorkspaceId,
-  ownerId: DocumentFields.ownerId,
+  ownerId: DocumentFields.ownerId, // Injected from actorId by withActorAndWorkspace
+  actorId: UserId, // Injected from authenticated context
   title: DocumentFields.title,
   description: DocumentFields.description,
   tags: DocumentFields.tags
@@ -18,7 +29,14 @@ export const CreateDocumentCommandSchema = S.Struct({
 export type CreateDocumentCommand = S.Schema.Type<typeof CreateDocumentCommandSchema>
 export type CreateDocumentCommandEncoded = S.Schema.Encoded<typeof CreateDocumentCommandSchema>
 
-export const decodeCreateDocumentCommand = S.decodeUnknown(CreateDocumentCommandSchema)
+export const InitiateUploadInputSchema = S.Struct({
+  documentId: DocumentId,
+  mimeType: FileMetadataFields.mimeType,
+  size: FileMetadataFields.size,
+  contentRef: FileKey,
+  checksum: S.optional(Sha256)
+})
+export type InitiateUploadInput = S.Schema.Type<typeof InitiateUploadInputSchema>
 
 export const InitiateUploadCommandSchema = S.Struct({
   workspaceId: WorkspaceId,
@@ -26,13 +44,22 @@ export const InitiateUploadCommandSchema = S.Struct({
   actorId: UserId,
   mimeType: FileMetadataFields.mimeType,
   size: FileMetadataFields.size,
-  contentRef: FileKey, // Use FileKey for proper validation
+  contentRef: FileKey,
   checksum: S.optional(Sha256)
 })
 export type InitiateUploadCommand = S.Schema.Type<typeof InitiateUploadCommandSchema>
 export type InitiateUploadCommandEncoded = S.Schema.Encoded<typeof InitiateUploadCommandSchema>
 
-export const decodeInitiateUploadCommand = S.decodeUnknown(InitiateUploadCommandSchema)
+export const ConfirmUploadInputSchema = S.Struct({
+  documentId: DocumentVersionFields.documentId,
+  fileKey: FileKey,
+  checksum: Sha256,
+  mimeType: FileMetadataFields.mimeType,
+  size: FileMetadataFields.size,
+  contentRef: FileKey,
+  versionHint: S.optional(VersionNumber)
+})
+export type ConfirmUploadInput = S.Schema.Type<typeof ConfirmUploadInputSchema>
 
 export const ConfirmUploadCommandSchema = S.Struct({
   workspaceId: WorkspaceId,
@@ -42,13 +69,18 @@ export const ConfirmUploadCommandSchema = S.Struct({
   checksum: Sha256,
   mimeType: FileMetadataFields.mimeType,
   size: FileMetadataFields.size,
-  contentRef: FileKey, // Use FileKey for proper validation
+  contentRef: FileKey,
   versionHint: S.optional(VersionNumber)
 })
 export type ConfirmUploadCommand = S.Schema.Type<typeof ConfirmUploadCommandSchema>
 export type ConfirmUploadCommandEncoded = S.Schema.Encoded<typeof ConfirmUploadCommandSchema>
 
-export const decodeConfirmUploadCommand = S.decodeUnknown(ConfirmUploadCommandSchema)
+export const PublishDocumentInputSchema = S.Struct({
+  documentId: DocumentId,
+  publishStatus: DocumentFields.publishStatus,
+  publishNotes: DocumentFields.publishNotes
+})
+export type PublishDocumentInput = S.Schema.Type<typeof PublishDocumentInputSchema>
 
 export const PublishDocumentCommandSchema = S.Struct({
   workspaceId: WorkspaceId,
@@ -60,7 +92,10 @@ export const PublishDocumentCommandSchema = S.Struct({
 export type PublishDocumentCommand = S.Schema.Type<typeof PublishDocumentCommandSchema>
 export type PublishDocumentCommandEncoded = S.Schema.Encoded<typeof PublishDocumentCommandSchema>
 
-export const decodePublishDocumentCommand = S.decodeUnknown(PublishDocumentCommandSchema)
+export const UpdateDocumentInputSchema = DocumentStruct.pick("title", "description", "tags")
+  .pipe(S.partialWith({ exact: true }))
+  .pipe(S.extend(S.Struct({ id: DocumentId })))
+export type UpdateDocumentInput = S.Schema.Type<typeof UpdateDocumentInputSchema>
 
 export const UpdateDocumentCommandSchema = DocumentStruct.pick("title", "description", "tags")
   .pipe(S.partialWith({ exact: true }))
@@ -72,7 +107,11 @@ export const UpdateDocumentCommandSchema = DocumentStruct.pick("title", "descrip
 export type UpdateDocumentCommand = S.Schema.Type<typeof UpdateDocumentCommandSchema>
 export type UpdateDocumentCommandEncoded = S.Schema.Encoded<typeof UpdateDocumentCommandSchema>
 
-export const decodeUpdateDocumentCommand = S.decodeUnknown(UpdateDocumentCommandSchema)
+export const DeleteDocumentInputSchema = S.Struct({
+  id: DocumentId,
+  force: S.optional(S.Boolean)
+})
+export type DeleteDocumentInput = S.Schema.Type<typeof DeleteDocumentInputSchema>
 
 export const DeleteDocumentCommandSchema = S.Struct({
   workspaceId: WorkspaceId,
@@ -83,8 +122,6 @@ export const DeleteDocumentCommandSchema = S.Struct({
 export type DeleteDocumentCommand = S.Schema.Type<typeof DeleteDocumentCommandSchema>
 export type DeleteDocumentCommandEncoded = S.Schema.Encoded<typeof DeleteDocumentCommandSchema>
 
-export const decodeDeleteDocumentCommand = S.decodeUnknown(DeleteDocumentCommandSchema)
-
 export const InitiateUploadResponseSchema = S.Struct({
   uploadUrl: S.String,
   fileKey: FileKey,
@@ -93,9 +130,6 @@ export const InitiateUploadResponseSchema = S.Struct({
   uploadToken: S.String
 })
 export type InitiateUploadResponse = S.Schema.Type<typeof InitiateUploadResponseSchema>
-export type InitiateUploadResponseEncoded = S.Schema.Encoded<typeof InitiateUploadResponseSchema>
-
-export const decodeInitiateUploadResponse = S.decodeUnknown(InitiateUploadResponseSchema)
 
 export const ConfirmUploadResponseSchema = S.Struct({
   versionId: DocumentVersionId,
@@ -107,32 +141,4 @@ export const ConfirmUploadResponseSchema = S.Struct({
   updatedAt: S.optional(S.String) // Optional ISO date string
 })
 export type ConfirmUploadResponse = S.Schema.Type<typeof ConfirmUploadResponseSchema>
-export type ConfirmUploadResponseEncoded = S.Schema.Encoded<typeof ConfirmUploadResponseSchema>
 
-export const decodeConfirmUploadResponse = S.decodeUnknown(ConfirmUploadResponseSchema)
-
-export const DocumentCommandDTO = {
-  // Command Schemas
-  CreateDocumentCommandSchema,
-  InitiateUploadCommandSchema,
-  ConfirmUploadCommandSchema,
-  PublishDocumentCommandSchema,
-  UpdateDocumentCommandSchema,
-  DeleteDocumentCommandSchema,
-  
-  // Response Schemas
-  InitiateUploadResponseSchema,
-  ConfirmUploadResponseSchema,
-  
-  // Command Decoders
-  decodeCreateDocumentCommand,
-  decodeInitiateUploadCommand,
-  decodeConfirmUploadCommand,
-  decodePublishDocumentCommand,
-  decodeUpdateDocumentCommand,
-  decodeDeleteDocumentCommand,
-  
-  // Response Decoders
-  decodeInitiateUploadResponse,
-  decodeConfirmUploadResponse
-} as const

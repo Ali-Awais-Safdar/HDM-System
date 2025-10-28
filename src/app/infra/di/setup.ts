@@ -20,6 +20,8 @@ import { BcryptPasswordHasher } from "@infra/services/bcrypt-password-hasher"
 
 // Infrastructure Services
 import { LocalFileStorage } from "@infra/services/local-file-storage"
+import { PinoLogger } from "@infra/services/logger.pino"
+import { AuditRepository } from "@infra/services/audit.repository"
 
 // Application Workflows
 import { DocumentWorkflow } from "@application/workflow/document.workflow"
@@ -63,6 +65,10 @@ export function initContainer(): void {
   container.registerSingleton(TOKENS.PASSWORD_HASHER_PORT, BcryptPasswordHasher)
 
   container.registerSingleton(TOKENS.FILE_STORAGE_PORT, LocalFileStorage)
+  
+  container.registerSingleton(TOKENS.LOGGER_PORT, PinoLogger)
+  
+  container.registerSingleton(TOKENS.AUDIT_PORT, AuditRepository)
 
   container.registerSingleton(TOKENS.DOCUMENT_WORKFLOW, DocumentWorkflow)
   container.registerSingleton(TOKENS.DOCUMENT_VERSION_WORKFLOW, DocumentVersionWorkflow)

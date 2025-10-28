@@ -3,6 +3,7 @@ import { promises as fs } from "fs"
 import * as path from "path"
 import crypto from "crypto"
 import type { ConfigPort } from "@application/services/ports/config.port"
+import type { LoggerPort } from "@application/services/ports/logger.port"
 import { inject, injectable } from "tsyringe"
 import { TOKENS } from "@infra/di/container"
 import { 
@@ -32,20 +33,31 @@ export class LocalFileStorage extends FileStoragePort {
   private readonly storagePath: string
   private readonly metadataPath: string
   private readonly uploadsPath: string
+  private readonly logger: LoggerPort
 
   constructor(
     @inject(TOKENS.CONFIG_PORT)
-    config: ConfigPort
+    config: ConfigPort,
+    @inject(TOKENS.LOGGER_PORT)
+    logger: LoggerPort
   ) {
     super()
     this.storagePath = config.STORAGE_PATH
     this.metadataPath = path.join(this.storagePath, "metadata")
     this.uploadsPath = path.join(this.storagePath, "uploads")
+    this.logger = logger.child({ service: "LocalFileStorage" })
   }
 
   createUploadUrl(
     request: InitiateUploadStorageRequest
   ): Effect.Effect<InitiateUploadStorageResponse, FileStorageError> {
+    this.logger.debug("Creating upload URL", {
+      documentId: request.documentId,
+      userId: request.userId,
+      fileSize: request.fileSize,
+      mimeType: request.mimeType
+    })
+    
     return pipe(
       // 1. Ensure directories exist
       this.ensureDirectories(),
@@ -72,12 +84,29 @@ export class LocalFileStorage extends FileStoragePort {
       }),
       
       // 4. Build response
-      Effect.map(({ metadata, fileKey }) => ({
-        uploadUrl: `/api/files/upload/${request.contentRef}`,
-        fileKey: fileKey,
-        contentRef: request.contentRef,
-        expiresAt: metadata.expiresAt,
-        uploadMetadata: metadata
+      Effect.map(({ metadata, fileKey }) => {
+        this.logger.info("Upload URL created successfully", {
+          documentId: request.documentId,
+          fileKey,
+          expiresAt: metadata.expiresAt
+        })
+        
+        return {
+          uploadUrl: `/api/files/upload/${request.contentRef}`,
+          fileKey: fileKey,
+          contentRef: request.contentRef,
+          expiresAt: metadata.expiresAt,
+          uploadMetadata: metadata
+        }
+      }),
+      
+      // Log errors
+      Effect.tapError((error) => Effect.sync(() => {
+        this.logger.error("Failed to create upload URL", {
+          documentId: request.documentId,
+          error: error.message,
+          errorCode: error.code
+        })
       }))
     )
   }
@@ -85,6 +114,12 @@ export class LocalFileStorage extends FileStoragePort {
   completeUpload(
     request: CompleteUploadRequest
   ): Effect.Effect<CompleteUploadResponse, FileStorageError> {
+    this.logger.debug("Completing upload", {
+      fileKey: request.fileKey,
+      expectedSize: request.expectedSize,
+      expectedMimeType: request.expectedMimeType
+    })
+    
     return pipe(
       // 1. Load upload metadata
       this.loadUploadMetadata(request.contentRef),
@@ -122,11 +157,14 @@ export class LocalFileStorage extends FileStoragePort {
               await fs.access(filePath, fs.constants.F_OK)
               return filePath
             },
-            catch: (error) => new FileStorageError(
-              `File not found: ${request.fileKey}`,
-              "NOT_FOUND",
-              error
-            )
+            catch: (error) => {
+              // Sanitize file path in error message
+              return new FileStorageError(
+                `File not found: ${request.fileKey}`,
+                "NOT_FOUND",
+                error
+              )
+            }
           }),
           Effect.flatMap((existingPath) =>
             Effect.zip(
@@ -193,8 +231,29 @@ export class LocalFileStorage extends FileStoragePort {
         }
       }),
       
-      // 7. Cleanup metadata file
-      Effect.tap(() => this.cleanupMetadata(request.contentRef))
+      // 7. Log successful completion
+      Effect.tap((response) => Effect.sync(() => {
+        this.logger.info("Upload completed successfully", {
+          fileKey: response.fileKey,
+          actualSize: response.actualSize,
+          checksum: response.checksum,
+          warnings: response.verificationMetadata.warnings.length > 0 
+            ? response.verificationMetadata.warnings 
+            : undefined
+        })
+      })),
+      
+      // 8. Cleanup metadata file
+      Effect.tap(() => this.cleanupMetadata(request.contentRef)),
+      
+      // Log errors
+      Effect.tapError((error) => Effect.sync(() => {
+        this.logger.error("Failed to complete upload", {
+          fileKey: request.fileKey,
+          error: error.message,
+          errorCode: error.code
+        })
+      }))
     )
   }
 
@@ -257,14 +316,16 @@ export class LocalFileStorage extends FileStoragePort {
         },
         catch: (error) => {
           if (error instanceof Error && error.message.includes("ENOENT")) {
+            // Don't expose internal contentRef details in client-facing error
             return new FileStorageError(
-              `Upload metadata not found for contentRef: ${contentRef}`,
+              "Upload session not found or expired",
               "NOT_FOUND",
               error
             )
           }
+          // Sanitized error message - no internal paths
           return new FileStorageError(
-            `Failed to load upload metadata: ${error instanceof Error ? error.message : String(error)}`,
+            "Failed to load upload metadata",
             "STORAGE_ERROR",
             error
           )

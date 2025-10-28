@@ -4,6 +4,30 @@ import { DownloadTokenStruct, DownloadTokenFields } from "@domain/downloadToken/
 import { DownloadTokenString } from "@domain/downloadToken/download-token.string.vo"
 import { PageNumber, VersionPageSize } from "@domain/utils/pagination"
 
+// ===== INPUT SCHEMAS (Client-supplied, no auth/workspace fields) =====
+
+export const CreateDownloadTokenInputSchema = DownloadTokenStruct.pick("documentId", "issuedTo", "expiresAt")
+
+export const ValidateDownloadTokenInputSchema = S.Struct({
+  token: DownloadTokenString
+})
+
+export const UseDownloadTokenInputSchema = S.Struct({
+  token: DownloadTokenString
+})
+
+export const ListDownloadTokensInputSchema = S.Struct({
+  documentId: DownloadTokenFields.documentId,
+  pageNum: S.optional(PageNumber),
+  pageSize: S.optional(VersionPageSize)
+})
+
+export const RevokeDownloadTokenInputSchema = S.Struct({
+  tokenId: DownloadTokenId
+})
+
+// ===== COMMAND/QUERY SCHEMAS (Internal, with injected auth/workspace fields) =====
+
 export const CreateDownloadTokenCommandSchema = DownloadTokenStruct.pick("documentId", "issuedTo", "expiresAt")
   .pipe(S.extend(S.Struct({ workspaceId: WorkspaceId, actorId: UserId })))
 export type CreateDownloadTokenCommand = S.Schema.Type<typeof CreateDownloadTokenCommandSchema>
@@ -16,6 +40,14 @@ export const ValidateDownloadTokenQuerySchema = S.Struct({
 })
 export type ValidateDownloadTokenQuery = S.Schema.Type<typeof ValidateDownloadTokenQuerySchema>
 export type ValidateDownloadTokenQueryEncoded = S.Schema.Encoded<typeof ValidateDownloadTokenQuerySchema>
+
+export const UseDownloadTokenCommandSchema = S.Struct({
+  workspaceId: WorkspaceId,
+  token: DownloadTokenString,
+  actorId: UserId
+})
+export type UseDownloadTokenCommand = S.Schema.Type<typeof UseDownloadTokenCommandSchema>
+export type UseDownloadTokenCommandEncoded = S.Schema.Encoded<typeof UseDownloadTokenCommandSchema>
 
 export const ListDownloadTokensQuerySchema = S.Struct({
   workspaceId: WorkspaceId,
@@ -35,19 +67,3 @@ export const RevokeDownloadTokenCommandSchema = S.Struct({
 export type RevokeDownloadTokenCommand = S.Schema.Type<typeof RevokeDownloadTokenCommandSchema>
 export type RevokeDownloadTokenCommandEncoded = S.Schema.Encoded<typeof RevokeDownloadTokenCommandSchema>
 
-export const UseDownloadTokenCommandSchema = S.Struct({
-  workspaceId: WorkspaceId,
-  token: DownloadTokenString,
-  actorId: UserId
-})
-export type UseDownloadTokenCommand = S.Schema.Type<typeof UseDownloadTokenCommandSchema>
-export type UseDownloadTokenCommandEncoded = S.Schema.Encoded<typeof UseDownloadTokenCommandSchema>
-
-export const DownloadTokenDTO = {
-  // Schemas
-  CreateDownloadTokenCommandSchema,
-  ValidateDownloadTokenQuerySchema,
-  ListDownloadTokensQuerySchema,
-  RevokeDownloadTokenCommandSchema,
-  UseDownloadTokenCommandSchema
-} as const

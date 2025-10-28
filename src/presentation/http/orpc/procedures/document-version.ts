@@ -8,11 +8,10 @@ import { withActorAndWorkspace } from "../context"
 import { toStandard } from "../standard"
 import { normalizeUpdatedAt } from "./utils"
 
-// DTOs
 import {
-  GetDocumentVersionQuerySchema,
-  ListDocumentVersionsQuerySchema,
-  GetLatestDocumentVersionQuerySchema
+  GetDocumentVersionInputSchema,
+  ListDocumentVersionsInputSchema,
+  GetLatestDocumentVersionInputSchema
 } from "@application/dto/documentVersion/commands.dto"
 import {
   DocumentVersionResponseSchema,
@@ -31,7 +30,7 @@ import {
 
 export const getById = os
   .$context<RPCContext>()
-  .input(toStandard(GetDocumentVersionQuerySchema))
+  .input(toStandard(GetDocumentVersionInputSchema))
   .output(toStandard(DocumentVersionResponseSchema))
   .handler(async ({ input, context }) => {
     const workflow = resolveWorkflow<DocumentVersionWorkflow>(TOKENS.DOCUMENT_VERSION_WORKFLOW)
@@ -41,7 +40,11 @@ export const getById = os
     }, context)
     
     const result = await executeEffect(
-      workflow.getDocumentVersionById(query)
+      workflow.getDocumentVersionById(query),
+      {
+        procedureName: "documentVersion.getById",
+        rpcContext: context
+      }
     )
     
     return normalizeUpdatedAt(result)
@@ -49,7 +52,7 @@ export const getById = os
 
 export const getLatest = os
   .$context<RPCContext>()
-  .input(toStandard(GetLatestDocumentVersionQuerySchema))
+  .input(toStandard(GetLatestDocumentVersionInputSchema))
   .output(toStandard(LatestDocumentVersionResponseSchema))
   .handler(async ({ input, context }) => {
     const workflow = resolveWorkflow<DocumentVersionWorkflow>(TOKENS.DOCUMENT_VERSION_WORKFLOW)
@@ -59,7 +62,11 @@ export const getLatest = os
     }, context)
     
     const result = await executeEffect(
-      workflow.getLatestDocumentVersion(query)
+      workflow.getLatestDocumentVersion(query),
+      {
+        procedureName: "documentVersion.getLatest",
+        rpcContext: context
+      }
     )
     
     return normalizeUpdatedAt(result)
@@ -67,7 +74,7 @@ export const getLatest = os
 
 export const list = os
   .$context<RPCContext>()
-  .input(toStandard(ListDocumentVersionsQuerySchema))
+  .input(toStandard(ListDocumentVersionsInputSchema))
   .output(toStandard(PaginatedDocumentVersionsResponseSchema))
   .handler(async ({ input, context }) => {
     const workflow = resolveWorkflow<DocumentVersionWorkflow>(TOKENS.DOCUMENT_VERSION_WORKFLOW)
@@ -79,7 +86,11 @@ export const list = os
     }, context)
     
     return await executeEffect(
-      workflow.listDocumentVersions(query)
+      workflow.listDocumentVersions(query),
+      {
+        procedureName: "documentVersion.list",
+        rpcContext: context
+      }
     )
   })
 

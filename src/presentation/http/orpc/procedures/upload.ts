@@ -8,10 +8,9 @@ import { withActorAndWorkspace } from "../context"
 import { toStandard } from "../standard"
 import { normalizeUploadResponse } from "./utils"
 
-// DTOs
 import {
-  InitiateUploadCommandSchema,
-  ConfirmUploadCommandSchema,
+  InitiateUploadInputSchema,
+  ConfirmUploadInputSchema,
   InitiateUploadResponseSchema,
   ConfirmUploadResponseSchema
 } from "@application/dto/document/commands.dto"
@@ -26,7 +25,7 @@ import {
 
 export const initiateUpload = os
   .$context<RPCContext>()
-  .input(toStandard(InitiateUploadCommandSchema))
+  .input(toStandard(InitiateUploadInputSchema))
   .output(toStandard(InitiateUploadResponseSchema))
   .handler(async ({ input, context }) => {
     const workflow = resolveWorkflow<UploadWorkflow>(TOKENS.UPLOAD_WORKFLOW)
@@ -40,13 +39,17 @@ export const initiateUpload = os
     }, context)
 
     return await executeEffect(
-      workflow.initiateUpload(command)
+      workflow.initiateUpload(command),
+      {
+        procedureName: "upload.initiateUpload",
+        rpcContext: context
+      }
     )
   })
 
 export const confirmUpload = os
   .$context<RPCContext>()
-  .input(toStandard(ConfirmUploadCommandSchema))
+  .input(toStandard(ConfirmUploadInputSchema))
   .output(toStandard(ConfirmUploadResponseSchema))
   .handler(async ({ input, context }) => {
     const workflow = resolveWorkflow<UploadWorkflow>(TOKENS.UPLOAD_WORKFLOW)
@@ -62,9 +65,13 @@ export const confirmUpload = os
     }, context)
 
     const result = await executeEffect(
-      workflow.confirmUpload(command)
+      workflow.confirmUpload(command),
+      {
+        procedureName: "upload.confirmUpload",
+        rpcContext: context
+      }
     )
-
+    
     return normalizeUploadResponse(result)
   })
 

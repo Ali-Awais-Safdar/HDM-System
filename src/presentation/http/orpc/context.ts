@@ -12,6 +12,37 @@ import {
 import type { UserId, WorkspaceId } from "@domain/refined/ids"
 import { makeWorkspaceId } from "@domain/refined/ids"
 import type { Role } from "@domain/accessPolicy/access-policy.schema"
+import type { LoggerPort } from "@application/services/ports/logger.port"
+import { resolveService } from "@infra/di/setup"
+import { TOKENS } from "@infra/di/container"
+
+/**
+ * Request Context
+ * 
+ * Correlation and observability metadata for each request:
+ * - requestId: Unique identifier for request tracing
+ * - timestamp: Request initiation time
+ * - ipAddress: Client IP address
+ * - userAgent: Client user agent string
+ */
+export interface RequestContext {
+  readonly requestId: string
+  readonly timestamp: Date
+  readonly ipAddress: string | undefined
+  readonly userAgent: string | undefined
+}
+
+/**
+ * Sanitized Actor Information
+ * 
+ * Safe subset of authentication data that can be logged/traced.
+ * Excludes sensitive JWT claims to prevent token leakage.
+ */
+export interface ActorInfo {
+  readonly userId: UserId
+  readonly roles: readonly Role[]
+  readonly workspaceId: Option.Option<WorkspaceId>
+}
 
 /**
  * RPC Context
@@ -20,20 +51,25 @@ import type { Role } from "@domain/accessPolicy/access-policy.schema"
  * - actorId: The authenticated user ID
  * - workspaceId: Optional workspace context
  * - roles: User roles for authorization
- * - rawPayload: Full JWT payload for advanced use cases
+ * - requestContext: Request correlation metadata
+ * - actor: Sanitized actor information for logging
  * - hono: Hono context for accessing request/response
+ * - logger: Request-scoped logger for correlation
  */
 export interface RPCContext {
-
   readonly actorId: UserId
   
   readonly workspaceId: Option.Option<WorkspaceId>
   
   readonly roles: readonly Role[]
   
-  readonly rawPayload: AppJWTPayload
+  readonly requestContext: RequestContext
+  
+  readonly actor: ActorInfo
   
   readonly hono: HonoContext
+  
+  readonly logger: LoggerPort
 }
 
 /**
@@ -104,8 +140,8 @@ function verifyJWT(token: string): Effect.Effect<AppJWTPayload, ORPCError<string
       // Validate payload structure using Effect Schema
       return await Effect.runPromise(
         decodeJWTPayload(rawPayload).pipe(
-          Effect.mapError((error) => {
-            throw new ORPCError("UNAUTHORIZED", {
+          Effect.mapError((error) => 
+            new ORPCError("UNAUTHORIZED", {
               message: "JWT payload validation failed",
               status: 401,
               data: {
@@ -113,7 +149,7 @@ function verifyJWT(token: string): Effect.Effect<AppJWTPayload, ORPCError<string
                 details: error.message
               }
             })
-          })
+          )
         )
       )
     },
@@ -219,29 +255,93 @@ function deriveWorkspace(
   })
 }
 
+function getOrGenerateRequestId(honoContext: HonoContext): string {
+  const headerRequestId = honoContext.req.header("x-request-id")
+  if (headerRequestId && headerRequestId.trim() !== "") {
+    return headerRequestId.trim()
+  }
+  return crypto.randomUUID()
+}
+
+function extractClientIp(honoContext: HonoContext): string | undefined {
+  // Check X-Forwarded-For (most common proxy header)
+  const xForwardedFor = honoContext.req.header("x-forwarded-for")
+  if (xForwardedFor && xForwardedFor.length > 0) {
+    // Take the first IP in the chain (client IP)
+    const parts = xForwardedFor.split(",")
+    const firstIp = parts.length > 0 ? parts[0] : undefined
+    return firstIp && firstIp.trim().length > 0 ? firstIp.trim() : undefined
+  }
+  
+  // Check X-Real-IP (nginx)
+  const xRealIp = honoContext.req.header("x-real-ip")
+  if (xRealIp && xRealIp.trim().length > 0) {
+    return xRealIp.trim()
+  }
+  
+  // No proxy headers found - return undefined
+  // In production, this would come from the connection
+  return undefined
+}
+
+function buildRequestContext(honoContext: HonoContext): RequestContext {
+  return {
+    requestId: getOrGenerateRequestId(honoContext),
+    timestamp: new Date(),
+    ipAddress: extractClientIp(honoContext),
+    userAgent: honoContext.req.header("user-agent")
+  }
+}
+
+function buildActorInfo(
+  payload: AppJWTPayload,
+  workspaceId: Option.Option<WorkspaceId>
+): ActorInfo {
+  return {
+    userId: getUserIdFromPayload(payload),
+    roles: payload.roles,
+    workspaceId
+  }
+}
+
 /**
  * Chain-of-Responsibility Step 4: Build Context
  * 
  * Constructs the final RPC context from the validated JWT payload.
+ * Includes request correlation metadata and sanitized actor info.
+ * Resolves and caches logger for request-scoped usage.
  */
 function buildContext(
   payload: AppJWTPayload,
   workspaceId: Option.Option<WorkspaceId>,
   honoContext: HonoContext
 ): Effect.Effect<RPCContext, never> {
+  const requestContext = buildRequestContext(honoContext)
+  const actor = buildActorInfo(payload, workspaceId)
+  
+  // Resolve singleton logger once
+  const logger = resolveService<LoggerPort>(TOKENS.LOGGER_PORT)
+  
+  // Create request-scoped logger with correlation metadata
+  const requestLogger = logger.child({
+    requestId: requestContext.requestId,
+    actorId: getUserIdFromPayload(payload),
+    workspaceId: workspaceId ? Option.getOrNull(workspaceId) : undefined
+  })
+  
   return Effect.succeed({
     actorId: getUserIdFromPayload(payload),
     workspaceId,
     roles: payload.roles,
-    rawPayload: payload,
-    hono: honoContext
+    requestContext,
+    actor,
+    hono: honoContext,
+    logger: requestLogger
   })
 }
 
 /**
  * Create RPC Context - Chain of Responsibility Orchestrator
- * Each step is a pure function that can fail independently.
- * The chain stops at the first failure.
  */
 export function createContext(c: HonoContext): Effect.Effect<RPCContext, ORPCError<string, unknown>> {
   return Effect.gen(function* () {
@@ -261,9 +361,6 @@ export function createContext(c: HonoContext): Effect.Effect<RPCContext, ORPCErr
   })
 }
 
-/**
- * Helper: Attach Actor and Workspace to DTO
- */
 export function withActorAndWorkspace<T extends Record<string, unknown>>(
   input: T,
   context: RPCContext
@@ -275,7 +372,8 @@ export function withActorAndWorkspace<T extends Record<string, unknown>>(
         status: 403,
         data: {
           code: "MISSING_WORKSPACE",
-          details: "This operation requires a workspace-scoped JWT token"
+          details: "This operation requires a workspace-scoped JWT token or x-workspace-id header",
+          requestId: context.requestContext.requestId
         }
       })
     },
@@ -283,6 +381,31 @@ export function withActorAndWorkspace<T extends Record<string, unknown>>(
       ...input,
       actorId: context.actorId,
       workspaceId
+    })
+  })
+}
+
+export function withActorWorkspaceAndOwner<T extends Record<string, unknown>>(
+  input: T,
+  context: RPCContext
+): T & { actorId: UserId; workspaceId: WorkspaceId; ownerId: UserId } {
+  return Option.match(context.workspaceId, {
+    onNone: () => {
+      throw new ORPCError("FORBIDDEN", {
+        message: "Workspace context is required for this operation",
+        status: 403,
+        data: {
+          code: "MISSING_WORKSPACE",
+          details: "This operation requires a workspace-scoped JWT token or x-workspace-id header",
+          requestId: context.requestContext.requestId
+        }
+      })
+    },
+    onSome: (workspaceId) => ({
+      ...input,
+      actorId: context.actorId,
+      workspaceId,
+      ownerId: context.actorId // Owner is always the authenticated user
     })
   })
 }

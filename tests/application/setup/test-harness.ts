@@ -22,6 +22,8 @@ import { DocumentVersionWorkflow } from "@application/workflow/document-version.
 import { FileStoragePort, FileStorageError, InitiateUploadStorageRequest, InitiateUploadStorageResponse, CompleteUploadRequest, CompleteUploadResponse, UploadMetadata } from "@application/services/ports/file-storage.port"
 import { PasswordHasherPort, PasswordHashError } from "@application/services/ports/password-hasher.port"
 import { ConfigPort } from "@application/services/ports/config.port"
+import { LoggerPort, type LogContext } from "@application/services/ports/logger.port"
+import { AuditPort, type AuditEvent } from "@application/services/ports/audit.port"
 
 // Effect and types
 import { Effect } from "effect"
@@ -170,6 +172,110 @@ export class MockPasswordHasherPort extends PasswordHasherPort {
   }
 }
 
+// ===== MockLoggerPort =====
+
+export class MockLoggerPort extends LoggerPort {
+  private logs: Array<{ level: string; message: string; context?: LogContext }> = []
+  private childContext?: LogContext
+
+  constructor(private readonly captureLogs: boolean = true) {
+    super()
+  }
+
+  trace(message: string, context?: LogContext): void {
+    if (this.captureLogs) {
+      this.logs.push({ level: "trace", message, context: { ...this.childContext, ...context } })
+    }
+  }
+
+  debug(message: string, context?: LogContext): void {
+    if (this.captureLogs) {
+      this.logs.push({ level: "debug", message, context: { ...this.childContext, ...context } })
+    }
+  }
+
+  info(message: string, context?: LogContext): void {
+    if (this.captureLogs) {
+      this.logs.push({ level: "info", message, context: { ...this.childContext, ...context } })
+    }
+  }
+
+  warn(message: string, context?: LogContext): void {
+    if (this.captureLogs) {
+      this.logs.push({ level: "warn", message, context: { ...this.childContext, ...context } })
+    }
+  }
+
+  error(message: string, context?: LogContext): void {
+    if (this.captureLogs) {
+      this.logs.push({ level: "error", message, context: { ...this.childContext, ...context } })
+    }
+  }
+
+  fatal(message: string, context?: LogContext): void {
+    if (this.captureLogs) {
+      this.logs.push({ level: "fatal", message, context: { ...this.childContext, ...context } })
+    }
+  }
+
+  child(context: LogContext): LoggerPort {
+    const childLogger = new MockLoggerPort(this.captureLogs)
+    childLogger.childContext = { ...this.childContext, ...context }
+    return childLogger
+  }
+
+  getLogs() {
+    return [...this.logs]
+  }
+
+  getLogsByLevel(level: string) {
+    return this.logs.filter(log => log.level === level)
+  }
+
+  clear() {
+    this.logs = []
+  }
+}
+
+// ===== MockAuditPort =====
+
+export class MockAuditPort extends AuditPort {
+  private events: AuditEvent[] = []
+
+  record(event: AuditEvent): Effect.Effect<void, import("@application/services/ports/audit.port").AuditError, never> {
+    this.events.push(event)
+    return Effect.succeed(undefined)
+  }
+
+  queryByResource(
+    resourceType: string,
+    resourceId: string
+  ): Effect.Effect<readonly AuditEvent[], import("@application/services/ports/audit.port").AuditError, never> {
+    const filtered = this.events.filter(e => e.resourceType === resourceType && e.resourceId === resourceId)
+    return Effect.succeed(filtered)
+  }
+
+  getEvents(): readonly AuditEvent[] {
+    return [...this.events]
+  }
+
+  getEventsByResource(resourceType: string, resourceId: string): readonly AuditEvent[] {
+    return this.events.filter(e => e.resourceType === resourceType && e.resourceId === resourceId)
+  }
+
+  getEventsByAction(action: string): readonly AuditEvent[] {
+    return this.events.filter(e => e.action === action)
+  }
+
+  getEventsByActor(actorId: string): readonly AuditEvent[] {
+    return this.events.filter(e => e.actorId === actorId)
+  }
+
+  clear(): void {
+    this.events = []
+  }
+}
+
 // ===== MockConfigPort =====
 
 export const MockConfigPort: ConfigPort = {
@@ -213,6 +319,8 @@ export interface WorkflowTestHarness {
   fileStoragePort: InMemoryFileStoragePort
   passwordHasherPort: MockPasswordHasherPort
   configPort: ConfigPort
+  loggerPort: MockLoggerPort
+  auditPort: MockAuditPort
 
   // Workflows
   documentWorkflow: DocumentWorkflow
@@ -239,7 +347,17 @@ export async function createWorkflowTestHarness(): Promise<WorkflowTestHarness> 
   // Create ports
   const fileStoragePort = new InMemoryFileStoragePort()
   const passwordHasherPort = new MockPasswordHasherPort()
+  const loggerPort = new MockLoggerPort()
+  const auditPort = new MockAuditPort()
   
+  // AccessPolicyWorkflow dependencies  
+  const accessPolicyWorkflow = new AccessPolicyWorkflow(
+    accessPolicyRepository,
+    documentRepository,
+    userRepository,
+    auditPort
+  )
+
   // DocumentWorkflow dependencies
   const documentWorkflow = new DocumentWorkflow(
     documentRepository,
@@ -247,18 +365,9 @@ export async function createWorkflowTestHarness(): Promise<WorkflowTestHarness> 
     downloadTokenRepository,
     accessPolicyRepository,
     userRepository,
-    null as any
+    accessPolicyWorkflow,
+    auditPort
   )
-
-  // AccessPolicyWorkflow dependencies  
-  const accessPolicyWorkflow = new AccessPolicyWorkflow(
-    accessPolicyRepository,
-    documentRepository,
-    userRepository
-  )
-
-  // Update documentWorkflow with accessPolicyWorkflow
-  ;(documentWorkflow as any).accessPolicyWorkflow = accessPolicyWorkflow
 
   // UploadWorkflow dependencies
   const uploadWorkflow = new UploadWorkflow(
@@ -266,7 +375,9 @@ export async function createWorkflowTestHarness(): Promise<WorkflowTestHarness> 
     documentVersionRepository,
     accessPolicyRepository,
     userRepository,
-    fileStoragePort
+    fileStoragePort,
+    auditPort,
+    loggerPort
   )
 
   // DownloadTokenWorkflow dependencies
@@ -274,7 +385,8 @@ export async function createWorkflowTestHarness(): Promise<WorkflowTestHarness> 
     downloadTokenRepository,
     documentRepository,
     userRepository,
-    accessPolicyRepository
+    accessPolicyRepository,
+    auditPort
   )
 
   // DocumentVersionWorkflow dependencies
@@ -296,6 +408,8 @@ export async function createWorkflowTestHarness(): Promise<WorkflowTestHarness> 
     fileStoragePort,
     passwordHasherPort,
     configPort: MockConfigPort,
+    loggerPort,
+    auditPort,
     documentWorkflow,
     uploadWorkflow,
     accessPolicyWorkflow,
@@ -304,6 +418,8 @@ export async function createWorkflowTestHarness(): Promise<WorkflowTestHarness> 
     cleanup: async () => {
       fileStoragePort.reset()
       passwordHasherPort.reset()
+      loggerPort.clear()
+      auditPort.clear()
       await dbCleanup()
       await cleanupSharedTestDatabase()
     }
@@ -330,6 +446,8 @@ export const workflowTestLifecycle: WorkflowTestLifecycle = {
     await clearTestDatabase(harness.db)
     harness.fileStoragePort.reset()
     harness.passwordHasherPort.reset()
+    harness.loggerPort.clear()
+    harness.auditPort.clear()
   }
 }
 

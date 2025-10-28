@@ -3,6 +3,24 @@ import { DocumentId, DocumentVersionId, UserId, WorkspaceId } from "@domain/refi
 import { DocumentVersionFields } from "@domain/documentVersion/document-version.schema"
 import { PageNumber, VersionPageSize } from "@domain/utils/pagination"
 
+// ===== INPUT SCHEMAS (Client-supplied, no auth/workspace fields) =====
+
+export const GetDocumentVersionInputSchema = S.Struct({
+  versionId: DocumentVersionId
+})
+
+export const ListDocumentVersionsInputSchema = S.Struct({
+  documentId: DocumentVersionFields.documentId,
+  pageNum: S.optional(PageNumber),
+  pageSize: S.optional(VersionPageSize)
+})
+
+export const GetLatestDocumentVersionInputSchema = S.Struct({
+  documentId: DocumentId
+})
+
+// ===== QUERY SCHEMAS (Internal, with injected auth/workspace fields) =====
+
 export const GetDocumentVersionQuerySchema = S.Struct({
   workspaceId: WorkspaceId,
   versionId: DocumentVersionId,
@@ -11,7 +29,6 @@ export const GetDocumentVersionQuerySchema = S.Struct({
 export type GetDocumentVersionQuery = S.Schema.Type<typeof GetDocumentVersionQuerySchema>
 export type GetDocumentVersionQueryEncoded = S.Schema.Encoded<typeof GetDocumentVersionQuerySchema>
 
-export const decodeGetDocumentVersionQuery = S.decodeUnknown(GetDocumentVersionQuerySchema)
 
 export const ListDocumentVersionsQuerySchema = S.Struct({
   workspaceId: WorkspaceId,
@@ -23,7 +40,6 @@ export const ListDocumentVersionsQuerySchema = S.Struct({
 export type ListDocumentVersionsQuery = S.Schema.Type<typeof ListDocumentVersionsQuerySchema>
 export type ListDocumentVersionsQueryEncoded = S.Schema.Encoded<typeof ListDocumentVersionsQuerySchema>
 
-export const decodeListDocumentVersionsQuery = S.decodeUnknown(ListDocumentVersionsQuerySchema)
 
 export const GetLatestDocumentVersionQuerySchema = S.Struct({
   workspaceId: WorkspaceId,
@@ -33,16 +49,4 @@ export const GetLatestDocumentVersionQuerySchema = S.Struct({
 export type GetLatestDocumentVersionQuery = S.Schema.Type<typeof GetLatestDocumentVersionQuerySchema>
 export type GetLatestDocumentVersionQueryEncoded = S.Schema.Encoded<typeof GetLatestDocumentVersionQuerySchema>
 
-export const decodeGetLatestDocumentVersionQuery = S.decodeUnknown(GetLatestDocumentVersionQuerySchema)
 
-export const DocumentVersionQueryDTO = {
-  // Query Schemas
-  GetDocumentVersionQuerySchema,
-  ListDocumentVersionsQuerySchema,
-  GetLatestDocumentVersionQuerySchema,
-  
-  // Decoders
-  decodeGetDocumentVersionQuery,
-  decodeListDocumentVersionsQuery,
-  decodeGetLatestDocumentVersionQuery
-} as const

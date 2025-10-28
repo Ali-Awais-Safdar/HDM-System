@@ -5,20 +5,21 @@ import { TOKENS } from "@infra/di/container"
 import type { DocumentWorkflow } from "@application/workflow/document.workflow"
 import type { RPCContext } from "../context"
 import { executeEffect } from "../effect-adapter"
-import { withActorAndWorkspace } from "../context"
+import { withActorAndWorkspace, withActorWorkspaceAndOwner } from "../context"
 import { toStandard } from "../standard"
 import { normalizeUpdatedAt } from "./utils"
 
-// DTOs
 import {
-  CreateDocumentCommandSchema,
-  UpdateDocumentCommandSchema,
-  PublishDocumentCommandSchema,
-  DeleteDocumentCommandSchema
+  CreateDocumentInputSchema,
+  UpdateDocumentInputSchema,
+  PublishDocumentInputSchema,
+  DeleteDocumentInputSchema
 } from "@application/dto/document/commands.dto"
 import {
-  GetDocumentQuerySchema,
-  ListDocumentsQuerySchema
+  GetDocumentInputSchema,
+  ListDocumentsInputSchema,
+  GetDocumentAccessInputSchema,
+  DocumentAccessResponseSchema
 } from "@application/dto/document/queries.dto"
 import {
   DocumentResponseSchema,
@@ -39,20 +40,23 @@ import {
 
 export const create = os
   .$context<RPCContext>()
-  .input(toStandard(CreateDocumentCommandSchema))
+  .input(toStandard(CreateDocumentInputSchema))
   .output(toStandard(DocumentResponseSchema))
   .handler(async ({ input, context }) => {
     const workflow = resolveWorkflow<DocumentWorkflow>(TOKENS.DOCUMENT_WORKFLOW)
     
-    const command = withActorAndWorkspace({
-      ownerId: input.ownerId,
+    const command = withActorWorkspaceAndOwner({
       title: input.title,
       description: input.description,
       tags: input.tags
     }, context)
     
     const result = await executeEffect(
-      workflow.createDocument(command)
+      workflow.createDocument(command),
+      {
+        procedureName: "document.create",
+        rpcContext: context
+      }
     )
     
     return normalizeUpdatedAt(result)
@@ -60,7 +64,7 @@ export const create = os
 
 export const get = os
   .$context<RPCContext>()
-  .input(toStandard(GetDocumentQuerySchema))
+  .input(toStandard(GetDocumentInputSchema))
   .output(toStandard(DocumentResponseSchema))
   .handler(async ({ input, context }) => {
     const workflow = resolveWorkflow<DocumentWorkflow>(TOKENS.DOCUMENT_WORKFLOW)
@@ -70,7 +74,11 @@ export const get = os
     }, context)
     
     const result = await executeEffect(
-      workflow.getDocument(query)
+      workflow.getDocument(query),
+      {
+        procedureName: "document.get",
+        rpcContext: context
+      }
     )
     
     return normalizeUpdatedAt(result)
@@ -78,7 +86,7 @@ export const get = os
 
 export const list = os
   .$context<RPCContext>()
-  .input(toStandard(ListDocumentsQuerySchema))
+  .input(toStandard(ListDocumentsInputSchema))
   .output(toStandard(PaginatedDocumentsResponseSchema))
   .handler(async ({ input, context }) => {
     const workflow = resolveWorkflow<DocumentWorkflow>(TOKENS.DOCUMENT_WORKFLOW)
@@ -92,13 +100,17 @@ export const list = os
     }, context)
     
     return await executeEffect(
-      workflow.listDocuments(query)
+      workflow.listDocuments(query),
+      {
+        procedureName: "document.list",
+        rpcContext: context
+      }
     )
   })
 
 export const update = os
   .$context<RPCContext>()
-  .input(toStandard(UpdateDocumentCommandSchema))
+  .input(toStandard(UpdateDocumentInputSchema))
   .output(toStandard(DocumentResponseSchema))
   .handler(async ({ input, context }) => {
     const workflow = resolveWorkflow<DocumentWorkflow>(TOKENS.DOCUMENT_WORKFLOW)
@@ -111,7 +123,11 @@ export const update = os
     }, context)
     
     const result = await executeEffect(
-      workflow.updateDocument(command)
+      workflow.updateDocument(command),
+      {
+        procedureName: "document.update",
+        rpcContext: context
+      }
     )
     
     return normalizeUpdatedAt(result)
@@ -119,7 +135,7 @@ export const update = os
 
 export const publish = os
   .$context<RPCContext>()
-  .input(toStandard(PublishDocumentCommandSchema))
+  .input(toStandard(PublishDocumentInputSchema))
   .output(toStandard(DocumentResponseSchema))
   .handler(async ({ input, context }) => {
     const workflow = resolveWorkflow<DocumentWorkflow>(TOKENS.DOCUMENT_WORKFLOW)
@@ -131,7 +147,11 @@ export const publish = os
     }, context)
     
     const result = await executeEffect(
-      workflow.publishDocument(command)
+      workflow.publishDocument(command),
+      {
+        procedureName: "document.publish",
+        rpcContext: context
+      }
     )
     
     return normalizeUpdatedAt(result)
@@ -139,7 +159,7 @@ export const publish = os
 
 export const deleteDoc = os
   .$context<RPCContext>()
-  .input(toStandard(DeleteDocumentCommandSchema))
+  .input(toStandard(DeleteDocumentInputSchema))
   .output(toStandard(S.Struct({ success: S.Boolean, id: S.String })))
   .handler(async ({ input, context }) => {
     const workflow = resolveWorkflow<DocumentWorkflow>(TOKENS.DOCUMENT_WORKFLOW)
@@ -150,7 +170,11 @@ export const deleteDoc = os
     }, context)
     
     await executeEffect(
-      workflow.deleteDocument(command)
+      workflow.deleteDocument(command),
+      {
+        procedureName: "document.delete",
+        rpcContext: context
+      }
     )
     
     return {
@@ -159,12 +183,34 @@ export const deleteDoc = os
     }
   })
 
+export const getAccess = os
+  .$context<RPCContext>()
+  .input(toStandard(GetDocumentAccessInputSchema))
+  .output(toStandard(DocumentAccessResponseSchema))
+  .handler(async ({ input, context }) => {
+    const workflow = resolveWorkflow<DocumentWorkflow>(TOKENS.DOCUMENT_WORKFLOW)
+    
+    const query = withActorAndWorkspace({
+      documentId: input.documentId,
+      requiredPermission: input.requiredPermission
+    }, context)
+    
+    return await executeEffect(
+      workflow.getDocumentAccess(query),
+      {
+        procedureName: "document.getAccess",
+        rpcContext: context
+      }
+    )
+  })
+
 export const documentProcedures = {
   create,
   get,
   list,
   update,
   publish,
-  delete: deleteDoc
+  delete: deleteDoc,
+  getAccess
 }
 

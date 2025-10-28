@@ -33,6 +33,12 @@ import {
   RemovePolicyCommandEncoded
 } from "@application/dto/accessPolicy/commands.dto"
 import {
+  GetDocumentPoliciesQuerySchema,
+  GetDocumentPoliciesQueryEncoded,
+  GetActorPoliciesQuerySchema,
+  GetActorPoliciesQueryEncoded
+} from "@application/dto/accessPolicy/queries.dto"
+import {
   AccessPolicyResponseEncoded
 } from "@application/dto/accessPolicy/responses.dto"
 
@@ -45,7 +51,8 @@ import {
   mapAccessPolicyPersistenceError,
   mapAccessPolicyDomainError,
   mapAccessPolicyDeletionError,
-  optionToUndefined
+  optionToUndefined,
+  recordAudit
 } from "@application/workflow/helpers"
 
 // Refined types
@@ -53,6 +60,9 @@ import { AccessPolicyId, DocumentId } from "@domain/refined/ids"
 
 // DI tokens
 import { TOKENS } from "@infra/di/container"
+
+// Audit
+import { AuditPort } from "@application/services/ports/audit.port"
 
 /*
  * Responsibilities:
@@ -71,7 +81,10 @@ export class AccessPolicyWorkflow {
     private readonly documentRepository: DocumentRepository,
     
     @inject(TOKENS.USER_REPOSITORY)
-    private readonly userRepository: UserRepository
+    private readonly userRepository: UserRepository,
+    
+    @inject(TOKENS.AUDIT_PORT)
+    private readonly audit: AuditPort
   ) {}
 
   // ===== PRIVATE HELPER METHODS =====
@@ -144,12 +157,32 @@ export class AccessPolicyWorkflow {
                 this.ensureAdmin(actor, document).pipe(
                   Effect.flatMap(() => {
                     // 5. Delete policy via repository
-                    return this.accessPolicyRepository.delete(policy.id)
+                    return pipe(
+                      this.accessPolicyRepository.delete(policy.id),
+                      Effect.map((deleted) => ({ deleted, policy, dto }))
+                    )
                   })
                 )
               )
             )
           )
+        )
+      ),
+      Effect.flatMap(({ deleted, policy, dto }) =>
+        // 6. Record audit event
+        recordAudit(this.audit, {
+          actorId: dto.actorId,
+          workspaceId: dto.workspaceId,
+          resourceType: "access_policy",
+          resourceId: policy.id,
+          action: "delete",
+          outcome: "success" as const,
+          metadata: {
+            resourceId: policy.resourceId,
+            subjectType: policy.subjectType
+          }
+        }).pipe(
+          Effect.map(() => deleted)
         )
       ),
       Effect.mapError(mapAccessPolicyDeletionError)
@@ -176,7 +209,10 @@ export class AccessPolicyWorkflow {
                 this.ensureAdmin(actor, document).pipe(
                   Effect.flatMap(() => {
                     // 5. Update actions using domain mutation methods
-                    return this.updateActionsOnPolicy(policy, dto.actions)
+                    return pipe(
+                      this.updateActionsOnPolicy(policy, dto.actions),
+                      Effect.map((updatedPolicy) => ({ updatedPolicy, dto }))
+                    )
                   })
                 )
               )
@@ -185,18 +221,36 @@ export class AccessPolicyWorkflow {
         )
       ),
       Effect.mapError(mapAccessPolicyDomainError("update")),
-      Effect.flatMap((updatedPolicy) =>
+      Effect.flatMap(({ updatedPolicy, dto }) =>
         // 6. Persist with repository
         this.accessPolicyRepository.save(updatedPolicy).pipe(
           Effect.mapError(mapAccessPolicyPersistenceError({
             resourceId: updatedPolicy.resourceId,
             subjectId: Option.getOrNull(updatedPolicy.subjectId),
             role: Option.getOrNull(updatedPolicy.role)
-          }))
+          })),
+          Effect.map((saved) => ({ savedPolicy: saved, dto }))
+        )
+      ),
+      Effect.flatMap(({ savedPolicy, dto }) =>
+        // 7. Record audit event
+        recordAudit(this.audit, {
+          actorId: dto.actorId,
+          workspaceId: dto.workspaceId,
+          resourceType: "access_policy",
+          resourceId: savedPolicy.id,
+          action: "update",
+          outcome: "success" as const,
+          metadata: {
+            resourceId: savedPolicy.resourceId,
+            actions: savedPolicy.actions
+          }
+        }).pipe(
+          Effect.map(() => savedPolicy)
         )
       ),
       Effect.flatMap((savedPolicy) =>
-        // 7. Return serialized policy
+        // 8. Return serialized policy
         this.serializePolicy(savedPolicy)
       )
     )
@@ -274,7 +328,6 @@ export class AccessPolicyWorkflow {
                   )),
                   Effect.flatMap((validatedId) => {
                     // 7. Build SerializedAccessPolicy with validated ID and timestamp
-                    // Convert DTO Option fields (subjectId/role) to Option types as domain expects
                     const policyData: Partial<SerializedAccessPolicy> = {
                       id: validatedId,
                       resourceType: dto.resourceType,
@@ -289,7 +342,10 @@ export class AccessPolicyWorkflow {
                     }
                     
                     // 8. Create policy entity (will validate and fill defaults)
-                    return AccessPolicyEntity.create(policyData as SerializedAccessPolicy)
+                    return pipe(
+                      AccessPolicyEntity.create(policyData as SerializedAccessPolicy),
+                      Effect.map((policy) => ({ policy, dto }))
+                    )
                   })
                 )
               )
@@ -298,24 +354,140 @@ export class AccessPolicyWorkflow {
         )
       ),
       Effect.mapError(mapAccessPolicyDomainError("create")),
-      Effect.flatMap((policy) =>
+      Effect.flatMap(({ policy, dto }) =>
         // 9. Persist with repository
         this.accessPolicyRepository.save(policy).pipe(
           Effect.mapError(mapAccessPolicyPersistenceError({
             resourceId: policy.resourceId,
             subjectId: Option.getOrNull(policy.subjectId),
             role: Option.getOrNull(policy.role)
-          }))
+          })),
+          Effect.map((saved) => ({ savedPolicy: saved, dto }))
+        )
+      ),
+      Effect.flatMap(({ savedPolicy, dto }) =>
+        // 10. Record audit event
+        recordAudit(this.audit, {
+          actorId: dto.actorId,
+          workspaceId: dto.workspaceId,
+          resourceType: "access_policy",
+          resourceId: savedPolicy.id,
+          action: "create",
+          outcome: "success" as const,
+          metadata: {
+            resourceId: savedPolicy.resourceId,
+            subjectType: savedPolicy.subjectType,
+            actions: savedPolicy.actions,
+            effect: savedPolicy.effect
+          }
+        }).pipe(
+          Effect.map(() => savedPolicy)
         )
       ),
       Effect.flatMap((savedPolicy) =>
-        // 10. Return serialized policy
+        // 11. Return serialized policy
         this.serializePolicy(savedPolicy)
       )
     )
   }
 
-  // ===== BATCH HELPERS =====
+  // ===== QUERY WORKFLOWS =====
+
+  getDocumentPolicies(
+    input: GetDocumentPoliciesQueryEncoded
+  ): Effect.Effect<readonly AccessPolicyResponseEncoded[], WorkflowError | ParseResult.ParseError, Clock.Clock> {
+    return pipe(
+      // 1. Decode query DTO using schema validation
+      S.decodeUnknown(GetDocumentPoliciesQuerySchema)(input),
+      Effect.flatMap((dto) =>
+        // 2. Load actor and document to validate workspace and permissions
+        Effect.all([
+          loadActor(this.userRepository, dto.actorId),
+          loadDocument(this.documentRepository, dto.documentId, dto.workspaceId)
+        ]).pipe(
+          Effect.flatMap(([actor, document]) =>
+            // 3. Ensure read permission to view policies
+            ensurePermission(this.accessPolicyRepository, actor, document, "read").pipe(
+              Effect.flatMap(() =>
+                // 4. Fetch all policies for the document
+                this.getPoliciesForDocument(document.id).pipe(
+                  Effect.mapError((error) => new WorkflowDependencyError(
+                    `Failed to fetch policies for document: ${document.id}`,
+                    "AccessPolicyRepository",
+                    "findByResourceId",
+                    { originalError: error }
+                  ))
+                )
+              )
+            )
+          )
+        )
+      ),
+      Effect.flatMap((entities) =>
+        // 5. Serialize all policies
+        Effect.forEach(
+          entities,
+          (entity) => this.serializePolicy(entity),
+          { concurrency: "unbounded" }
+        )
+      ),
+      Effect.mapError((error) => {
+        if (error instanceof ParseResult.ParseError) {
+          return error
+        }
+        return error as unknown as WorkflowError
+      })
+    )
+  }
+
+  getActorPolicies(
+    input: GetActorPoliciesQueryEncoded
+  ): Effect.Effect<readonly AccessPolicyResponseEncoded[], WorkflowError | ParseResult.ParseError, Clock.Clock> {
+    return pipe(
+      // 1. Decode query DTO using schema validation
+      S.decodeUnknown(GetActorPoliciesQuerySchema)(input),
+      Effect.flatMap((dto) =>
+        // 2. Load actor and document to validate workspace and permissions
+        Effect.all([
+          loadActor(this.userRepository, dto.actorId),
+          loadDocument(this.documentRepository, dto.documentId, dto.workspaceId)
+        ]).pipe(
+          Effect.flatMap(([actor, document]) =>
+            // 3. Ensure read permission
+            ensurePermission(this.accessPolicyRepository, actor, document, "read").pipe(
+              Effect.flatMap(() =>
+                // 4. Get policies filtered for this actor
+                this.getPoliciesForActor(document.id, actor).pipe(
+                  Effect.mapError((error) => new WorkflowDependencyError(
+                    `Failed to fetch actor policies for document: ${document.id}`,
+                    "AccessPolicyRepository",
+                    "findByResourceId",
+                    { originalError: error }
+                  ))
+                )
+              )
+            )
+          )
+        )
+      ),
+      Effect.flatMap((entities) =>
+        // 5. Serialize all policies
+        Effect.forEach(
+          entities,
+          (entity) => this.serializePolicy(entity),
+          { concurrency: "unbounded" }
+        )
+      ),
+      Effect.mapError((error) => {
+        if (error instanceof ParseResult.ParseError) {
+          return error
+        }
+        return error as unknown as WorkflowError
+      })
+    )
+  }
+
+  // ===== BATCH HELPERS (internal use) =====
 
   getPoliciesForDocument(
     documentId: DocumentId
@@ -372,8 +544,7 @@ export class AccessPolicyWorkflow {
         "AccessPolicyEntity",
         "serialized",
         { originalError: error }
-      )),
-      Effect.provideService(Clock.Clock, Clock.make())
+      ))
     )
   }
 

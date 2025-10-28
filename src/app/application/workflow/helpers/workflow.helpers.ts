@@ -1,4 +1,6 @@
 import { Effect, Option, pipe } from "effect"
+import type { AuditPort, AuditEvent } from "@application/services/ports/audit.port"
+import type { LoggerPort } from "@application/services/ports/logger.port"
 
 // ===== OPTION CONVERSION HELPERS =====
 
@@ -275,61 +277,6 @@ export const loadActorAccessContext = (
   )
 }
 
-/**
- * Batch load access policies for multiple documents and filter by actor
- * Returns a Map<DocumentId, AccessPolicyEntity[]> for efficient lookups
- */
-export const loadBatchActorAccessContext = (
-  accessPolicyRepository: AccessPolicyRepository,
-  actor: UserEntity,
-  documents: ReadonlyArray<DocumentEntity>
-): Effect.Effect<Map<DocumentId, ReadonlyArray<AccessPolicyEntity>>, WorkflowDependencyError> => {
-  if (documents.length === 0) {
-    return Effect.succeed(new Map())
-  }
-
-  // Extract unique document IDs
-  const documentIds = [...new Set(documents.map(doc => doc.id))]
-
-  return pipe(
-    // Fetch all policies for all documents in parallel
-    Effect.forEach(
-      documentIds,
-      (documentId) =>
-        accessPolicyRepository.findByResourceId(documentId).pipe(
-          Effect.mapError((error) => {
-            if (error instanceof DatabaseError) {
-              return new WorkflowDependencyError(
-                `Database error fetching access policies for document: ${documentId}`,
-                "AccessPolicyRepository",
-                "findByResourceId",
-                { originalError: error }
-              )
-            }
-            return new WorkflowDependencyError(
-              `Failed to fetch access policies for document: ${documentId}`,
-              "AccessPolicyRepository",
-              "findByResourceId",
-              { originalError: error }
-            )
-          }),
-          Effect.map((policies) => ({ documentId, policies }))
-        ),
-      { concurrency: "unbounded" }
-    ),
-    Effect.map((policyResults) => {
-      // Build Map<DocumentId, AccessPolicyEntity[]> with filtered policies
-      const policyMap = new Map<DocumentId, ReadonlyArray<AccessPolicyEntity>>()
-      
-      for (const { documentId, policies } of policyResults) {
-        policyMap.set(documentId, filterPoliciesByActor(policies, actor))
-      }
-      
-      return policyMap
-    })
-  )
-}
-
 // ===== PERMISSION CHECKING =====
 
 export const ensurePermission = (
@@ -456,6 +403,30 @@ export const applyPagination = <TEntity, TSerialized>(
       pageSize,
       totalPages
     }))
+  )
+}
+
+// ===== AUDIT HELPER =====
+
+export const recordAudit = (
+  auditPort: AuditPort,
+  event: AuditEvent,
+  logger?: LoggerPort
+): Effect.Effect<void, never> => {
+  return pipe(
+    auditPort.record(event),
+    Effect.catchAll((error) => {
+      // Log warning if logger is available
+      if (logger) {
+        logger.warn("Failed to record audit event", {
+          error: error instanceof Error ? error.message : String(error),
+          resourceType: event.resourceType,
+          resourceId: event.resourceId,
+          action: event.action
+        })
+      }
+      return Effect.void
+    })
   )
 }
 

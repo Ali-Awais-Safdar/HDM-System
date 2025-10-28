@@ -11,7 +11,7 @@ import { UserRepository } from "@domain/user/user.repository"
 
 // Domain errors
 import { DownloadTokenNotFoundError, DownloadTokenValidationError, DownloadTokenAlreadyUsedError } from "@domain/downloadToken/download-token.error"
-import { BusinessRuleViolationError, DatabaseError } from "@domain/utils/base.errors"
+import { BusinessRuleViolationError } from "@domain/utils/base.errors"
 
 // Application errors
 import { 
@@ -50,14 +50,18 @@ import {
   mapToWorkflowDependencyError,
   mapDownloadTokenPersistenceError,
   mapDownloadTokenDomainError,
-  applyPagination
+  applyPagination,
+  recordAudit
 } from "@application/workflow/helpers"
 
 // DI tokens
 import { TOKENS } from "@infra/di/container"
 
+// Audit
+import { AuditPort } from "@application/services/ports/audit.port"
+
 // Refined types
-import { UserId, DocumentId, DownloadTokenId } from "@domain/refined/ids"
+import { DownloadTokenId } from "@domain/refined/ids"
 import { DownloadTokenEntity, SerializedDownloadToken } from "@domain/downloadToken/download-token.entity"
 
 /**
@@ -80,7 +84,10 @@ export class DownloadTokenWorkflow {
     private readonly userRepository: UserRepository,
     
     @inject(TOKENS.ACCESS_POLICY_REPOSITORY)
-    private readonly accessPolicyRepository: AccessPolicyRepository
+    private readonly accessPolicyRepository: AccessPolicyRepository,
+    
+    @inject(TOKENS.AUDIT_PORT)
+    private readonly audit: AuditPort
   ) {}
 
   // ===== PRIVATE HELPER METHODS =====
@@ -175,22 +182,63 @@ export class DownloadTokenWorkflow {
         }
         return error as unknown as WorkflowError
       }),
-      Effect.flatMap((token) =>
-        // 6. Persist token
-        this.downloadTokenRepository.save(token).pipe(
+      Effect.flatMap((token) => {
+        const dto = input as CreateDownloadTokenCommandEncoded
+        return this.downloadTokenRepository.save(token).pipe(
           Effect.mapError((error) => new DownloadTokenGenerationError(
             `Failed to save download token: ${error instanceof Error ? error.message : String(error)}`,
-            input.documentId,
-            input.issuedTo,
+            dto.documentId,
+            dto.issuedTo,
             { originalError: error }
           ))
         )
-      ),
+      }),
+      Effect.flatMap((savedToken) => {
+        const dto = input as CreateDownloadTokenCommandEncoded
+        // Record success audit event after token creation
+        return recordAudit(this.audit, {
+          actorId: dto.actorId,
+          workspaceId: dto.workspaceId,
+          resourceType: "download_token",
+          resourceId: savedToken.id,
+          action: "create",
+          outcome: "success" as const,
+          metadata: {
+            documentId: dto.documentId,
+            issuedTo: dto.issuedTo,
+            expiresAt: dto.expiresAt
+          }
+        }).pipe(
+          Effect.map(() => savedToken)
+        )
+      }),
       Effect.flatMap((savedToken) =>
-        // 7. Return serialized token
+        // Return serialized token
         this.serializeToken(savedToken)
       ),
-      Effect.provideService(Clock.Clock, Clock.make())
+      Effect.catchAll((error) => {
+        // Record failure audit event for token creation failures
+        const dto = input as CreateDownloadTokenCommandEncoded
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        
+        // Record audit for authenticated actors only
+        return recordAudit(this.audit, {
+          actorId: dto.actorId,
+          workspaceId: dto.workspaceId,
+          resourceType: "download_token",
+          resourceId: dto.documentId, // Use documentId as resourceId when token creation fails
+          action: "create",
+          outcome: "failure" as const,
+          reason: errorMessage,
+          metadata: {
+            documentId: dto.documentId,
+            issuedTo: dto.issuedTo,
+            errorMessage
+          }
+        }).pipe(
+          Effect.flatMap(() => Effect.fail(error))
+        )
+      })
     ) as Effect.Effect<DownloadTokenResponseEncoded, WorkflowError | ParseResult.ParseError, Clock.Clock>
   }
 
@@ -228,7 +276,6 @@ export class DownloadTokenWorkflow {
                       Effect.flatMap(() =>
                         // 7. Validate token ownership, expiry, and usage status
                         token.validateForUse(actor.id).pipe(
-                          Effect.provideService(Clock.Clock, Clock.make()),
                           Effect.mapError(mapDownloadTokenDomainError("validateForUse", dto.token))
                         )
                       )
@@ -261,8 +308,7 @@ export class DownloadTokenWorkflow {
         }
         // For other errors, re-throw
         return Effect.fail(error)
-      }),
-      Effect.provideService(Clock.Clock, Clock.make())
+      })
     )
   }
 
@@ -353,15 +399,15 @@ export class DownloadTokenWorkflow {
                       Effect.flatMap(() =>
                         // 5. Validate token for use (ownership, expiry, usage checks)
                         token.validateForUse(actor.id).pipe(
-                          Effect.provideService(Clock.Clock, Clock.make()),
                           Effect.mapError(mapDownloadTokenDomainError("validateForUse", dto.token))
                         )
-                      )
+                      ),
+                      Effect.map(() => ({ token, document, dto }))
                     )
                   )
                 )
               ),
-              Effect.flatMap(() =>
+              Effect.flatMap(({ document, dto }) =>
                 // 6. Mark token as used and persist via repository (which calls markAsUsed internally)
                 this.downloadTokenRepository.markAsUsed(dto.token).pipe(
                   Effect.mapError((error) => {
@@ -372,18 +418,35 @@ export class DownloadTokenWorkflow {
                     }
                     // Otherwise use persistence error mapping
                     return mapDownloadTokenPersistenceError("markAsUsed")(error)
-                  })
+                  }),
+                  Effect.map((usedToken) => ({ usedToken, document, dto }))
+                )
+              ),
+              Effect.flatMap(({ usedToken, document, dto }) =>
+                // 7. Record audit event
+                recordAudit(this.audit, {
+                  actorId: dto.actorId,
+                  workspaceId: dto.workspaceId,
+                  resourceType: "download_token",
+                  resourceId: usedToken.id,
+                  action: "use",
+                  outcome: "success" as const,
+                  metadata: {
+                    documentId: document.id,
+                    documentTitle: document.title
+                  }
+                }).pipe(
+                  Effect.map(() => usedToken)
                 )
               ),
               Effect.flatMap((usedToken) =>
-                // 7. Serialize and return
+                // 8. Serialize and return
                 this.serializeToken(usedToken)
               )
             )
           )
         )
-      ),
-      Effect.provideService(Clock.Clock, Clock.make())
+      )
     )
   }
 
@@ -426,11 +489,29 @@ export class DownloadTokenWorkflow {
                             }
                             // Otherwise use persistence error mapping
                             return mapDownloadTokenPersistenceError("delete")(error)
-                          })
+                          }),
+                          Effect.map((deleted) => ({ deleted, token, document, dto }))
                         )
                       )
                     )
                   )
+                )
+              ),
+              Effect.flatMap(({ deleted, token, document, dto }) =>
+                // 6. Record audit event
+                recordAudit(this.audit, {
+                  actorId: dto.actorId,
+                  workspaceId: dto.workspaceId,
+                  resourceType: "download_token",
+                  resourceId: token.id,
+                  action: "revoke",
+                  outcome: "success" as const,
+                  metadata: {
+                    documentId: document.id,
+                    documentTitle: document.title
+                  }
+                }).pipe(
+                  Effect.map(() => deleted)
                 )
               )
             )
@@ -441,33 +522,6 @@ export class DownloadTokenWorkflow {
         success,
         tokenId: input.tokenId
       }))
-    )
-  }
-
-  // ===== BATCH HELPERS =====
-
-  getValidTokensForUser(
-    documentId: DocumentId,
-    userId: UserId
-  ): Effect.Effect<readonly DownloadTokenEntity[], WorkflowDependencyError> {
-    return pipe(
-      this.downloadTokenRepository.findValidTokens(documentId, userId),
-      Effect.mapError((error) => {
-        if (error instanceof DatabaseError) {
-          return new WorkflowDependencyError(
-            `Database error fetching valid tokens for document: ${documentId} and user: ${userId}`,
-            "DownloadTokenRepository",
-            "findValidTokens",
-            { originalError: error }
-          )
-        }
-        return new WorkflowDependencyError(
-          `Failed to fetch valid tokens for document: ${documentId} and user: ${userId}`,
-          "DownloadTokenRepository",
-          "findValidTokens",
-          { originalError: error }
-        )
-      })
     )
   }
 }

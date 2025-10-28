@@ -13,6 +13,8 @@ export const TOKENS = {
   FILE_STORAGE_PORT: Symbol.for('FILE_STORAGE_PORT'),
   PASSWORD_HASHER_PORT: Symbol.for('PASSWORD_HASHER_PORT'),
   CONFIG_PORT: Symbol.for('CONFIG_PORT'),
+  LOGGER_PORT: Symbol.for('LOGGER_PORT'),
+  AUDIT_PORT: Symbol.for('AUDIT_PORT'),
 
   // ===== WORKFLOWS =====
   DOCUMENT_WORKFLOW: Symbol.for('DOCUMENT_WORKFLOW'),

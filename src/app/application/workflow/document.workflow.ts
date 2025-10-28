@@ -60,7 +60,8 @@ import {
   mapDocumentPersistenceError,
   optionToUndefined,
   optionToNull,
-  optionArrayToUndefined
+  optionArrayToUndefined,
+  recordAudit
 } from "@application/workflow/helpers"
 
 // Application workflows
@@ -71,6 +72,9 @@ import { DocumentId } from "@domain/refined/ids"
 
 // DI tokens
 import { TOKENS } from "@infra/di/container"
+
+// Audit
+import { AuditPort } from "@application/services/ports/audit.port"
 
 /**
  * DocumentWorkflow - Application layer workflow for document operations
@@ -94,8 +98,115 @@ export class DocumentWorkflow {
     private readonly userRepository: UserRepository,
     
     @inject(TOKENS.ACCESS_POLICY_WORKFLOW)
-    private readonly accessPolicyWorkflow: AccessPolicyWorkflow
+    private readonly accessPolicyWorkflow: AccessPolicyWorkflow,
+    
+    @inject(TOKENS.AUDIT_PORT)
+    private readonly audit: AuditPort
   ) {}
+
+  private syncCollaboratorPoliciesOnPublishStatusChange(
+    document: DocumentEntity, 
+    newPublishStatus: "draft" | "published" | "unpublished"
+  ): Effect.Effect<void, WorkflowDependencyError, Clock.Clock> {
+    return pipe(
+      // 1. Get all existing policies for the document
+      this.accessPolicyWorkflow.getPoliciesForDocument(document.id),
+      Effect.flatMap((allPolicies) => {
+        // 2. Filter out owner policies (owner always has full access)
+        const collaboratorPolicies = allPolicies.filter((policy) => {
+          // Keep policies that are not for the document owner
+          return Option.match(policy.subjectId, {
+            onNone: () => true, // Role-based policies
+            onSome: (subjectId) => subjectId !== document.ownerId
+          })
+        })
+
+        // 3. Apply business rules based on publish status transition
+        return this.applyPublishStatusPolicyRules(document, newPublishStatus, collaboratorPolicies)
+      }),
+      Effect.mapError((error) => new WorkflowDependencyError(
+        `Failed to sync collaborator policies for document ${document.id}`,
+        "AccessPolicyWorkflow",
+        "syncPolicies",
+        { documentId: document.id, newPublishStatus, originalError: error }
+      ))
+    )
+  }
+
+  private applyPublishStatusPolicyRules(
+    document: DocumentEntity,
+    newPublishStatus: "draft" | "published" | "unpublished",
+    collaboratorPolicies: readonly AccessPolicyEntity[]
+  ): Effect.Effect<void, WorkflowDependencyError, Clock.Clock> {
+    switch (newPublishStatus) {
+      case "published":
+        // When publishing: ensure collaborators maintain their access
+        // No policy changes needed - existing policies remain valid
+        return Effect.void
+
+      case "unpublished":
+        // When unpublishing: restrict collaborator access to read-only
+        return this.restrictCollaboratorAccessToReadOnly(document, collaboratorPolicies)
+
+      case "draft":
+        // When returning to draft: maintain existing access policies
+        // No policy changes needed - existing policies remain valid
+        return Effect.void
+
+      default:
+        return Effect.void
+    }
+  }
+
+  /**
+   * Restrict collaborator access to read-only when document is unpublished
+   * Collects all failures and surfaces them via WorkflowDependencyError
+   * Only proceeds when every policy update succeeds
+   */
+  private restrictCollaboratorAccessToReadOnly(
+    document: DocumentEntity,
+    collaboratorPolicies: readonly AccessPolicyEntity[]
+  ): Effect.Effect<void, WorkflowDependencyError, Clock.Clock> {
+    if (collaboratorPolicies.length === 0) {
+      return Effect.void
+    }
+
+    // Update each collaborator policy to only allow read access
+    // Collect results with both successes and failures
+    return pipe(
+      Effect.forEach(
+        collaboratorPolicies,
+        (policy) => 
+          this.accessPolicyWorkflow.updatePolicyActions({
+            workspaceId: document.workspaceId,
+            policyId: policy.id,
+            actions: ["read"],
+            actorId: document.ownerId // Owner is performing the update
+          }).pipe(
+            Effect.map(() => ({ success: true as const, policyId: policy.id })),
+            Effect.catchAll((error) => Effect.succeed({ success: false as const, policyId: policy.id, error: error as WorkflowError }))
+          ),
+        { concurrency: "unbounded" }
+      ),
+      Effect.flatMap((results) => {
+        const failures = results.filter((r) => !r.success)
+        
+        if (failures.length > 0) {
+          return Effect.fail(new WorkflowDependencyError(
+            `Failed to update ${failures.length} of ${collaboratorPolicies.length} collaborator policies`,
+            "AccessPolicyWorkflow",
+            "updatePolicyActions",
+            { 
+              failedPolicyIds: failures.map(f => f.policyId),
+              errors: failures.map(f => f.error),
+              documentId: document.id
+            }
+          ))
+        }
+        return Effect.void
+      })
+    )
+  }
 
   createDocument(input: CreateDocumentCommandEncoded): Effect.Effect<SerializedDocument, WorkflowError | ParseResult.ParseError, Clock.Clock> {
     return pipe(
@@ -136,21 +247,42 @@ export class DocumentWorkflow {
                 }
                 
                 // 6. Create document entity (will validate and fill defaults)
-                return DocumentEntity.create(documentData as SerializedDocument)
+                return pipe(
+                  DocumentEntity.create(documentData as SerializedDocument),
+                  Effect.map((doc) => ({ document: doc, dto }))
+                )
               })
             )
           )
         )
       ),
       Effect.mapError(mapDocumentDomainError("create")),
-      Effect.flatMap((document) =>
+      Effect.flatMap(({ document, dto }) =>
         // 7. Persist with repository
         this.documentRepository.save(document).pipe(
-          Effect.mapError(mapDocumentPersistenceError("save"))
+          Effect.mapError(mapDocumentPersistenceError("save")),
+          Effect.map((saved) => ({ savedDocument: saved, dto }))
+        )
+      ),
+      Effect.flatMap(({ savedDocument, dto }) =>
+        // 8. Record audit event
+        recordAudit(this.audit, {
+          actorId: dto.actorId,
+          workspaceId: dto.workspaceId,
+          resourceType: "document",
+          resourceId: savedDocument.id,
+          action: "create",
+          outcome: "success" as const,
+          metadata: {
+            title: savedDocument.title,
+            publishStatus: savedDocument.publishStatus
+          }
+        }).pipe(
+          Effect.map(() => savedDocument)
         )
       ),
       Effect.flatMap((savedDocument) =>
-        // 8. Return serialized document
+        // 9. Return serialized document
         serializeDocument(savedDocument)
       )
     )
@@ -215,7 +347,8 @@ export class DocumentWorkflow {
                           })
                         )
                       : Effect.succeed(doc)
-                  )
+                  ),
+                  Effect.map((doc) => ({ document: doc, dto }))
                 )
               })
             )
@@ -223,14 +356,36 @@ export class DocumentWorkflow {
         )
       ),
       Effect.mapError(mapDocumentDomainError("update")),
-      Effect.flatMap((updatedDocument) =>
+      Effect.flatMap(({ document: updatedDocument, dto }) =>
         // 5. Persist with repository
         this.documentRepository.save(updatedDocument).pipe(
-          Effect.mapError(mapDocumentPersistenceError("save"))
+          Effect.mapError(mapDocumentPersistenceError("save")),
+          Effect.map((saved) => ({ savedDocument: saved, dto }))
+        )
+      ),
+      Effect.flatMap(({ savedDocument, dto }) =>
+        // 6. Record audit event
+        recordAudit(this.audit, {
+          actorId: dto.actorId,
+          workspaceId: dto.workspaceId,
+          resourceType: "document",
+          resourceId: savedDocument.id,
+          action: "update",
+          outcome: "success" as const,
+          metadata: {
+            title: savedDocument.title,
+            fieldsUpdated: {
+              title: dto.title !== undefined,
+              description: dto.description !== undefined,
+              tags: dto.tags !== undefined
+            }
+          }
+        }).pipe(
+          Effect.map(() => savedDocument)
         )
       ),
       Effect.flatMap((savedDocument) =>
-        // 6. Return serialized document
+        // 7. Return serialized document
         serializeDocument(savedDocument)
       )
     )
@@ -267,134 +422,49 @@ export class DocumentWorkflow {
                           (notesOption) => doc.updatePublishNotes(notesOption)
                         )
                       : Effect.succeed(doc)
-                  )
+                  ),
+                  Effect.map((doc) => ({ document: doc, dto }))
                 )
               })
             )
           ),
-          Effect.flatMap((updatedDocument) =>
+          Effect.flatMap(({ document: updatedDocument, dto }) =>
             // 5. Persist with repository
             this.documentRepository.save(updatedDocument).pipe(
-              Effect.mapError(mapDocumentPersistenceError("save"))
+              Effect.mapError(mapDocumentPersistenceError("save")),
+              Effect.map((saved) => ({ savedDocument: saved, dto }))
+            )
+          ),
+          Effect.flatMap(({ savedDocument, dto }) =>
+            // 6. Sync collaborator policies when publish status transitions (BEFORE audit)
+            this.syncCollaboratorPoliciesOnPublishStatusChange(savedDocument, dto.publishStatus).pipe(
+              Effect.map(() => ({ savedDocument, dto }))
+            )
+          ),
+          Effect.flatMap(({ savedDocument, dto }) =>
+            // 7. Record audit event AFTER successful sync
+            recordAudit(this.audit, {
+              actorId: dto.actorId,
+              workspaceId: dto.workspaceId,
+              resourceType: "document",
+              resourceId: savedDocument.id,
+              action: "publish",
+              outcome: "success" as const,
+              metadata: {
+                publishStatus: dto.publishStatus,
+                title: savedDocument.title
+              }
+            }).pipe(
+              Effect.map(() => savedDocument)
             )
           ),
           Effect.flatMap((savedDocument) =>
-            // 6. Sync collaborator policies when publish status transitions
-            this.syncCollaboratorPoliciesOnPublishStatusChange(savedDocument, dto.publishStatus).pipe(
-              Effect.flatMap(() =>
-                // 7. Return serialized document
-                serializeDocument(savedDocument)
-              )
-            )
+            // 8. Return serialized document
+            serializeDocument(savedDocument)
           )
         )
       ),
       Effect.mapError(mapDocumentDomainError("publish"))
-    )
-  }
-
-  private syncCollaboratorPoliciesOnPublishStatusChange(
-    document: DocumentEntity, 
-    newPublishStatus: "draft" | "published" | "unpublished"
-  ): Effect.Effect<void, WorkflowDependencyError> {
-    return pipe(
-      // 1. Get all existing policies for the document
-      this.accessPolicyWorkflow.getPoliciesForDocument(document.id),
-      Effect.flatMap((allPolicies) => {
-        // 2. Filter out owner policies (owner always has full access)
-        const collaboratorPolicies = allPolicies.filter((policy) => {
-          // Keep policies that are not for the document owner
-          return Option.match(policy.subjectId, {
-            onNone: () => true, // Role-based policies
-            onSome: (subjectId) => subjectId !== document.ownerId
-          })
-        })
-
-        // 3. Apply business rules based on publish status transition
-        return this.applyPublishStatusPolicyRules(document, newPublishStatus, collaboratorPolicies)
-      }),
-      Effect.mapError((error) => new WorkflowDependencyError(
-        `Failed to sync collaborator policies for document ${document.id}`,
-        "AccessPolicyWorkflow",
-        "syncPolicies",
-        { documentId: document.id, newPublishStatus, originalError: error }
-      ))
-    )
-  }
-
-  private applyPublishStatusPolicyRules(
-    document: DocumentEntity,
-    newPublishStatus: "draft" | "published" | "unpublished",
-    collaboratorPolicies: readonly AccessPolicyEntity[]
-  ): Effect.Effect<void, WorkflowDependencyError> {
-    switch (newPublishStatus) {
-      case "published":
-        // When publishing: ensure collaborators maintain their access
-        // No policy changes needed - existing policies remain valid
-        return Effect.void
-
-      case "unpublished":
-        // When unpublishing: restrict collaborator access to read-only
-        return this.restrictCollaboratorAccessToReadOnly(document, collaboratorPolicies)
-
-      case "draft":
-        // When returning to draft: maintain existing access policies
-        // No policy changes needed - existing policies remain valid
-        return Effect.void
-
-      default:
-        return Effect.void
-    }
-  }
-
-  /**
-   * Restrict collaborator access to read-only when document is unpublished
-   * Collects all failures and surfaces them via WorkflowDependencyError
-   * Only proceeds when every policy update succeeds
-   */
-  private restrictCollaboratorAccessToReadOnly(
-    document: DocumentEntity,
-    collaboratorPolicies: readonly AccessPolicyEntity[]
-  ): Effect.Effect<void, WorkflowDependencyError> {
-    if (collaboratorPolicies.length === 0) {
-      return Effect.void
-    }
-
-    // Update each collaborator policy to only allow read access
-    // Collect results with both successes and failures
-    return pipe(
-      Effect.forEach(
-        collaboratorPolicies,
-        (policy) => 
-          this.accessPolicyWorkflow.updatePolicyActions({
-            workspaceId: document.workspaceId,
-            policyId: policy.id,
-            actions: ["read"],
-            actorId: document.ownerId // Owner is performing the update
-          }).pipe(
-            Effect.map(() => ({ success: true as const, policyId: policy.id })),
-            Effect.catchAll((error) => Effect.succeed({ success: false as const, policyId: policy.id, error: error as WorkflowError })),
-            Effect.provideService(Clock.Clock, Clock.make())
-          ),
-        { concurrency: "unbounded" }
-      ),
-      Effect.flatMap((results) => {
-        const failures = results.filter((r) => !r.success)
-        
-        if (failures.length > 0) {
-          return Effect.fail(new WorkflowDependencyError(
-            `Failed to update ${failures.length} of ${collaboratorPolicies.length} collaborator policies`,
-            "AccessPolicyWorkflow",
-            "updatePolicyActions",
-            { 
-              failedPolicyIds: failures.map(f => f.policyId),
-              errors: failures.map(f => f.error),
-              documentId: document.id
-            }
-          ))
-        }
-        return Effect.void
-      })
     )
   }
 
@@ -553,13 +623,30 @@ export class DocumentWorkflow {
               Effect.flatMap(() =>
                 // 5. Delete document via repository
                 this.documentRepository.delete(dto.id).pipe(
-                  Effect.map(() => true),
+                  Effect.map(() => ({ deleted: true, document, dto })),
                   Effect.mapError((error) => new WorkflowDependencyError(
                     `Failed to delete document: ${error instanceof Error ? error.message : String(error)}`,
                     "DocumentRepository",
                     "delete",
                     { originalError: error }
                   ))
+                )
+              ),
+              Effect.flatMap(({ deleted, document, dto }) =>
+                // 6. Record audit event
+                recordAudit(this.audit, {
+                  actorId: dto.actorId,
+                  workspaceId: dto.workspaceId,
+                  resourceType: "document",
+                  resourceId: document.id,
+                  action: "delete",
+                  outcome: "success" as const,
+                  metadata: {
+                    title: document.title,
+                    force: dto.force
+                  }
+                }).pipe(
+                  Effect.map(() => deleted)
                 )
               )
             )

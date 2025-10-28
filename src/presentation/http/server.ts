@@ -2,12 +2,14 @@ import { Hono } from "hono"
 import { cors } from "hono/cors"
 import { Effect } from "effect"
 import { RPCHandler } from "@orpc/server/fetch"
-import { onError } from "@orpc/server"
 import { HTTP_CONFIG, JWT_CONFIG } from "@infra/config"
 import { createContext, type RPCContext } from "./orpc/context"
 import { mapToORPCError } from "./orpc/error-map"
 import { procedures } from "./orpc/procedures"
 import type { MiddlewareHandler } from "hono"
+import { resolveService } from "@infra/di/setup"
+import { TOKENS } from "@infra/di/container"
+import { LoggerPort } from "@application/services/ports/logger.port"
 
 type Variables = {
   rpcContext: RPCContext
@@ -20,16 +22,16 @@ type Variables = {
  * 1. Extract Authorization header
  * 2. Verify JWT token
  * 3. Derive workspace context
- * 4. Build RPC context
+ * 4. Build RPC context (with request ID and correlation metadata)
  * 5. Attach to Hono context via c.set('rpcContext')
- * 
- * On failure, errors bubble up to app.onError for centralized handling
+ * 6. Set x-request-id header on response for correlation
  */
 const contextMiddleware: MiddlewareHandler<{ Variables: Variables }> = async (c, next) => {
-
   const rpcContext = await Effect.runPromise(createContext(c))
   
   c.set("rpcContext", rpcContext)
+  
+  c.header("x-request-id", rpcContext.requestContext.requestId)
   
   await next()
 }
@@ -63,6 +65,10 @@ export function buildServer(): Hono<{ Variables: Variables }> {
       "Accept",
       "Origin",
       "X-Requested-With"
+    ],
+    exposeHeaders: [
+      "X-Request-Id",
+      "Content-Type"
     ]
   }))
 
@@ -77,14 +83,7 @@ export function buildServer(): Hono<{ Variables: Variables }> {
 
   app.use(`${HTTP_CONFIG.RPC_PREFIX}/*`, contextMiddleware)
 
-  const rpcHandler = new RPCHandler(procedures, {
-    adapterInterceptors: [
-      onError((error) => {
-        // Log errors at the adapter level for diagnostics
-        console.error("RPC adapter error:", error)
-      })
-    ]
-  })
+  const rpcHandler = new RPCHandler(procedures)
 
   app.use(`${HTTP_CONFIG.RPC_PREFIX}/*`, async (c) => {
     const rpcContext = c.get("rpcContext")
@@ -126,33 +125,50 @@ export function buildServer(): Hono<{ Variables: Variables }> {
   })
 
   app.onError((error, c) => {
-    // Always log error details for diagnostics
-    console.error("Unhandled server error:", {
-      error,
-      message: error instanceof Error ? error.message : String(error),
+    // Extract request context if available
+    const rpcContext = c.get("rpcContext")
+    const requestId = rpcContext?.requestContext?.requestId
+    
+    // Use request-scoped logger if available
+    // For pre-context errors (like middleware failures before auth), use singleton
+    const requestLogger = rpcContext?.logger || logger
+    
+    requestLogger.error("Unhandled server error", {
+      error: error instanceof Error ? error.message : String(error),
+      errorName: error instanceof Error ? error.name : "Unknown",
       stack: error instanceof Error ? error.stack : undefined,
       path: c.req.path,
       method: c.req.method,
       timestamp: new Date().toISOString()
     })
     
-    // Map errors to ORPCError format for consistent error responses
+    if (requestId) {
+      c.header("x-request-id", requestId)
+    }
+    
     const orpcError = mapToORPCError(error)
     const status = orpcError.status ?? 500
+    
     return c.json(
       {
         code: orpcError.code,
         message: orpcError.message,
-        data: orpcError.data
+        data: {
+          ...(typeof orpcError.data === "object" && orpcError.data !== null ? orpcError.data : {}),
+          requestId
+        }
       },
       status as any // Hono's type system requires explicit status codes
     )
   })
 
-  console.log("Hono server built successfully")
-  console.log(`Health check: /health`)
-  console.log(`RPC endpoint: ${HTTP_CONFIG.RPC_PREFIX}/*`)
-  console.log(`CORS origins: ${corsOrigins === "*" ? "* (all)" : JSON.stringify(corsOrigins)}`)
+  const logger = resolveService<LoggerPort>(TOKENS.LOGGER_PORT)
+  
+  logger.info("Hono server built successfully", {
+    healthCheckPath: "/health",
+    rpcEndpoint: `${HTTP_CONFIG.RPC_PREFIX}/*`,
+    corsOrigins: corsOrigins === "*" ? "* (all)" : corsOrigins
+  })
   
   return app
 }

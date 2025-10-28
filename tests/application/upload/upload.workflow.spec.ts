@@ -157,6 +157,22 @@ describe("UploadWorkflow", () => {
       )
       const updatedDoc = expectSome(docOption)
       expect(updatedDoc.updatedAt).toBeDefined()
+
+      // Verify audit event recorded
+      const auditEvents = harness.auditPort.getEventsByAction("upload_confirm")
+      expect(auditEvents).toHaveLength(1)
+      expect(auditEvents[0]).toMatchObject({
+        actorId: actors.owner.id,
+        workspaceId: document.workspaceId,
+        resourceType: "document_version",
+        resourceId: response.versionId,
+        action: "upload_confirm",
+        outcome: "success",
+        metadata: expect.objectContaining({
+          documentId: document.id,
+          version: 2
+        })
+      })
     })
   })
 

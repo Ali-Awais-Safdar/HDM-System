@@ -13,5 +13,3 @@ if (typeof globalThis.crypto === "undefined") {
 // This ensures test harness retrieves dependencies via container
 initContainer()
 
-console.log("✅ Test environment initialized with DI container")
-

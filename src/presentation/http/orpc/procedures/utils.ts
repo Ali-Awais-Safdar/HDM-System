@@ -2,10 +2,6 @@ import { Option } from "effect"
 
 /**
  * Presentation Layer Utilities
- * 
- * Shared helper functions for normalizing workflow responses to RPC format.
- * These utilities handle common transformations between application layer
- * (Effect with Options, branded types) and presentation layer (plain JSON).
  */
 
 export function normalizeUpdatedAt<T extends { updatedAt?: string | null | undefined }>(

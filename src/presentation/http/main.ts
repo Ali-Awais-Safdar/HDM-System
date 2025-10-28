@@ -9,9 +9,11 @@
  */
 
 import { serve } from "@hono/node-server"
-import { initContainer } from "@infra/di/setup"
+import { initContainer, resolveService } from "@infra/di/setup"
 import { env } from "@infra/config/env"
 import { buildServer } from "./server"
+import { TOKENS } from "@infra/di/container"
+import { LoggerPort } from "@application/services/ports/logger.port"
 
 async function bootstrap() {
   try {
@@ -22,48 +24,54 @@ async function bootstrap() {
     console.log("\n  Initializing dependency injection container...")
     initContainer()
     
-    console.log("\nBuilding Hono server...")
+    const logger = resolveService<LoggerPort>(TOKENS.LOGGER_PORT)
+    
+    logger.info("Building Hono server...")
     const app = buildServer()
     
-    console.log(`\nStarting HTTP server on port ${env.PORT}...`)
+    logger.info(`Starting HTTP server on port ${env.PORT}...`)
     
     const server = serve({
       fetch: app.fetch,
       port: env.PORT,
     })
     
-    console.log("\nServer started successfully!")
-    console.log(`Server listening on http://localhost:${env.PORT}`)
-    console.log(`Health check: http://localhost:${env.PORT}/health`)
-    console.log(`RPC endpoint: http://localhost:${env.PORT}/rpc/*`)
-    console.log("\nPress Ctrl+C to stop the server\n")
+    logger.info("Server started successfully", {
+      port: env.PORT,
+      environment: env.NODE_ENV,
+      healthCheckPath: `/health`,
+      rpcEndpoint: `/rpc/*`
+    })
     
     let isShuttingDown = false
     
     const shutdown = async (signal: string) => {
       if (isShuttingDown) {
-        console.log(`Shutdown already in progress. Ignoring ${signal}`)
+        logger.warn(`Shutdown already in progress. Ignoring ${signal}`, { signal })
         return
       }
       isShuttingDown = true
       
-      console.log(`\n\nReceived ${signal}. Starting graceful shutdown...`)
+      logger.info(`Received ${signal}. Starting graceful shutdown...`, { signal })
       
       try {
-        console.log("Closing HTTP server...")
+        logger.info("Closing HTTP server...")
         if (server && typeof server.close === "function") {
-          await server.close()
+          server.close()
         }
         
-        console.log("⏳ Waiting for in-flight requests to complete...")
+        logger.info("Waiting for in-flight requests to complete...")
         await new Promise((resolve) => setTimeout(resolve, 2000))
         
-        console.log("Database connections will close on process exit")
+        logger.info("Database connections will close on process exit")
         
-        console.log("Graceful shutdown complete")
+        logger.info("Graceful shutdown complete")
         process.exit(0)
       } catch (error) {
-        console.error("❌ Error during shutdown:", error)
+        logger.fatal("Error during shutdown", { 
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined
+        })
         process.exit(1)
       }
     }
@@ -76,14 +84,21 @@ async function bootstrap() {
       shutdown("SIGINT")
     })
     
-    // Handle uncaught errors
     process.on("uncaughtException", (error) => {
-      console.error("💥 Uncaught Exception:", error)
+      logger.fatal("Uncaught Exception", {
+        error: error.message,
+        stack: error.stack,
+        name: error.name
+      })
       shutdown("UNCAUGHT_EXCEPTION")
     })
     
     process.on("unhandledRejection", (reason, promise) => {
-      console.error("💥 Unhandled Rejection at:", promise, "reason:", reason)
+      logger.fatal("Unhandled Rejection", {
+        reason: reason instanceof Error ? reason.message : String(reason),
+        promise: String(promise),
+        stack: reason instanceof Error ? reason.stack : undefined
+      })
       shutdown("UNHANDLED_REJECTION")
     })
     
@@ -93,6 +108,5 @@ async function bootstrap() {
   }
 }
 
-// Start the server
 bootstrap()
 

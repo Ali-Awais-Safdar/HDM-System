@@ -7,13 +7,12 @@ import { executeEffect } from "../effect-adapter"
 import { withActorAndWorkspace } from "../context"
 import { toStandard } from "../standard"
 
-// DTOs
 import {
-  CreateDownloadTokenCommandSchema,
-  ValidateDownloadTokenQuerySchema,
-  ListDownloadTokensQuerySchema,
-  RevokeDownloadTokenCommandSchema,
-  UseDownloadTokenCommandSchema
+  CreateDownloadTokenInputSchema,
+  ValidateDownloadTokenInputSchema,
+  UseDownloadTokenInputSchema,
+  ListDownloadTokensInputSchema,
+  RevokeDownloadTokenInputSchema
 } from "@application/dto/downloadToken/commands.dto"
 import {
   DownloadTokenResponseSchema,
@@ -35,7 +34,7 @@ import {
 
 export const create = os
   .$context<RPCContext>()
-  .input(toStandard(CreateDownloadTokenCommandSchema))
+  .input(toStandard(CreateDownloadTokenInputSchema))
   .output(toStandard(DownloadTokenResponseSchema))
   .handler(async ({ input, context }) => {
     const workflow = resolveWorkflow<DownloadTokenWorkflow>(TOKENS.DOWNLOAD_TOKEN_WORKFLOW)
@@ -47,13 +46,17 @@ export const create = os
     }, context)
     
     return await executeEffect(
-      workflow.createDownloadToken(command)
+      workflow.createDownloadToken(command),
+      {
+        procedureName: "downloadToken.create",
+        rpcContext: context
+      }
     )
   })
 
 export const validate = os
   .$context<RPCContext>()
-  .input(toStandard(ValidateDownloadTokenQuerySchema))
+  .input(toStandard(ValidateDownloadTokenInputSchema))
   .output(toStandard(ValidateDownloadTokenResponseSchema))
   .handler(async ({ input, context }) => {
     const workflow = resolveWorkflow<DownloadTokenWorkflow>(TOKENS.DOWNLOAD_TOKEN_WORKFLOW)
@@ -63,13 +66,17 @@ export const validate = os
     }, context)
     
     return await executeEffect(
-      workflow.validateDownloadToken(query)
+      workflow.validateDownloadToken(query),
+      {
+        procedureName: "downloadToken.validate",
+        rpcContext: context
+      }
     )
   })
 
 export const use = os
   .$context<RPCContext>()
-  .input(toStandard(UseDownloadTokenCommandSchema))
+  .input(toStandard(UseDownloadTokenInputSchema))
   .output(toStandard(DownloadTokenResponseSchema))
   .handler(async ({ input, context }) => {
     const workflow = resolveWorkflow<DownloadTokenWorkflow>(TOKENS.DOWNLOAD_TOKEN_WORKFLOW)
@@ -79,13 +86,17 @@ export const use = os
     }, context)
     
     return await executeEffect(
-      workflow.useDownloadToken(command)
+      workflow.useDownloadToken(command),
+      {
+        procedureName: "downloadToken.use",
+        rpcContext: context
+      }
     )
   })
 
 export const list = os
   .$context<RPCContext>()
-  .input(toStandard(ListDownloadTokensQuerySchema))
+  .input(toStandard(ListDownloadTokensInputSchema))
   .output(toStandard(PaginatedDownloadTokensResponseSchema))
   .handler(async ({ input, context }) => {
     const workflow = resolveWorkflow<DownloadTokenWorkflow>(TOKENS.DOWNLOAD_TOKEN_WORKFLOW)
@@ -97,13 +108,17 @@ export const list = os
     }, context)
     
     return await executeEffect(
-      workflow.listDownloadTokens(query)
+      workflow.listDownloadTokens(query),
+      {
+        procedureName: "downloadToken.list",
+        rpcContext: context
+      }
     )
   })
 
 export const revoke = os
   .$context<RPCContext>()
-  .input(toStandard(RevokeDownloadTokenCommandSchema))
+  .input(toStandard(RevokeDownloadTokenInputSchema))
   .output(toStandard(RevokeDownloadTokenResponseSchema))
   .handler(async ({ input, context }) => {
     const workflow = resolveWorkflow<DownloadTokenWorkflow>(TOKENS.DOWNLOAD_TOKEN_WORKFLOW)
@@ -113,7 +128,11 @@ export const revoke = os
     }, context)
     
     return await executeEffect(
-      workflow.revokeDownloadToken(command)
+      workflow.revokeDownloadToken(command),
+      {
+        procedureName: "downloadToken.revoke",
+        rpcContext: context
+      }
     )
   })
 
