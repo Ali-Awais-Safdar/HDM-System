@@ -525,15 +525,23 @@ export const mapUploadConfirmationError = (
       return error
     }
 
-    // Map FileStorageError to UploadConfirmationError
+    // Map FileStorageError to specific error types based on code
     if (error instanceof FileStorageError) {
-      const reason = error.code === "NOT_FOUND" ? "FILE_NOT_FOUND" : "CHECKSUM_MISMATCH"
+      // FILE_NOT_FOUND is reserved strictly for NOT_FOUND storage errors
+      if (error.code === "NOT_FOUND") {
+        return new FileNotFoundError(
+          `File not found in storage: ${error.message}`,
+          context.documentId, // Use documentId as fileKey in this context
+          { originalError: error }
+        )
+      }
+      // Map other FileStorageError codes to CHECKSUM_MISMATCH as generic validation failure
       return new UploadConfirmationError(
         `Upload confirmation failed: ${error.message}`,
         context.documentId,
         '',
-        reason,
-        { originalError: error, storageError: error.code }
+        "CHECKSUM_MISMATCH",
+        { originalError: error, storageErrorCode: error.code }
       )
     }
 
@@ -547,12 +555,12 @@ export const mapUploadConfirmationError = (
       )
     }
 
-    // Generic error mapping
+    // Generic error mapping - use CHECKSUM_MISMATCH as generic validation failure
     return new UploadConfirmationError(
       `Upload confirmation failed: ${error instanceof Error ? error.message : String(error)}`,
       context.documentId,
       '',
-      "FILE_NOT_FOUND",
+      "CHECKSUM_MISMATCH",
       { originalError: error }
     )
   }

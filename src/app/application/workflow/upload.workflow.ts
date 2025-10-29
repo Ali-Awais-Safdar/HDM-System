@@ -41,6 +41,7 @@ import {
 
 // Application workflow helpers
 import {
+  createEntityId,
   loadActor,
   loadDocument,
   ensurePermission,
@@ -53,7 +54,7 @@ import {
 import { LoggerPort } from "@application/services/ports/logger.port"
 
 // Refined types
-import { DocumentId, makeDocumentVersionId } from "@domain/refined/ids"
+import { DocumentId, DocumentVersionId } from "@domain/refined/ids"
 import { Sha256 } from "@domain/refined/checksum"
 import { FileKey } from "@domain/refined/file-reference"
 
@@ -362,22 +363,33 @@ export class UploadWorkflow {
           contentRefValid: uploadResult.verificationMetadata.contentRefValid
         })
       }),
-      Effect.mapError((error): ChecksumValidationError | FileNotFoundError | UploadConfirmationError => {
+      Effect.mapError((error: unknown): ChecksumValidationError | FileNotFoundError | UploadConfirmationError => {
         if (error instanceof ChecksumValidationError || error instanceof UploadConfirmationError) {
           return error
         }
-        if (error instanceof FileStorageError && error.code === "NOT_FOUND") {
-          return new FileNotFoundError(
-            `File not found in storage: ${dto.fileKey}`,
-            dto.fileKey,
-            { originalError: error }
+        if (error instanceof FileStorageError) {
+          if (error.code === "NOT_FOUND") {
+            return new FileNotFoundError(
+              `File not found in storage: ${dto.fileKey}`,
+              dto.fileKey,
+              { originalError: error }
+            )
+          }
+          // Map other FileStorageError codes to CHECKSUM_MISMATCH as generic validation failure
+          return new UploadConfirmationError(
+            `Upload verification failed: ${error.message}`,
+            dto.documentId,
+            "",
+            "CHECKSUM_MISMATCH",
+            { originalError: error, storageErrorCode: error.code }
           )
         }
+        const errorMessage = error instanceof Error ? error.message : String(error)
         return new UploadConfirmationError(
-          `Upload verification failed: ${error instanceof Error ? error.message : String(error)}`,
+          `Upload verification failed: ${errorMessage}`,
           dto.documentId,
           "",
-          "FILE_NOT_FOUND",
+          "CHECKSUM_MISMATCH",
           { originalError: error }
         )
       })
@@ -402,18 +414,7 @@ export class UploadWorkflow {
   ): Effect.Effect<DocumentVersionEntity, WorkflowDependencyError, Clock.Clock> {
     return pipe(
       // Generate new version ID
-      Effect.sync(() => crypto.randomUUID()),
-      Effect.flatMap((generatedIdString) =>
-        // Validate generated UUID
-        makeDocumentVersionId(generatedIdString).pipe(
-          Effect.mapError((error) => new WorkflowDependencyError(
-            `Failed to validate generated document version ID: ${error.message}`,
-            "DocumentVersionId",
-            "validation",
-            { originalError: error, generatedId: generatedIdString }
-          ))
-        )
-      ),
+      createEntityId(DocumentVersionId, "DocumentVersionId"),
       Effect.flatMap((versionId) =>
         // Determine version number
             pipe(

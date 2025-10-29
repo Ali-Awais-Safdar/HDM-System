@@ -13,17 +13,19 @@ export const GetActorPoliciesInputSchema = S.Struct({
 
 // ===== QUERY SCHEMAS (Internal, with injected auth/workspace fields) =====
 
-export const GetDocumentPoliciesQuerySchema = S.Struct({
-  workspaceId: WorkspaceId,
-  documentId: DocumentId,
-  actorId: UserId
-})
+export const GetDocumentPoliciesQuerySchema = GetDocumentPoliciesInputSchema.pipe(
+  S.extend(S.Struct({
+    workspaceId: WorkspaceId,
+    actorId: UserId
+  }))
+)
 export type GetDocumentPoliciesQueryEncoded = S.Schema.Encoded<typeof GetDocumentPoliciesQuerySchema>
 
-export const GetActorPoliciesQuerySchema = S.Struct({
-  workspaceId: WorkspaceId,
-  documentId: DocumentId,
-  actorId: UserId
-})
+export const GetActorPoliciesQuerySchema = GetActorPoliciesInputSchema.pipe(
+  S.extend(S.Struct({
+    workspaceId: WorkspaceId,
+    actorId: UserId
+  }))
+)
 export type GetActorPoliciesQueryEncoded = S.Schema.Encoded<typeof GetActorPoliciesQuerySchema>
 

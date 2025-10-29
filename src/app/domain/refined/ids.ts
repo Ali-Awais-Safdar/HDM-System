@@ -33,16 +33,3 @@ export const makeWorkspaceId = (input: unknown) =>
   S.decodeUnknown(WorkspaceId)(input)
 export const makeAccessPolicyId = (input: unknown) =>
   S.decodeUnknown(AccessPolicyId)(input)
-
-export const makeDocumentIdSync = (input: unknown) =>
-  S.decodeUnknownSync(DocumentId)(input)
-export const makeDocumentVersionIdSync = (input: unknown) =>
-  S.decodeUnknownSync(DocumentVersionId)(input)
-export const makeUserIdSync = (input: unknown) =>
-  S.decodeUnknownSync(UserId)(input)
-export const makeDownloadTokenIdSync = (input: unknown) =>
-  S.decodeUnknownSync(DownloadTokenId)(input)
-export const makeWorkspaceIdSync = (input: unknown) =>
-  S.decodeUnknownSync(WorkspaceId)(input)
-export const makeAccessPolicyIdSync = (input: unknown) =>
-  S.decodeUnknownSync(AccessPolicyId)(input)

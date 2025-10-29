@@ -8,14 +8,12 @@ import { withActor, withAnonymousContext } from "../context"
 import { toStandard } from "../standard"
 import { normalizeUpdatedAt } from "./utils"
 
+import { Schema as S } from "effect"
 import {
   SignUpInputSchema,
   LoginInputSchema,
   ChangePasswordInputSchema
 } from "@application/dto/user/commands.dto"
-import {
-  GetProfileInputSchema
-} from "@application/dto/user/queries.dto"
 import {
   SignUpResponseSchema,
   LoginResponseSchema,
@@ -120,7 +118,7 @@ export const changePassword = os
 
 export const getProfile = os
   .$context<RPCContext>()
-  .input(toStandard(GetProfileInputSchema))
+  .input(toStandard(S.Struct({})))
   .output(toStandard(UserSummarySchema))
   .handler(async ({ input, context }) => {
     const workflow = resolveWorkflow<UserWorkflow>(TOKENS.USER_WORKFLOW)

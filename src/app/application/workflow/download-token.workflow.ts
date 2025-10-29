@@ -44,6 +44,7 @@ import {
 
 // Application workflow helpers
 import {
+  createEntityId,
   loadActor,
   loadDocument,
   ensurePermission,
@@ -126,7 +127,7 @@ export class DownloadTokenWorkflow {
               Effect.flatMap(() =>
                 // 4. Generate token ID and token string
                 Effect.all([
-                  Effect.sync(() => crypto.randomUUID()),
+                  createEntityId(DownloadTokenId, "DownloadTokenId"),
                   Effect.sync(() => {
                     // Generate a secure random token string (URL-safe base64)
                     const bytes = new Uint8Array(32)
@@ -135,31 +136,20 @@ export class DownloadTokenWorkflow {
                   })
                 ])
               ),
-              Effect.flatMap(([generatedIdString, tokenString]) =>
-                // 5. Validate generated UUID
-                S.decodeUnknown(DownloadTokenId)(generatedIdString).pipe(
-                  Effect.mapError((error) => new WorkflowDependencyError(
-                    `Failed to validate generated token ID: ${error.message}`,
-                    "DownloadTokenId",
-                    "validation",
-                    { originalError: error, generatedId: generatedIdString }
-                  )),
-                  Effect.flatMap((validatedId) => {
-                    // 6. Build token data and return { dto, token }
-                    const tokenData: Partial<SerializedDownloadToken> = {
-                      id: validatedId,
-                      token: tokenString,
-                      documentId: dto.documentId,
-                      issuedTo: dto.issuedTo,
-                      expiresAt: dto.expiresAt // Already an ISO string from DTO
-                    }
-                    
-                    return DownloadTokenEntity.create(tokenData as SerializedDownloadToken).pipe(
-                      Effect.map((token) => ({ dto, token }))
-                    )
-                  })
+              Effect.flatMap(([validatedId, tokenString]) => {
+                // 5. Build token data and return { dto, token }
+                const tokenData: Partial<SerializedDownloadToken> = {
+                  id: validatedId,
+                  token: tokenString,
+                  documentId: dto.documentId,
+                  issuedTo: dto.issuedTo,
+                  expiresAt: dto.expiresAt // Already an ISO string from DTO
+                }
+                
+                return DownloadTokenEntity.create(tokenData as SerializedDownloadToken).pipe(
+                  Effect.map((token) => ({ dto, token }))
                 )
-              )
+              })
             )
           )
         )

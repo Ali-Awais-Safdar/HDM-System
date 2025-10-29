@@ -19,6 +19,41 @@ import { PermissionCheckError, WorkflowDependencyError } from "@application/erro
 import { UserId, DocumentId, DocumentVersionId, WorkspaceId } from "@domain/refined/ids"
 import { AccessPolicySchema } from "@domain/accessPolicy/access-policy.schema"
 
+// ===== ID GENERATION HELPERS =====
+
+/**
+ * Generate and validate a new entity ID using crypto.randomUUID()
+ * 
+ * @param schema - The ID schema to validate against (e.g., DocumentId, UserId)
+ * @param label - Human-readable label for error messages (e.g., "DocumentId", "UserId")
+ * @returns Effect that produces a validated ID or fails with WorkflowDependencyError
+ * 
+ * @example
+ * ```typescript
+ * const documentId = await Effect.runPromise(
+ *   createEntityId(DocumentId, "DocumentId")
+ * )
+ * ```
+ */
+export const createEntityId = <A, I, R = never>(
+  schema: S.Schema<A, I, R>,
+  label: string
+): Effect.Effect<A, WorkflowDependencyError, R> => {
+  return pipe(
+    Effect.sync(() => crypto.randomUUID()),
+    Effect.flatMap((generatedIdString) =>
+      S.decodeUnknown(schema)(generatedIdString).pipe(
+        Effect.mapError((error) => new WorkflowDependencyError(
+          `Failed to validate generated ${label}: ${error.message}`,
+          label,
+          "validation",
+          { originalError: error, generatedId: generatedIdString }
+        ))
+      )
+    )
+  )
+}
+
 // ===== OPTION CONVERSION HELPERS =====
 
 export const optionToUndefined = <T>(option: Option.Option<T>): T | undefined => {
@@ -223,25 +258,6 @@ export const serializeDocumentVersion = (
     Effect.mapError((error) => new WorkflowDependencyError(
       `Document version serialization failed: ${error.message}`,
       "DocumentVersionEntity",
-      "serialized",
-      { originalError: error }
-    ))
-  )
-}
-
-export const serializeUser = (
-  user: UserEntity
-): Effect.Effect<Omit<import("@domain/user/user.entity").SerializedUser, "passwordHash">, WorkflowDependencyError> => {
-  return pipe(
-    user.serialized(),
-    Effect.map((serialized) => {
-      // Remove passwordHash to avoid leaking sensitive data
-      const { passwordHash: _passwordHash, ...userWithoutPassword } = serialized
-      return userWithoutPassword
-    }),
-    Effect.mapError((error) => new WorkflowDependencyError(
-      `User serialization failed: ${error.message}`,
-      "UserEntity",
       "serialized",
       { originalError: error }
     ))
@@ -467,7 +483,7 @@ export const applyPagination = <TEntity, TSerialized>(
     Effect.forEach(
       paginatedEntities,
       serializeFn,
-      { concurrency: "unbounded" }
+      { concurrency: 16 }
     ),
     Effect.map((serializedData) => ({
       data: serializedData,

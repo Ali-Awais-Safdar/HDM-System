@@ -30,39 +30,32 @@ export const GetDocumentAccessInputSchema = S.Struct({
 
 // ===== QUERY SCHEMAS (Internal, with injected auth/workspace fields) =====
 
-export const GetDocumentQuerySchema = S.Struct({
-  workspaceId: WorkspaceId,
-  documentId: DocumentId,
-  actorId: UserId
-})
+export const GetDocumentQuerySchema = GetDocumentInputSchema.pipe(
+  S.extend(S.Struct({
+    workspaceId: WorkspaceId,
+    actorId: UserId
+  }))
+)
 export type GetDocumentQuery = S.Schema.Type<typeof GetDocumentQuerySchema>
 export type GetDocumentQueryEncoded = S.Schema.Encoded<typeof GetDocumentQuerySchema>
 
 
-export const ListDocumentsQuerySchema = S.Struct({
-  workspaceId: WorkspaceId,
-  actorId: UserId,
-  ownerId: S.optional(DocumentFields.ownerId),
-  tags: DocumentFields.tags,
-  search: S.optional(S.String.pipe(
-    S.transform(S.String, {
-      decode: (input) => input.trim(),
-      encode: (value) => value
-    })
-  )),
-  pageNum: S.optional(PageNumber),
-  pageSize: S.optional(DocumentPageSize)
-})
+export const ListDocumentsQuerySchema = ListDocumentsInputSchema.pipe(
+  S.extend(S.Struct({
+    workspaceId: WorkspaceId,
+    actorId: UserId
+  }))
+)
 export type ListDocumentsQuery = S.Schema.Type<typeof ListDocumentsQuerySchema>
 export type ListDocumentsQueryEncoded = S.Schema.Encoded<typeof ListDocumentsQuerySchema>
 
 
-export const GetDocumentAccessQuerySchema = S.Struct({
-  workspaceId: WorkspaceId,
-  documentId: DocumentId,
-  actorId: UserId,
-  requiredPermission: S.optional(PermissionLevelSchema)
-})
+export const GetDocumentAccessQuerySchema = GetDocumentAccessInputSchema.pipe(
+  S.extend(S.Struct({
+    workspaceId: WorkspaceId,
+    actorId: UserId
+  }))
+)
 export type GetDocumentAccessQuery = S.Schema.Type<typeof GetDocumentAccessQuerySchema>
 export type GetDocumentAccessQueryEncoded = S.Schema.Encoded<typeof GetDocumentAccessQuerySchema>
 

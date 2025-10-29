@@ -19,29 +19,29 @@ export const UpdatePolicyActionsInputSchema = AccessPolicyStruct.pick("actions")
 
 // ===== COMMAND SCHEMAS (Internal, with injected auth/workspace fields) =====
 
-export const AddPolicyCommandSchema = AccessPolicyStruct.pick("resourceType", "resourceId", "subjectType", "subjectId", "role", "actions", "effect")
-  .pipe(S.extend(S.Struct({ workspaceId: WorkspaceId, actorId: UserId })))
+export const AddPolicyCommandSchema = AddPolicyInputSchema.pipe(
+  S.extend(S.Struct({ workspaceId: WorkspaceId, actorId: UserId }))
+)
 export type AddPolicyCommand = S.Schema.Type<typeof AddPolicyCommandSchema>
 export type AddPolicyCommandEncoded = S.Schema.Encoded<typeof AddPolicyCommandSchema>
 
 
-export const RemovePolicyCommandSchema = S.Struct({
-  workspaceId: WorkspaceId,
-  policyId: AccessPolicyId,
-  documentId: S.optional(DocumentId),
-  actorId: UserId
-})
+export const RemovePolicyCommandSchema = RemovePolicyInputSchema.pipe(
+  S.extend(S.Struct({
+    workspaceId: WorkspaceId,
+    actorId: UserId
+  }))
+)
 export type RemovePolicyCommand = S.Schema.Type<typeof RemovePolicyCommandSchema>
 export type RemovePolicyCommandEncoded = S.Schema.Encoded<typeof RemovePolicyCommandSchema>
 
 
-export const UpdatePolicyActionsCommandSchema = AccessPolicyStruct.pick("actions")
-  .pipe(S.extend(S.Struct({ 
+export const UpdatePolicyActionsCommandSchema = UpdatePolicyActionsInputSchema.pipe(
+  S.extend(S.Struct({ 
     workspaceId: WorkspaceId,
-    policyId: AccessPolicyId,
-    documentId: S.optional(DocumentId),
     actorId: UserId
-  })))
+  }))
+)
 export type UpdatePolicyActionsCommand = S.Schema.Type<typeof UpdatePolicyActionsCommandSchema>
 export type UpdatePolicyActionsCommandEncoded = S.Schema.Encoded<typeof UpdatePolicyActionsCommandSchema>
 

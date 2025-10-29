@@ -40,6 +40,7 @@ import {
 
 // Application workflow helpers
 import {
+  createEntityId,
   loadActor,
   loadDocument,
   ensurePermission,
@@ -309,42 +310,31 @@ export class AccessPolicyWorkflow {
               Effect.flatMap(() =>
                 // 5. Generate ID and get current timestamp
                 Effect.all([
-                  Effect.sync(() => crypto.randomUUID()),
+                  createEntityId(AccessPolicyId, "AccessPolicyId"),
                   Clock.currentTimeMillis.pipe(Effect.map((ms) => new Date(ms)))
                 ])
               ),
-              Effect.flatMap(([generatedIdString, now]) =>
-                // 6. Validate generated UUID with schema-first boundary rule
-                S.decodeUnknown(AccessPolicyId)(generatedIdString).pipe(
-                  Effect.mapError((error) => new WorkflowDependencyError(
-                    `Failed to validate generated policy ID: ${error.message}`,
-                    "AccessPolicyId",
-                    "validation",
-                    { originalError: error, generatedId: generatedIdString }
-                  )),
-                  Effect.flatMap((validatedId) => {
-                    // 7. Build SerializedAccessPolicy with validated ID and timestamp
-                    const policyData: Partial<SerializedAccessPolicy> = {
-                      id: validatedId,
-                      resourceType: dto.resourceType,
-                      resourceId: dto.resourceId,
-                      subjectType: dto.subjectType,
-                      subjectId: optionToUndefined(dto.subjectId),
-                      role: optionToUndefined(dto.role),
-                      actions: dto.actions,
-                      effect: dto.effect,
-                      createdAt: now.toISOString(),
-                      updatedAt: undefined
-                    }
-                    
-                    // 8. Create policy entity (will validate and fill defaults)
-                    return pipe(
-                      AccessPolicyEntity.create(policyData as SerializedAccessPolicy),
-                      Effect.map((policy) => ({ policy, dto }))
-                    )
-                  })
+              Effect.flatMap(([validatedId, now]) => {
+                // 6. Build SerializedAccessPolicy with validated ID and timestamp
+                const policyData: Partial<SerializedAccessPolicy> = {
+                  id: validatedId,
+                  resourceType: dto.resourceType,
+                  resourceId: dto.resourceId,
+                  subjectType: dto.subjectType,
+                  subjectId: optionToUndefined(dto.subjectId),
+                  role: optionToUndefined(dto.role),
+                  actions: dto.actions,
+                  effect: dto.effect,
+                  createdAt: now.toISOString(),
+                  updatedAt: undefined
+                }
+                
+                // 7. Create policy entity (will validate and fill defaults)
+                return pipe(
+                  AccessPolicyEntity.create(policyData as SerializedAccessPolicy),
+                  Effect.map((policy) => ({ policy, dto }))
                 )
-              )
+              })
             )
           )
         )
@@ -423,8 +413,7 @@ export class AccessPolicyWorkflow {
         // 5. Serialize all policies
         Effect.forEach(
           entities,
-          (entity) => this.serializePolicy(entity),
-          { concurrency: "unbounded" }
+          (entity) => this.serializePolicy(entity)
         )
       ),
       Effect.mapError((error) => {
@@ -470,8 +459,7 @@ export class AccessPolicyWorkflow {
         // 5. Serialize all policies
         Effect.forEach(
           entities,
-          (entity) => this.serializePolicy(entity),
-          { concurrency: "unbounded" }
+          (entity) => this.serializePolicy(entity)
         )
       ),
       Effect.mapError((error) => {

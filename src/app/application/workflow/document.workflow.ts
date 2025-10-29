@@ -19,9 +19,6 @@ import { DocumentAccessService } from "@domain/accessPolicy/document-access.serv
 
 // Domain errors
 import { DocumentNotFoundError } from "@domain/document/document.error"
-import { DocumentVersionNotFoundError } from "@domain/documentVersion/document-version.error"
-import { DownloadTokenNotFoundError } from "@domain/downloadToken/download-token.error"
-import { AccessPolicyNotFoundError } from "@domain/accessPolicy/access-policy.error"
 import { DatabaseError } from "@domain/utils/base.errors"
 
 // Application errors
@@ -53,6 +50,7 @@ import {
 
 // Application workflow helpers
 import {
+  createEntityId,
   loadActor,
   loadDocument,
   loadActorAccessContext,
@@ -190,8 +188,7 @@ export class DocumentWorkflow {
           }).pipe(
             Effect.map(() => ({ success: true as const, policyId: policy.id })),
             Effect.catchAll((error) => Effect.succeed({ success: false as const, policyId: policy.id, error: error as WorkflowError }))
-          ),
-        { concurrency: "unbounded" }
+          )
       ),
       Effect.flatMap((results) => {
         const failures = results.filter((r) => !r.success)
@@ -223,42 +220,31 @@ export class DocumentWorkflow {
           Effect.flatMap(() =>
             // 3. Generate ID and get current timestamp
             Effect.all([
-              Effect.sync(() => crypto.randomUUID()),
+              createEntityId(DocumentId, "DocumentId"),
               Clock.currentTimeMillis.pipe(Effect.map((ms) => new Date(ms)))
             ])
           ),
-          Effect.flatMap(([generatedIdString, now]) =>
-            // 4. Validate generated UUID with schema-first boundary rule
-            S.decodeUnknown(DocumentId)(generatedIdString).pipe(
-              Effect.mapError((error) => new WorkflowDependencyError(
-                `Failed to validate generated document ID: ${error.message}`,
-                "DocumentId",
-                "validation",
-                { originalError: error, generatedId: generatedIdString }
-              )),
-              Effect.flatMap((validatedId) => {
-                // 5. Build SerializedDocument with validated ID, workspaceId, and timestamp
-                const documentData: Partial<SerializedDocument> = {
-                  id: validatedId,
-                  workspaceId: dto.workspaceId,
-                  ownerId: dto.ownerId,
-                  title: dto.title,
-                  description: optionToUndefined(dto.description),
-                  tags: optionArrayToUndefined(dto.tags),
-                  publishStatus: "draft" as const,
-                  publishNotes: undefined,
-                  createdAt: now.toISOString(),
-                  updatedAt: undefined
-                }
-                
-                // 6. Create document entity (will validate and fill defaults)
-                return pipe(
-                  DocumentEntity.create(documentData as SerializedDocument),
-                  Effect.map((doc) => ({ document: doc, dto }))
-                )
-              })
+          Effect.flatMap(([validatedId, now]) => {
+            // 4. Build SerializedDocument with validated ID, workspaceId, and timestamp
+            const documentData: Partial<SerializedDocument> = {
+              id: validatedId,
+              workspaceId: dto.workspaceId,
+              ownerId: dto.ownerId,
+              title: dto.title,
+              description: optionToUndefined(dto.description),
+              tags: optionArrayToUndefined(dto.tags),
+              publishStatus: "draft" as const,
+              publishNotes: undefined,
+              createdAt: now.toISOString(),
+              updatedAt: undefined
+            }
+            
+            // 5. Create document entity (will validate and fill defaults)
+            return pipe(
+              DocumentEntity.create(documentData as SerializedDocument),
+              Effect.map((doc) => ({ document: doc, dto }))
             )
-          )
+          })
         )
       ),
       Effect.mapError(mapDocumentDomainError("create")),
@@ -535,8 +521,7 @@ export class DocumentWorkflow {
                 return pipe(
                   Effect.forEach(
                     paginatedResults.data,
-                    serializeDocumentSummary,
-                    { concurrency: "unbounded" }
+                    serializeDocumentSummary
                   ),
                   Effect.map((serializedData) => ({
                     data: serializedData,
@@ -564,40 +549,15 @@ export class DocumentWorkflow {
     documentId: DocumentId
   ): Effect.Effect<void, WorkflowDependencyError | DatabaseError> {
     return pipe(
-      // Check for versions, tokens, and policies in parallel
       Effect.all([
         this.documentVersionRepository.findByDocumentId(documentId).pipe(
-          Effect.map((versions) => ({ type: "versions" as const, count: versions.length })),
-          Effect.catchSome((error) => {
-            // Treat "not found" errors as zero count (dependency missing)
-            if (error instanceof DocumentVersionNotFoundError) {
-              return Option.some(Effect.succeed({ type: "versions" as const, count: 0 }))
-            }
-            // Let infrastructure errors (DatabaseError, etc.) bubble up
-            return Option.none()
-          })
+          Effect.map((versions) => ({ type: "versions" as const, count: versions.length }))
         ),
         this.downloadTokenRepository.findByDocumentId(documentId).pipe(
-          Effect.map((tokens) => ({ type: "tokens" as const, count: tokens.length })),
-          Effect.catchSome((error) => {
-            // Treat "not found" errors as zero count (dependency missing)
-            if (error instanceof DownloadTokenNotFoundError) {
-              return Option.some(Effect.succeed({ type: "tokens" as const, count: 0 }))
-            }
-            // Let infrastructure errors (DatabaseError, etc.) bubble up
-            return Option.none()
-          })
+          Effect.map((tokens) => ({ type: "tokens" as const, count: tokens.length }))
         ),
         this.accessPolicyWorkflow.getPoliciesForDocument(documentId).pipe(
-          Effect.map((policies) => ({ type: "policies" as const, count: policies.length })),
-          Effect.catchSome((error) => {
-            // Treat "not found" errors as zero count (dependency missing)
-            if (error instanceof AccessPolicyNotFoundError) {
-              return Option.some(Effect.succeed({ type: "policies" as const, count: 0 }))
-            }
-            // Let infrastructure errors (DatabaseError, etc.) bubble up
-            return Option.none()
-          })
+          Effect.map((policies) => ({ type: "policies" as const, count: policies.length }))
         )
       ]),
       Effect.flatMap((results: Array<{ type: string; count: number }>) => {
@@ -616,15 +576,17 @@ export class DocumentWorkflow {
         return Effect.void
       }),
       Effect.mapError((error) => {
-        // Map unhandled errors (like ValidationError) to WorkflowDependencyError
-        if (error instanceof WorkflowDependencyError || error instanceof DatabaseError) {
+        if (error instanceof WorkflowDependencyError) {
+          return error
+        }
+        if (error instanceof DatabaseError) {
           return error
         }
         return new WorkflowDependencyError(
           `Failed to check document dependencies: ${error instanceof Error ? error.message : String(error)}`,
           "Document",
           "checkDependencies",
-          { originalError: error }
+          { originalError: error, documentId }
         )
       })
     )

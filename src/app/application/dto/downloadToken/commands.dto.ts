@@ -28,42 +28,45 @@ export const RevokeDownloadTokenInputSchema = S.Struct({
 
 // ===== COMMAND/QUERY SCHEMAS (Internal, with injected auth/workspace fields) =====
 
-export const CreateDownloadTokenCommandSchema = DownloadTokenStruct.pick("documentId", "issuedTo", "expiresAt")
-  .pipe(S.extend(S.Struct({ workspaceId: WorkspaceId, actorId: UserId })))
+export const CreateDownloadTokenCommandSchema = CreateDownloadTokenInputSchema.pipe(
+  S.extend(S.Struct({ workspaceId: WorkspaceId, actorId: UserId }))
+)
 export type CreateDownloadTokenCommand = S.Schema.Type<typeof CreateDownloadTokenCommandSchema>
 export type CreateDownloadTokenCommandEncoded = S.Schema.Encoded<typeof CreateDownloadTokenCommandSchema>
 
-export const ValidateDownloadTokenQuerySchema = S.Struct({
-  workspaceId: WorkspaceId,
-  token: DownloadTokenString,
-  actorId: UserId
-})
+export const ValidateDownloadTokenQuerySchema = ValidateDownloadTokenInputSchema.pipe(
+  S.extend(S.Struct({
+    workspaceId: WorkspaceId,
+    actorId: UserId
+  }))
+)
 export type ValidateDownloadTokenQuery = S.Schema.Type<typeof ValidateDownloadTokenQuerySchema>
 export type ValidateDownloadTokenQueryEncoded = S.Schema.Encoded<typeof ValidateDownloadTokenQuerySchema>
 
-export const UseDownloadTokenCommandSchema = S.Struct({
-  workspaceId: WorkspaceId,
-  token: DownloadTokenString,
-  actorId: UserId
-})
+export const UseDownloadTokenCommandSchema = UseDownloadTokenInputSchema.pipe(
+  S.extend(S.Struct({
+    workspaceId: WorkspaceId,
+    actorId: UserId
+  }))
+)
 export type UseDownloadTokenCommand = S.Schema.Type<typeof UseDownloadTokenCommandSchema>
 export type UseDownloadTokenCommandEncoded = S.Schema.Encoded<typeof UseDownloadTokenCommandSchema>
 
-export const ListDownloadTokensQuerySchema = S.Struct({
-  workspaceId: WorkspaceId,
-  documentId: DownloadTokenFields.documentId,
-  actorId: UserId,
-  pageNum: S.optional(PageNumber),
-  pageSize: S.optional(VersionPageSize)
-})
+export const ListDownloadTokensQuerySchema = ListDownloadTokensInputSchema.pipe(
+  S.extend(S.Struct({
+    workspaceId: WorkspaceId,
+    actorId: UserId
+  }))
+)
 export type ListDownloadTokensQuery = S.Schema.Type<typeof ListDownloadTokensQuerySchema>
 export type ListDownloadTokensQueryEncoded = S.Schema.Encoded<typeof ListDownloadTokensQuerySchema>
 
-export const RevokeDownloadTokenCommandSchema = S.Struct({
-  workspaceId: WorkspaceId,
-  tokenId: DownloadTokenId,
-  actorId: UserId
-})
+export const RevokeDownloadTokenCommandSchema = RevokeDownloadTokenInputSchema.pipe(
+  S.extend(S.Struct({
+    workspaceId: WorkspaceId,
+    actorId: UserId
+  }))
+)
 export type RevokeDownloadTokenCommand = S.Schema.Type<typeof RevokeDownloadTokenCommandSchema>
 export type RevokeDownloadTokenCommandEncoded = S.Schema.Encoded<typeof RevokeDownloadTokenCommandSchema>
 

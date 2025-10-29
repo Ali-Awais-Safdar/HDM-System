@@ -14,10 +14,10 @@ import { PermissionCheckError, WorkflowError, WorkflowDependencyError } from "@a
 
 // Application DTOs
 import {
-  SignUpCommandSchema,
-  SignUpCommandEncoded,
-  LoginQuerySchema,
-  LoginQueryEncoded,
+  SignUpInputSchema,
+  SignUpInputEncoded,
+  LoginInputSchema,
+  LoginInputEncoded,
   ChangePasswordCommandSchema,
   ChangePasswordCommandEncoded
 } from "@application/dto/user/commands.dto"
@@ -34,6 +34,7 @@ import {
 
 // Application workflow helpers
 import {
+  createEntityId,
   loadActor,
   serializeUserSummary,
   recordAudit,
@@ -50,6 +51,7 @@ import { AuditPort } from "@application/services/ports/audit.port"
 // Refined types
 import { UserId } from "@domain/refined/ids"
 import { HashedPassword } from "@domain/refined/hashed-password"
+import { Role } from "@domain/accessPolicy/access-policy.schema"
 
 // DI tokens
 import { TOKENS } from "@infra/di/container"
@@ -80,11 +82,11 @@ export class UserWorkflow {
   ) {}
 
   signUp(
-    input: SignUpCommandEncoded
+    input: SignUpInputEncoded
   ): Effect.Effect<SignUpResponseEncoded, WorkflowError | ParseResult.ParseError, Clock.Clock> {
     return pipe(
       // 1. Decode DTO using schema validation
-      S.decodeUnknown(SignUpCommandSchema)(input),
+      S.decodeUnknown(SignUpInputSchema)(input),
       Effect.flatMap((dto) =>
         // 2. Check email uniqueness
         pipe(
@@ -104,21 +106,12 @@ export class UserWorkflow {
           Effect.flatMap(() =>
             // 3. Generate ID and get current timestamp
             Effect.all([
-              Effect.sync(() => crypto.randomUUID()),
+              createEntityId(UserId, "UserId"),
               Clock.currentTimeMillis.pipe(Effect.map((ms) => new Date(ms)))
             ])
           ),
-          Effect.flatMap(([generatedIdString, now]) =>
-            // 4. Validate generated UUID with schema-first boundary rule
-            S.decodeUnknown(UserId)(generatedIdString).pipe(
-              Effect.mapError((error) => new WorkflowDependencyError(
-                `Failed to validate generated user ID: ${error.message}`,
-                "UserId",
-                "validation",
-                { originalError: error, generatedId: generatedIdString }
-              )),
-              Effect.map((validatedId) => ({ validatedId, now, dto }))
-            )
+          Effect.flatMap(([validatedId, now]) =>
+            Effect.succeed({ validatedId, now, dto })
           ),
           Effect.flatMap(({ validatedId, now, dto }) =>
             // 5. Hash password
@@ -146,11 +139,12 @@ export class UserWorkflow {
           ),
           Effect.flatMap(({ validatedId, now, dto, validatedHash }) => {
             // 7. Build user data with validated ID and timestamp
+            const defaultRoles = ["USER"] as const satisfies readonly Role[]
             const userData: Partial<SerializedUser> = {
               id: validatedId,
               email: dto.email,
               passwordHash: validatedHash,
-              roles: dto.roles || ["USER"],
+              roles: dto.roles || defaultRoles,
               createdAt: now.toISOString(),
               updatedAt: undefined
             }
@@ -171,7 +165,10 @@ export class UserWorkflow {
         // 10. Record audit event
         recordAudit(this.audit, {
           actorId: savedUser.id,
-          workspaceId: Option.getOrElse(savedUser.workspaceId, () => "system"),
+          workspaceId: Option.match(savedUser.workspaceId, {
+            onSome: (wid) => wid as string,
+            onNone: () => "system"
+          }),
           resourceType: "user",
           resourceId: savedUser.id,
           action: "signup",
@@ -194,11 +191,11 @@ export class UserWorkflow {
   }
 
   login(
-    input: LoginQueryEncoded
+    input: LoginInputEncoded
   ): Effect.Effect<LoginResponseEncoded, WorkflowError | ParseResult.ParseError, never> {
     return pipe(
       // 1. Decode DTO using schema validation
-      S.decodeUnknown(LoginQuerySchema)(input),
+      S.decodeUnknown(LoginInputSchema)(input),
       Effect.flatMap((dto) =>
         pipe(
           // 2. Load user by email
@@ -240,7 +237,10 @@ export class UserWorkflow {
             // 4. Record successful audit
             recordAudit(this.audit, {
               actorId: authenticatedUser.id,
-              workspaceId: Option.getOrElse(authenticatedUser.workspaceId, () => "system"),
+              workspaceId: Option.match(authenticatedUser.workspaceId, {
+                onSome: (wid) => wid as string,
+                onNone: () => "system"
+              }),
               resourceType: "user",
               resourceId: authenticatedUser.id,
               action: "login",
@@ -284,7 +284,7 @@ export class UserWorkflow {
         // Extract email from input for audit on failure
         const emailForAudit = (() => {
           try {
-            const result = S.decodeUnknownSync(LoginQuerySchema)(input)
+            const result = S.decodeUnknownSync(LoginInputSchema)(input)
             return result.email
           } catch {
             return "unknown"
@@ -397,7 +397,10 @@ export class UserWorkflow {
         // 9. Record audit event
         recordAudit(this.audit, {
           actorId: actor.id,
-          workspaceId: Option.getOrElse(actor.workspaceId, () => "system"),
+          workspaceId: Option.match(actor.workspaceId, {
+            onSome: (wid) => wid as string,
+            onNone: () => "system"
+          }),
           resourceType: "user",
           resourceId: updatedUser.id,
           action: "change_password",
