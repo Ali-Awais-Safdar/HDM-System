@@ -17,6 +17,7 @@ import { UserDrizzleRepository } from "@infra/repositories/user.repository"
 
 // Domain Services
 import { BcryptPasswordHasher } from "@infra/services/bcrypt-password-hasher"
+import { HonoJWTAuthToken } from "@infra/services/hono-jwt-auth-token"
 
 // Infrastructure Services
 import { LocalFileStorage } from "@infra/services/local-file-storage"
@@ -29,6 +30,7 @@ import { DocumentVersionWorkflow } from "@application/workflow/document-version.
 import { AccessPolicyWorkflow } from "@application/workflow/access-policy.workflow"
 import { UploadWorkflow } from "@application/workflow/upload.workflow"
 import { DownloadTokenWorkflow } from "@application/workflow/download-token.workflow"
+import { UserWorkflow } from "@application/workflow/user.workflow"
 
 // DI Tokens
 import { TOKENS } from "./container"
@@ -63,6 +65,7 @@ export function initContainer(): void {
   container.registerSingleton(TOKENS.USER_REPOSITORY, UserDrizzleRepository)
 
   container.registerSingleton(TOKENS.PASSWORD_HASHER_PORT, BcryptPasswordHasher)
+  container.registerSingleton(TOKENS.AUTH_TOKEN_PORT, HonoJWTAuthToken)
 
   container.registerSingleton(TOKENS.FILE_STORAGE_PORT, LocalFileStorage)
   
@@ -75,6 +78,7 @@ export function initContainer(): void {
   container.registerSingleton(TOKENS.ACCESS_POLICY_WORKFLOW, AccessPolicyWorkflow)
   container.registerSingleton(TOKENS.UPLOAD_WORKFLOW, UploadWorkflow)
   container.registerSingleton(TOKENS.DOWNLOAD_TOKEN_WORKFLOW, DownloadTokenWorkflow)
+  container.registerSingleton(TOKENS.USER_WORKFLOW, UserWorkflow)
 
   isInitialized = true
   console.log("✅ Dependency injection container initialized successfully")

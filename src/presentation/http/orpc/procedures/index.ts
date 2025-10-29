@@ -3,13 +3,15 @@ import { uploadProcedures } from "./upload"
 import { documentVersionProcedures } from "./document-version"
 import { downloadTokenProcedures } from "./download-token"
 import { accessPolicyProcedures } from "./access-policy"
+import { userProcedures } from "./user"
 
 export const procedures = {
   document: documentProcedures,
   upload: uploadProcedures,
   "document-version": documentVersionProcedures,
   "download-token": downloadTokenProcedures,
-  "access-policy": accessPolicyProcedures
+  "access-policy": accessPolicyProcedures,
+  user: userProcedures
 }
 
 export type Procedures = typeof procedures

@@ -3,7 +3,7 @@ import { mapToORPCError, type ErrorMappingOptions } from "./error-map"
 import { resolveService } from "@infra/di/setup"
 import { TOKENS } from "@infra/di/container"
 import { AuditPort } from "@application/services/ports/audit.port"
-import type { RPCContext } from "./context"
+import type { RPCContext, AnonymousRPCContext } from "./context"
 
 /**
  * Effect Adapter for oRPC Handlers
@@ -116,6 +116,70 @@ export const executeEffect = async <A>(
         })
       })
     }
+    
+    throw error
+  }
+}
+
+/**
+ * Effect Adapter for Anonymous (Unauthenticated) oRPC Handlers
+ * 1. No actor ID or workspace ID in logging
+ * 2. No audit events (unauthenticated operations)
+ * 3. Still includes request correlation and structured logging
+ */
+export const executeEffectAnonymous = async <A>(
+  effect: Effect.Effect<A, unknown, Clock.Clock>,
+  context: {
+    procedureName: string
+    rpcContext: AnonymousRPCContext
+  }
+): Promise<A> => {
+  const logger = context.rpcContext.logger
+  const startTime = Date.now()
+  
+  const requestId = context.rpcContext.requestContext.requestId
+  const procedureName = context.procedureName
+
+  logger.debug(`RPC call started (anonymous): ${procedureName}`, {
+    procedureName,
+    timestamp: new Date().toISOString()
+  })
+
+  try {
+    const errorOptions: ErrorMappingOptions = {
+      requestId,
+      logDetails: true
+    }
+    
+    const runnable = effect.pipe(
+      Effect.provideService(Clock.Clock, Clock.make()),
+      Effect.mapError((error) => mapToORPCError(error, errorOptions))
+    )
+
+    const result = await Effect.runPromise(runnable)
+    
+    const duration = Date.now() - startTime
+    logger.info(`RPC call completed (anonymous): ${procedureName}`, {
+      procedureName,
+      duration,
+      success: true,
+      timestamp: new Date().toISOString()
+    })
+    
+    return result
+  } catch (error) {
+    const duration = Date.now() - startTime
+    const errorCode = (error as any)?.code || "UNKNOWN_ERROR"
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    
+    logger.error(`RPC call failed (anonymous): ${procedureName}`, {
+      requestId,
+      procedure: procedureName,
+      duration,
+      errorCode,
+      errorMessage,
+      timestamp: new Date().toISOString()
+    })
     
     throw error
   }

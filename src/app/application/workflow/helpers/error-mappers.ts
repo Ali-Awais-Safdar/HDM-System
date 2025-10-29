@@ -3,6 +3,7 @@ import { DocumentValidationError, DocumentNotFoundError } from "@domain/document
 import { DocumentVersionNotFoundError } from "@domain/documentVersion/document-version.error"
 import { DownloadTokenValidationError, DownloadTokenNotFoundError, DownloadTokenAlreadyUsedError } from "@domain/downloadToken/download-token.error"
 import { AccessPolicyValidationError, AccessPolicyNotFoundError, AccessPolicyConflictError } from "@domain/accessPolicy/access-policy.error"
+import { UserValidationError, UserNotFoundError } from "@domain/user/user.error"
 import { ValidationError, DatabaseError, BusinessRuleViolationError } from "@domain/utils/base.errors"
 import { 
   PermissionCheckError, 
@@ -554,6 +555,76 @@ export const mapUploadConfirmationError = (
       "FILE_NOT_FOUND",
       { originalError: error }
     )
+  }
+}
+
+// ===== USER ERROR MAPPERS =====
+
+export const mapUserPersistenceError = (
+  source: "save" | "findById" | "findByEmail"
+) => {
+  return (error: unknown): WorkflowDependencyError => {
+    if (error instanceof ValidationError) {
+      return new WorkflowDependencyError(
+        `User persistence failed: ${error.message}`,
+        "UserRepository",
+        source,
+        { originalError: error }
+      )
+    }
+    if (error instanceof DatabaseError) {
+      return new WorkflowDependencyError(
+        `Database error during user ${source}: ${error.message}`,
+        "Database",
+        source,
+        { originalError: error }
+      )
+    }
+    if (error instanceof PermissionCheckError || error instanceof WorkflowDependencyError) {
+      return error as WorkflowDependencyError
+    }
+    return new WorkflowDependencyError(
+      `User ${source} failed: ${error instanceof Error ? error.message : String(error)}`,
+      "UserRepository",
+      source,
+      { originalError: error }
+    )
+  }
+}
+
+export const mapUserDomainError = (context: string) => {
+  return (error: unknown): WorkflowError => {
+    if (error instanceof UserValidationError) {
+      return new WorkflowDependencyError(
+        `User ${context} failed: ${error.message}`,
+        "UserEntity",
+        context,
+        { originalError: error }
+      )
+    }
+    if (error instanceof BusinessRuleViolationError) {
+      return new WorkflowDependencyError(
+        `User ${context} failed: ${error.message}`,
+        "UserEntity",
+        context,
+        { originalError: error }
+      )
+    }
+    if (error instanceof UserNotFoundError) {
+      return new WorkflowDependencyError(
+        `User not found: ${error.message}`,
+        "UserRepository",
+        "findById",
+        { originalError: error }
+      )
+    }
+    if (error instanceof PermissionCheckError) {
+      return error // Already a WorkflowError
+    }
+    if (error instanceof WorkflowDependencyError) {
+      return error
+    }
+    return error as unknown as WorkflowError
   }
 }
 

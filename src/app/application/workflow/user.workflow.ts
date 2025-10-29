@@ -1,0 +1,430 @@
+import "reflect-metadata"
+
+import { Effect, Option, pipe, Schema as S, ParseResult, Clock } from "effect"
+import { injectable, inject } from "tsyringe"
+
+// Domain entities
+import { UserEntity, SerializedUser } from "@domain/user/user.entity"
+
+// Domain repositories
+import { UserRepository } from "@domain/user/user.repository"
+
+// Application errors
+import { PermissionCheckError, WorkflowError, WorkflowDependencyError } from "@application/errors/application.errors"
+
+// Application DTOs
+import {
+  SignUpCommandSchema,
+  SignUpCommandEncoded,
+  LoginQuerySchema,
+  LoginQueryEncoded,
+  ChangePasswordCommandSchema,
+  ChangePasswordCommandEncoded
+} from "@application/dto/user/commands.dto"
+import {
+  GetProfileQuerySchema,
+  GetProfileQueryEncoded
+} from "@application/dto/user/queries.dto"
+import {
+  UserSummaryEncoded,
+  LoginResponseEncoded,
+  SignUpResponseEncoded,
+  ChangePasswordResponseEncoded
+} from "@application/dto/user/responses.dto"
+
+// Application workflow helpers
+import {
+  loadActor,
+  serializeUserSummary,
+  recordAudit,
+  mapUserPersistenceError,
+  mapUserDomainError,
+  ensureSelfOrAdmin
+} from "@application/workflow/helpers"
+
+// Application ports
+import { PasswordHasherPort } from "@application/services/ports/password-hasher.port"
+import { AuthTokenPort } from "@application/services/ports/auth-token.port"
+import { AuditPort } from "@application/services/ports/audit.port"
+
+// Refined types
+import { UserId } from "@domain/refined/ids"
+import { HashedPassword } from "@domain/refined/hashed-password"
+
+// DI tokens
+import { TOKENS } from "@infra/di/container"
+
+/**
+ * UserWorkflow - Application layer workflow for user operations
+ * 
+ * Responsibilities:
+ * - Coordinate user authentication and authorization operations
+ * - Handle sign-up, login, password changes, and profile retrieval
+ * - Integrate password hashing and token generation
+ * - Map user errors to application-level errors
+ */
+@injectable()
+export class UserWorkflow {
+  constructor(
+    @inject(TOKENS.USER_REPOSITORY)
+    private readonly userRepository: UserRepository,
+
+    @inject(TOKENS.PASSWORD_HASHER_PORT)
+    private readonly passwordHasher: PasswordHasherPort,
+
+    @inject(TOKENS.AUTH_TOKEN_PORT)
+    private readonly authToken: AuthTokenPort,
+
+    @inject(TOKENS.AUDIT_PORT)
+    private readonly audit: AuditPort
+  ) {}
+
+  signUp(
+    input: SignUpCommandEncoded
+  ): Effect.Effect<SignUpResponseEncoded, WorkflowError | ParseResult.ParseError, Clock.Clock> {
+    return pipe(
+      // 1. Decode DTO using schema validation
+      S.decodeUnknown(SignUpCommandSchema)(input),
+      Effect.flatMap((dto) =>
+        // 2. Check email uniqueness
+        pipe(
+          this.userRepository.findByEmail(dto.email),
+          Effect.mapError(mapUserPersistenceError("findByEmail")),
+          Effect.flatMap((existingUser) =>
+            Option.match(existingUser, {
+              onSome: () => Effect.fail(new WorkflowDependencyError(
+                `User with email ${dto.email} already exists`,
+                "UserRepository",
+                "findByEmail",
+                { email: dto.email }
+              )),
+              onNone: () => Effect.void
+            })
+          ),
+          Effect.flatMap(() =>
+            // 3. Generate ID and get current timestamp
+            Effect.all([
+              Effect.sync(() => crypto.randomUUID()),
+              Clock.currentTimeMillis.pipe(Effect.map((ms) => new Date(ms)))
+            ])
+          ),
+          Effect.flatMap(([generatedIdString, now]) =>
+            // 4. Validate generated UUID with schema-first boundary rule
+            S.decodeUnknown(UserId)(generatedIdString).pipe(
+              Effect.mapError((error) => new WorkflowDependencyError(
+                `Failed to validate generated user ID: ${error.message}`,
+                "UserId",
+                "validation",
+                { originalError: error, generatedId: generatedIdString }
+              )),
+              Effect.map((validatedId) => ({ validatedId, now, dto }))
+            )
+          ),
+          Effect.flatMap(({ validatedId, now, dto }) =>
+            // 5. Hash password
+            this.passwordHasher.hash(dto.password).pipe(
+              Effect.mapError((error) => new WorkflowDependencyError(
+                `Failed to hash password: ${error.message}`,
+                "PasswordHasher",
+                "hash",
+                { originalError: error }
+              )),
+              Effect.map((hashedPassword) => ({ validatedId, now, dto, hashedPassword }))
+            )
+          ),
+          Effect.flatMap(({ validatedId, now, dto, hashedPassword }) =>
+            // 6. Validate hashed password
+            S.decodeUnknown(HashedPassword)(hashedPassword).pipe(
+              Effect.mapError((error) => new WorkflowDependencyError(
+                `Failed to validate hashed password: ${error.message}`,
+                "HashedPassword",
+                "validation",
+                { originalError: error }
+              )),
+              Effect.map((validatedHash) => ({ validatedId, now, dto, validatedHash }))
+            )
+          ),
+          Effect.flatMap(({ validatedId, now, dto, validatedHash }) => {
+            // 7. Build user data with validated ID and timestamp
+            const userData: Partial<SerializedUser> = {
+              id: validatedId,
+              email: dto.email,
+              passwordHash: validatedHash,
+              roles: dto.roles || ["USER"],
+              createdAt: now.toISOString(),
+              updatedAt: undefined
+            }
+
+            // 8. Create UserEntity (requires Clock internally but we provide timestamp)
+            return UserEntity.create(userData as SerializedUser)
+          })
+        )
+      ),
+      Effect.mapError(mapUserDomainError("create")),
+      Effect.flatMap((user) =>
+        // 9. Persist user
+        this.userRepository.save(user).pipe(
+          Effect.mapError(mapUserPersistenceError("save"))
+        )
+      ),
+      Effect.flatMap((savedUser) =>
+        // 10. Record audit event
+        recordAudit(this.audit, {
+          actorId: savedUser.id,
+          workspaceId: Option.getOrElse(savedUser.workspaceId, () => "system"),
+          resourceType: "user",
+          resourceId: savedUser.id,
+          action: "signup",
+          outcome: "success" as const,
+          metadata: { email: savedUser.email }
+        }).pipe(
+          Effect.map(() => savedUser)
+        )
+      ),
+      Effect.flatMap((savedUser) =>
+        // 11. Serialize user summary and return
+        serializeUserSummary(savedUser).pipe(
+          Effect.map((userSummary) => ({
+            user: userSummary,
+            session: undefined // No automatic login on sign-up
+          }))
+        )
+      )
+    ) as Effect.Effect<SignUpResponseEncoded, WorkflowError | ParseResult.ParseError, Clock.Clock>
+  }
+
+  login(
+    input: LoginQueryEncoded
+  ): Effect.Effect<LoginResponseEncoded, WorkflowError | ParseResult.ParseError, never> {
+    return pipe(
+      // 1. Decode DTO using schema validation
+      S.decodeUnknown(LoginQuerySchema)(input),
+      Effect.flatMap((dto) =>
+        pipe(
+          // 2. Load user by email
+          this.userRepository.findByEmail(dto.email),
+          Effect.mapError(mapUserPersistenceError("findByEmail")),
+          Effect.flatMap((userOption) =>
+            Option.match(userOption, {
+              onNone: () => Effect.fail(new PermissionCheckError(
+                `Invalid credentials`,
+                "email",
+                dto.email,
+                "authentication"
+              )),
+              onSome: (user) => Effect.succeed(user)
+            })
+          ),
+          Effect.flatMap((user) =>
+            // 3. Verify password
+            this.passwordHasher.verify(dto.password, user.passwordHash).pipe(
+              Effect.mapError((error) => new WorkflowDependencyError(
+                `Failed to verify password: ${error.message}`,
+                "PasswordHasher",
+                "verify",
+                { originalError: error }
+              )),
+              Effect.flatMap((isValid) =>
+                isValid
+                  ? Effect.succeed(user)
+                  : Effect.fail(new PermissionCheckError(
+                      `Invalid credentials`,
+                      "password",
+                      "",
+                      "authentication"
+                    ))
+              )
+            )
+          ),
+          Effect.flatMap((authenticatedUser) =>
+            // 4. Record successful audit
+            recordAudit(this.audit, {
+              actorId: authenticatedUser.id,
+              workspaceId: Option.getOrElse(authenticatedUser.workspaceId, () => "system"),
+              resourceType: "user",
+              resourceId: authenticatedUser.id,
+              action: "login",
+              outcome: "success" as const,
+              metadata: { email: authenticatedUser.email }
+            }).pipe(
+              Effect.map(() => authenticatedUser)
+            )
+          ),
+          Effect.flatMap((authenticatedUser) =>
+            // 5. Generate token
+            this.authToken.generateToken({
+              userId: authenticatedUser.id,
+              workspaceId: authenticatedUser.workspaceId,
+              roles: authenticatedUser.roles
+            }).pipe(
+              Effect.mapError((error) => new WorkflowDependencyError(
+                `Failed to generate auth token: ${error.message}`,
+                "AuthTokenPort",
+                "generateToken",
+                { originalError: error }
+              )),
+              Effect.map((tokenData) => ({ authenticatedUser, tokenData }))
+            )
+          )
+        )
+      ),
+      Effect.flatMap(({ authenticatedUser, tokenData }) =>
+        // 6. Serialize user summary
+        serializeUserSummary(authenticatedUser).pipe(
+          Effect.map((userSummary) => ({
+            user: userSummary,
+            session: {
+              token: tokenData.token,
+              expiresAt: tokenData.expiresAt.toISOString()
+            }
+          }))
+        )
+      ),
+      Effect.catchAll((error) => {
+        // Extract email from input for audit on failure
+        const emailForAudit = (() => {
+          try {
+            const result = S.decodeUnknownSync(LoginQuerySchema)(input)
+            return result.email
+          } catch {
+            return "unknown"
+          }
+        })()
+        
+        // Record failed login attempt (best effort, don't fail workflow)
+        return pipe(
+          recordAudit(this.audit, {
+            actorId: "system" as UserId,
+            workspaceId: "system",
+            resourceType: "user",
+            resourceId: emailForAudit,
+            action: "login",
+            outcome: "failure" as const,
+            metadata: { 
+              email: emailForAudit, 
+              error: error instanceof Error ? error.message : String(error) 
+            }
+          }),
+          Effect.orElseSucceed(() => undefined),
+          Effect.flatMap(() => Effect.fail(error))
+        )
+      })
+    )
+  }
+
+  changePassword(
+    input: ChangePasswordCommandEncoded
+  ): Effect.Effect<ChangePasswordResponseEncoded, WorkflowError | ParseResult.ParseError, Clock.Clock> {
+    return pipe(
+      // 1. Decode DTO using schema validation
+      S.decodeUnknown(ChangePasswordCommandSchema)(input),
+      Effect.flatMap((dto) =>
+        // 2. Load target user and actor in parallel
+        Effect.all([
+          loadActor(this.userRepository, dto.userId),
+          loadActor(this.userRepository, dto.actorId)
+        ]).pipe(
+          Effect.flatMap(([targetUser, actor]) =>
+            // 3. Ensure actor is same user or admin
+            ensureSelfOrAdmin(actor, targetUser).pipe(
+              Effect.map(() => ({ targetUser, actor }))
+            )
+          ),
+          Effect.flatMap(({ targetUser, actor }) =>
+            // 4. Verify current password (if changing own password)
+            targetUser.id === actor.id
+              ? this.passwordHasher.verify(dto.oldPassword, targetUser.passwordHash).pipe(
+                  Effect.mapError((error) => new WorkflowDependencyError(
+                    `Failed to verify current password: ${error.message}`,
+                    "PasswordHasher",
+                    "verify",
+                    { originalError: error }
+                  )),
+                  Effect.flatMap((isValid) =>
+                    isValid
+                      ? Effect.succeed({ targetUser, actor })
+                      : Effect.fail(new PermissionCheckError(
+                          `Current password is incorrect`,
+                          "oldPassword",
+                          "",
+                          "authentication"
+                        ))
+                  )
+                )
+              : Effect.succeed({ targetUser, actor })
+          ),
+          Effect.flatMap(({ targetUser, actor }) =>
+            // 5. Hash new password
+            this.passwordHasher.hash(dto.newPassword).pipe(
+              Effect.mapError((error) => new WorkflowDependencyError(
+                `Failed to hash new password: ${error.message}`,
+                "PasswordHasher",
+                "hash",
+                { originalError: error }
+              )),
+              Effect.map((hashedPassword) => ({ targetUser, actor, hashedPassword }))
+            )
+          ),
+          Effect.flatMap(({ targetUser, actor, hashedPassword }) =>
+            // 6. Validate hashed password
+            S.decodeUnknown(HashedPassword)(hashedPassword).pipe(
+              Effect.mapError((error) => new WorkflowDependencyError(
+                `Failed to validate hashed password: ${error.message}`,
+                "HashedPassword",
+                "validation",
+                { originalError: error }
+              )),
+              Effect.map((validatedHash) => ({ targetUser, actor, validatedHash }))
+            )
+          ),
+          Effect.flatMap(({ targetUser, actor, validatedHash }) =>
+            // 7. Update password hash on entity
+            targetUser.updatePasswordHash(validatedHash).pipe(
+              Effect.map((updatedUser) => ({ updatedUser, actor }))
+            )
+          )
+        )
+      ),
+      Effect.mapError(mapUserDomainError("updatePasswordHash")),
+      Effect.flatMap(({ updatedUser, actor }) =>
+        // 8. Persist updated user
+        this.userRepository.save(updatedUser).pipe(
+          Effect.mapError(mapUserPersistenceError("save")),
+          Effect.map(() => ({ updatedUser, actor }))
+        )
+      ),
+      Effect.flatMap(({ updatedUser, actor }) =>
+        // 9. Record audit event
+        recordAudit(this.audit, {
+          actorId: actor.id,
+          workspaceId: Option.getOrElse(actor.workspaceId, () => "system"),
+          resourceType: "user",
+          resourceId: updatedUser.id,
+          action: "change_password",
+          outcome: "success" as const,
+          metadata: { userId: updatedUser.id }
+        }).pipe(
+          Effect.map(() => ({ success: true, message: "Password changed successfully" }))
+        )
+      )
+    )
+  }
+
+  getProfile(
+    input: GetProfileQueryEncoded
+  ): Effect.Effect<UserSummaryEncoded, WorkflowError | ParseResult.ParseError, never> {
+    return pipe(
+      // 1. Decode DTO using schema validation
+      S.decodeUnknown(GetProfileQuerySchema)(input),
+      Effect.flatMap((dto) =>
+        // 2. Load actor and serialize
+        loadActor(this.userRepository, dto.actorId).pipe(
+          Effect.flatMap((actor) =>
+            serializeUserSummary(actor)
+          )
+        )
+      )
+    )
+  }
+}
+

@@ -132,4 +132,26 @@ export class UserEntity {
       )
     )
   }
+
+  updatePasswordHash(
+    newPasswordHash: HashedPassword
+  ): Effect.Effect<UserEntity, UserValidationError, Clock.Clock> {
+    return getCurrentTime().pipe(
+      Effect.flatMap((now) =>
+        applyMutationWithProvidedTimestamp(
+          UserSchema,
+          this as unknown,
+          now,
+          () => ({ passwordHash: newPasswordHash as HashedPassword }),
+          (error) =>
+            new UserValidationError(
+              `Failed to prepare user for password hash update: ${formatParseError(error as ParseResult.ParseError)}`,
+              "passwordHash",
+              null
+            ),
+          (input) => UserEntity.create(input)
+        )
+      )
+    )
+  }
 }

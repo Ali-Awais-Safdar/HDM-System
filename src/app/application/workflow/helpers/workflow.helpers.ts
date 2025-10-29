@@ -229,6 +229,73 @@ export const serializeDocumentVersion = (
   )
 }
 
+export const serializeUser = (
+  user: UserEntity
+): Effect.Effect<Omit<import("@domain/user/user.entity").SerializedUser, "passwordHash">, WorkflowDependencyError> => {
+  return pipe(
+    user.serialized(),
+    Effect.map((serialized) => {
+      // Remove passwordHash to avoid leaking sensitive data
+      const { passwordHash: _passwordHash, ...userWithoutPassword } = serialized
+      return userWithoutPassword
+    }),
+    Effect.mapError((error) => new WorkflowDependencyError(
+      `User serialization failed: ${error.message}`,
+      "UserEntity",
+      "serialized",
+      { originalError: error }
+    ))
+  )
+}
+
+export const ensureSelfOrAdmin = (
+  actor: UserEntity,
+  targetUser: UserEntity
+): Effect.Effect<void, PermissionCheckError> => {
+  const isSameUser = targetUser.id === actor.id
+  const isAdmin = actor.isAdmin()
+
+  if (!isSameUser && !isAdmin) {
+    return Effect.fail(new PermissionCheckError(
+      `Insufficient permissions to perform operation on user ${targetUser.id}. User must be self or have admin role.`,
+      targetUser.id,
+      actor.id,
+      "authorization"
+    ))
+  }
+
+  return Effect.void
+}
+
+export const serializeUserSummary = (
+  user: UserEntity
+): Effect.Effect<{
+  id: string;
+  email: string;
+  roles: readonly string[];
+  workspaceId: string | null | undefined;
+  createdAt: string;
+  updatedAt: string | undefined;
+}, WorkflowDependencyError> => {
+  return pipe(
+    user.serialized(),
+    Effect.map((serialized) => ({
+      id: serialized.id,
+      email: serialized.email,
+      roles: serialized.roles,
+      workspaceId: serialized.workspaceId === null ? undefined : serialized.workspaceId,
+      createdAt: serialized.createdAt,
+      updatedAt: serialized.updatedAt === null ? undefined : serialized.updatedAt
+    })),
+    Effect.mapError((error) => new WorkflowDependencyError(
+      `User summary serialization failed: ${error.message}`,
+      "UserEntity",
+      "serialized",
+      { originalError: error }
+    ))
+  )
+}
+
 // ===== ACCESS POLICY FILTERING =====
 
 export const filterPoliciesByActor = (

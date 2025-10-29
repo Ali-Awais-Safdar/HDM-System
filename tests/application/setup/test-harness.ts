@@ -21,6 +21,7 @@ import { DocumentVersionWorkflow } from "@application/workflow/document-version.
 // Port interfaces
 import { FileStoragePort, FileStorageError, InitiateUploadStorageRequest, InitiateUploadStorageResponse, CompleteUploadRequest, CompleteUploadResponse, UploadMetadata } from "@application/services/ports/file-storage.port"
 import { PasswordHasherPort, PasswordHashError } from "@application/services/ports/password-hasher.port"
+import { AuthTokenPort, AuthTokenError, type TokenPayload, type GeneratedToken } from "@application/services/ports/auth-token.port"
 import { ConfigPort } from "@application/services/ports/config.port"
 import { LoggerPort, type LogContext } from "@application/services/ports/logger.port"
 import { AuditPort, type AuditEvent } from "@application/services/ports/audit.port"
@@ -172,6 +173,32 @@ export class MockPasswordHasherPort extends PasswordHasherPort {
   }
 }
 
+// ===== MockAuthTokenPort =====
+
+export class MockAuthTokenPort extends AuthTokenPort {
+  private tokenCount = 0
+  private tokenExpirationMinutes = 15
+
+  generateToken(payload: TokenPayload): Effect.Effect<GeneratedToken, AuthTokenError> {
+    this.tokenCount++
+    const token = `mock-jwt-token-${this.tokenCount}-${payload.userId}`
+    const expiresAt = new Date(Date.now() + this.tokenExpirationMinutes * 60 * 1000)
+    
+    return Effect.succeed({
+      token,
+      expiresAt
+    })
+  }
+
+  setTokenExpirationMinutes(minutes: number): void {
+    this.tokenExpirationMinutes = minutes
+  }
+
+  reset() {
+    this.tokenCount = 0
+  }
+}
+
 // ===== MockLoggerPort =====
 
 export class MockLoggerPort extends LoggerPort {
@@ -318,6 +345,7 @@ export interface WorkflowTestHarness {
   // Ports
   fileStoragePort: InMemoryFileStoragePort
   passwordHasherPort: MockPasswordHasherPort
+  authTokenPort: MockAuthTokenPort
   configPort: ConfigPort
   loggerPort: MockLoggerPort
   auditPort: MockAuditPort
@@ -328,6 +356,7 @@ export interface WorkflowTestHarness {
   accessPolicyWorkflow: AccessPolicyWorkflow
   downloadTokenWorkflow: DownloadTokenWorkflow
   documentVersionWorkflow: DocumentVersionWorkflow
+  userWorkflow: import("@application/workflow/user.workflow").UserWorkflow
 
   // Lifecycle
   cleanup: () => Promise<void>
@@ -347,6 +376,7 @@ export async function createWorkflowTestHarness(): Promise<WorkflowTestHarness> 
   // Create ports
   const fileStoragePort = new InMemoryFileStoragePort()
   const passwordHasherPort = new MockPasswordHasherPort()
+  const authTokenPort = new MockAuthTokenPort()
   const loggerPort = new MockLoggerPort()
   const auditPort = new MockAuditPort()
   
@@ -397,6 +427,15 @@ export async function createWorkflowTestHarness(): Promise<WorkflowTestHarness> 
     accessPolicyRepository
   )
 
+  // UserWorkflow dependencies
+  const { UserWorkflow } = await import("@application/workflow/user.workflow")
+  const userWorkflow = new UserWorkflow(
+    userRepository,
+    passwordHasherPort,
+    authTokenPort,
+    auditPort
+  )
+
   return {
     db,
     documentRepository,
@@ -407,6 +446,7 @@ export async function createWorkflowTestHarness(): Promise<WorkflowTestHarness> 
     documentAccessService: DocumentAccessService,
     fileStoragePort,
     passwordHasherPort,
+    authTokenPort,
     configPort: MockConfigPort,
     loggerPort,
     auditPort,
@@ -415,9 +455,11 @@ export async function createWorkflowTestHarness(): Promise<WorkflowTestHarness> 
     accessPolicyWorkflow,
     downloadTokenWorkflow,
     documentVersionWorkflow,
+    userWorkflow,
     cleanup: async () => {
       fileStoragePort.reset()
       passwordHasherPort.reset()
+      authTokenPort.reset()
       loggerPort.clear()
       auditPort.clear()
       await dbCleanup()
@@ -446,6 +488,7 @@ export const workflowTestLifecycle: WorkflowTestLifecycle = {
     await clearTestDatabase(harness.db)
     harness.fileStoragePort.reset()
     harness.passwordHasherPort.reset()
+    harness.authTokenPort.reset()
     harness.loggerPort.clear()
     harness.auditPort.clear()
   }

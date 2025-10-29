@@ -1,9 +1,14 @@
-import { Hono } from "hono"
+import { Hono, type Context as HonoContext } from "hono"
 import { cors } from "hono/cors"
 import { Effect } from "effect"
 import { RPCHandler } from "@orpc/server/fetch"
 import { HTTP_CONFIG, JWT_CONFIG } from "@infra/config"
-import { createContext, type RPCContext } from "./orpc/context"
+import { 
+  createContext, 
+  createAnonymousContext,
+  isAnonymousProcedure,
+  type RPCContextLike 
+} from "./orpc/context"
 import { mapToORPCError } from "./orpc/error-map"
 import { procedures } from "./orpc/procedures"
 import type { MiddlewareHandler } from "hono"
@@ -12,22 +17,42 @@ import { TOKENS } from "@infra/di/container"
 import { LoggerPort } from "@application/services/ports/logger.port"
 
 type Variables = {
-  rpcContext: RPCContext
+  rpcContext: RPCContextLike
+}
+
+function extractProcedurePath(path: string, prefix: string): string | undefined {
+  if (!path.startsWith(prefix + "/")) {
+    return undefined
+  }
+  return path.slice(prefix.length + 1)
+}
+
+function hasAuthHeader(c: HonoContext): boolean {
+  const authHeader = c.req.header(JWT_CONFIG.HEADER_NAME)
+  return authHeader !== undefined && authHeader.trim() !== ""
 }
 
 /**
  * Context Middleware
  * 
- * Implements Chain of Responsibility pattern:
- * 1. Extract Authorization header
- * 2. Verify JWT token
- * 3. Derive workspace context
- * 4. Build RPC context (with request ID and correlation metadata)
- * 5. Attach to Hono context via c.set('rpcContext')
+ * Implements context-aware Chain of Responsibility pattern:
+ * 1. Extract procedure path from request URL
+ * 2. Determine if procedure is anonymous (signUp, login)
+ * 3. For anonymous procedures without auth header:
+ *    - Create AnonymousRPCContext (no JWT required)
+ * 4. For all other cases (authenticated procedures or anonymous with auth):
+ *    - Create authenticated RPCContext (JWT required)
+ * 5. Attach context to Hono context via c.set('rpcContext')
  * 6. Set x-request-id header on response for correlation
  */
 const contextMiddleware: MiddlewareHandler<{ Variables: Variables }> = async (c, next) => {
-  const rpcContext = await Effect.runPromise(createContext(c))
+  const procedurePath = extractProcedurePath(c.req.path, HTTP_CONFIG.RPC_PREFIX)
+  const isAnonymous = procedurePath ? isAnonymousProcedure(procedurePath) : false
+  const hasAuth = hasAuthHeader(c)
+
+  const rpcContext = (isAnonymous && !hasAuth)
+    ? await Effect.runPromise(createAnonymousContext(c))
+    : await Effect.runPromise(createContext(c))
   
   c.set("rpcContext", rpcContext)
   
@@ -85,7 +110,7 @@ export function buildServer(): Hono<{ Variables: Variables }> {
 
   app.use(`${HTTP_CONFIG.RPC_PREFIX}/*`, contextMiddleware)
 
-  const rpcHandler = new RPCHandler(procedures)
+  const rpcHandler = new RPCHandler<RPCContextLike>(procedures as any)
 
   app.use(`${HTTP_CONFIG.RPC_PREFIX}/*`, async (c) => {
     const rpcContext = c.get("rpcContext")
@@ -172,4 +197,3 @@ export function buildServer(): Hono<{ Variables: Variables }> {
   
   return app
 }
-

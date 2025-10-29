@@ -73,6 +73,19 @@ export interface RPCContext {
 }
 
 /**
+ * Anonymous RPC Context
+ * Context for unauthenticated procedures (sign-up, login).
+ */
+export interface AnonymousRPCContext {
+  readonly requestContext: RequestContext
+  
+  readonly hono: HonoContext
+  
+  readonly logger: LoggerPort
+}
+export type RPCContextLike = RPCContext | AnonymousRPCContext
+
+/**
  * Chain-of-Responsibility Step 1: Extract Authorization Header
  * 
  * Ensures the Authorization header exists and has the correct format.
@@ -363,6 +376,16 @@ export function createContext(c: HonoContext): Effect.Effect<RPCContext, ORPCErr
   })
 }
 
+export function withActor<T extends Record<string, unknown>>(
+  input: T,
+  context: RPCContext
+): T & { actorId: UserId } {
+  return {
+    ...input,
+    actorId: context.actorId
+  }
+}
+
 export function withActorAndWorkspace<T extends Record<string, unknown>>(
   input: T,
   context: RPCContext
@@ -410,4 +433,46 @@ export function withActorWorkspaceAndOwner<T extends Record<string, unknown>>(
       ownerId: context.actorId // Owner is always the authenticated user
     })
   })
+}
+
+export function createAnonymousContext(c: HonoContext): Effect.Effect<AnonymousRPCContext, never> {
+  return Effect.gen(function* () {
+    const requestContext = buildRequestContext(c)
+    
+    // Resolve singleton logger once
+    const logger = yield* Effect.sync(() => resolveService<LoggerPort>(TOKENS.LOGGER_PORT))
+    
+    // Create request-scoped logger with correlation metadata (no actor)
+    const requestLogger = logger.child({
+      requestId: requestContext.requestId
+    })
+    
+    return {
+      requestContext,
+      hono: c,
+      logger: requestLogger
+    }
+  })
+}
+
+/**
+ * With Anonymous Context
+ * 
+ * Helper for unauthenticated procedures that enriches input with request metadata
+ * without any injection
+ */
+export function withAnonymousContext<T extends Record<string, unknown>>(
+  input: T,
+  _context: RPCContextLike
+): T {
+  return input
+}
+
+const ANONYMOUS_PROCEDURES = new Set<string>([
+  "user.signUp",
+  "user.login"
+])
+
+export function isAnonymousProcedure(procedurePath: string): boolean {
+  return ANONYMOUS_PROCEDURES.has(procedurePath)
 }
