@@ -18,7 +18,7 @@ export interface DocumentAccessContext {
   documentOwnerId: UserId;
   userPolicies: ReadonlyArray<{
     subjectType: "user" | "role";
-    subjectId?: any;
+    subjectId?: UserId;
     role?: Role;
     actions: ReadonlyArray<PermissionAction>;
   }>;

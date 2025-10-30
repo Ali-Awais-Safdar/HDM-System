@@ -11,13 +11,13 @@ import { AccessPolicyRepository } from "@domain/accessPolicy/access-policy.repos
 import { UserRepository } from "@domain/user/user.repository"
 import { DocumentAccessService } from "@domain/accessPolicy/document-access.service"
 import { DocumentAccessPolicy } from "@domain/accessPolicy/document-access.policy"
+import type { DocumentAccessContext } from "@domain/accessPolicy/document-access.policy"
 import { DocumentNotFoundError } from "@domain/document/document.error"
 import { DocumentVersionNotFoundError } from "@domain/documentVersion/document-version.error"
 import { DatabaseError } from "@domain/utils/base.errors"
 import { DocumentAccessDeniedError, DocumentAccessInsufficientPermissionsError, DocumentAccessContextInvalidError } from "@domain/accessPolicy/document-access.error"
 import { PermissionCheckError, WorkflowDependencyError } from "@application/errors/application.errors"
 import { UserId, DocumentId, DocumentVersionId, WorkspaceId } from "@domain/refined/ids"
-import { AccessPolicySchema } from "@domain/accessPolicy/access-policy.schema"
 
 // ===== ID GENERATION HELPERS =====
 
@@ -410,8 +410,7 @@ export const getEffectivePermissionLevel = (
   policies: ReadonlyArray<AccessPolicyEntity>
 ): Effect.Effect<"read" | "write" | "admin" | null, WorkflowDependencyError> => {
   return pipe(
-    // Encode policies to build the context
-    Effect.forEach(policies, (p) => S.encode(AccessPolicySchema)(p as unknown as any)),
+    Effect.forEach(policies, (p) => p.serialized()),
     Effect.mapError((e) => new WorkflowDependencyError(
       `Failed to encode policies for permission level calculation`,
       "AccessPolicyEntity",
@@ -419,18 +418,7 @@ export const getEffectivePermissionLevel = (
       { originalError: e }
     )),
     Effect.flatMap((encodedPolicies) => {
-      const context = {
-        userId: actor.id,
-        roles: actor.roles,
-        documentId: document.id,
-        documentOwnerId: document.ownerId,
-        userPolicies: encodedPolicies.map((ep: any) => ({
-          subjectType: ep.subjectType,
-          subjectId: ep.subjectId && ep.subjectId._tag === "Some" ? ep.subjectId.value : undefined,
-          role: ep.role && ep.role._tag === "Some" ? ep.role.value : undefined,
-          actions: ep.actions
-        }))
-      }
+      const context: DocumentAccessContext = DocumentAccessService.buildContext(actor, document, encodedPolicies)
       return DocumentAccessPolicy.getEffectivePermissionLevel(context)
     }),
     Effect.mapError((e) => new WorkflowDependencyError(

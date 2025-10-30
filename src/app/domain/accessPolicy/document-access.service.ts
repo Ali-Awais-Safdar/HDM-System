@@ -1,12 +1,13 @@
-import { Effect, Schema as S } from "effect"
+import { Effect, Schema as S, ParseResult } from "effect"
 import { DocumentEntity } from "@domain/document/document.entity"
 import { UserEntity } from "@domain/user/user.entity"
 import { AccessPolicyEntity } from "@domain/accessPolicy/access-policy.entity"
 import { PermissionLevel, Role, AccessPolicySchema } from "@domain/accessPolicy/access-policy.schema"
 import { DocumentAccessPolicy, DocumentAccessResult } from "@domain/accessPolicy/document-access.policy"
-import { createDocumentAccessContext } from "@domain/accessPolicy/document-access.context"
+import type { DocumentAccessContext } from "@domain/accessPolicy/document-access.policy"
+import type { SerializedAccessPolicy } from "@domain/accessPolicy/access-policy.entity"
 import { mapParseError } from "@domain/utils/option.utils"
-import { UserGuards } from "@domain/user/user.guards"
+import { UserId } from "@domain/refined/ids"
 import {
   DocumentAccessContextInvalidError,
   DocumentAccessDeniedError,
@@ -23,6 +24,29 @@ import {
  * - Maintain schema-first boundaries
  */
 export class DocumentAccessService {
+  static buildContext(
+    user: UserEntity,
+    document: DocumentEntity,
+    encodedPolicies: ReadonlyArray<SerializedAccessPolicy>
+  ): DocumentAccessContext {
+    return {
+      userId: user.id,
+      roles: user.roles,
+      documentId: document.id,
+      documentOwnerId: document.ownerId,
+      userPolicies: encodedPolicies.map((policy) => {
+        const subjectId = policy.subjectId == null ? undefined : S.decodeUnknownSync(UserId)(policy.subjectId)
+        const role = policy.role ?? undefined
+        return {
+          subjectType: policy.subjectType,
+          ...(subjectId !== undefined ? { subjectId } : {}),
+          ...(role !== undefined ? { role } : {}),
+          actions: policy.actions
+        }
+      })
+    }
+  }
+
   static canAccessDocument(
     user: UserEntity,
     document: DocumentEntity,
@@ -32,55 +56,29 @@ export class DocumentAccessService {
     DocumentAccessResult,
     DocumentAccessContextInvalidError | DocumentAccessDeniedError | DocumentAccessInsufficientPermissionsError
   > {
-    // Encode AccessPolicyEntity instances to schema-encoded form, then project to PolicyView
-    return Effect.forEach(userPolicies, (p) =>
-      S.encode(AccessPolicySchema)(p as unknown as any)
+    // Encode AccessPolicyEntity instances to schema-encoded form (entity-optimized when available)
+    return Effect.forEach(
+      userPolicies,
+      (p): Effect.Effect<SerializedAccessPolicy, ParseResult.ParseError, never> => {
+        if (typeof (p)?.serialized === "function") {
+          return (p as AccessPolicyEntity).serialized()
+        }
+        return S.encode(AccessPolicySchema)(p as any) as Effect.Effect<SerializedAccessPolicy, ParseResult.ParseError, never>
+      }
     ).pipe(
       Effect.mapError((e) => new DocumentAccessContextInvalidError(
         `Invalid policy: ${mapParseError(e, (m) => m)}`
       )),
       Effect.flatMap((encodedPolicies) => {
-        const context = {
-          userId: user.id,
-          roles: user.roles,
-          documentId: document.id,
-          documentOwnerId: document.ownerId,
-          userPolicies: encodedPolicies.map((ep: any) => ({
-            subjectType: ep.subjectType,
-            subjectId: ep.subjectId,
-            role: ep.role,
-            actions: ep.actions
-          }))
-        }
-        // Validate context at boundary using schema (policies now encoded/minimized)
-        return createDocumentAccessContext(context).pipe(
-          Effect.mapError((error) => new DocumentAccessContextInvalidError(
-            `Invalid access context: ${mapParseError(error, (m) => m)}`,
-            "accessContext",
-            context
-          )),
-          Effect.flatMap((validatedContext) => {
-            // Normalize the context to unwrap Option values for the policy
-            const normalizedContext = {
-              userId: validatedContext.userId,
-              roles: validatedContext.roles,
-              documentId: validatedContext.documentId,
-              documentOwnerId: validatedContext.documentOwnerId,
-              userPolicies: validatedContext.userPolicies.map((policy: any) => ({
-                subjectType: policy.subjectType,
-                subjectId: policy.subjectId._tag === "Some" ? policy.subjectId.value : undefined,
-                role: policy.role._tag === "Some" ? policy.role.value : undefined,
-                actions: policy.actions
-              }))
-            }
-            return DocumentAccessPolicy.canAccessE(normalizedContext, requiredLevel).pipe(
+        const context = DocumentAccessService.buildContext(user, document, encodedPolicies)
+        return DocumentAccessPolicy.canAccessE(context, requiredLevel).pipe(
               Effect.flatMap((result): Effect.Effect<
                 DocumentAccessResult,
                 DocumentAccessDeniedError | DocumentAccessInsufficientPermissionsError
               > => {
                 if (result.granted) return Effect.succeed(result)
-                // Use the normalized context to compute effective level
-                return DocumentAccessPolicy.getEffectivePermissionLevel(normalizedContext).pipe(
+                // Compute effective level for detailed error
+                return DocumentAccessPolicy.getEffectivePermissionLevel(context).pipe(
                   Effect.flatMap((level): Effect.Effect<never, DocumentAccessDeniedError | DocumentAccessInsufficientPermissionsError> =>
                     level === null
                       ? Effect.fail(new DocumentAccessDeniedError(
@@ -99,8 +97,6 @@ export class DocumentAccessService {
                 )
               })
             )
-          })
-        )
       })
     )
   }
@@ -136,7 +132,7 @@ export class DocumentAccessService {
   }
 
   static isAdmin(user: UserEntity): boolean {
-    return UserGuards.isAdmin(user as any)
+    return user.roles.includes("ADMIN" as Role)
   }
 
   static hasAccess(
