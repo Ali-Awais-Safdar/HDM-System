@@ -83,7 +83,7 @@ describe("DocumentWorkflow", () => {
           actorId: actors.owner.id,
           title: "Minimal Document",
           description: undefined,
-          tags: undefined
+          tags: []
         }
 
       const response = await expectAsyncSuccess(
@@ -94,7 +94,7 @@ describe("DocumentWorkflow", () => {
       )
 
       expect(response.description).toBeUndefined()
-      expect(response.tags).toBeUndefined()
+      expect(response.tags).toEqual([])
     })
   })
 
@@ -213,7 +213,7 @@ describe("DocumentWorkflow", () => {
         actorId: actors.owner.id,
         title: "Draft Document",
         description: undefined,
-        tags: undefined
+        tags: []
       }
 
       const created = await expectAsyncSuccess(
@@ -294,7 +294,7 @@ describe("DocumentWorkflow", () => {
       const listQuery = {
         workspaceId: TEST_WORKSPACE_ID,
         actorId: actors.owner.id,
-        tags: undefined,
+        // omit tags to not filter by tags
         pageNum: 1,
         pageSize: 5
       }
@@ -318,7 +318,7 @@ describe("DocumentWorkflow", () => {
       const page2Query = {
         workspaceId: TEST_WORKSPACE_ID,
         actorId: actors.owner.id,
-        tags: undefined,
+        // omit tags to not filter by tags
         pageNum: 2,
         pageSize: 5
       }
@@ -347,7 +347,7 @@ describe("DocumentWorkflow", () => {
                 actorId: actors.owner.id,
                 title,
                 description: undefined,
-                tags: undefined
+                tags: []
               }),
               Date.now()
             )
@@ -358,7 +358,7 @@ describe("DocumentWorkflow", () => {
       const searchQuery = {
         workspaceId: TEST_WORKSPACE_ID,
         actorId: actors.owner.id,
-        tags: undefined,
+        // omit tags to not filter by tags
         search: "JavaScript"
       }
 
@@ -564,7 +564,7 @@ describe("DocumentWorkflow", () => {
         actorId: actors.owner.id,
         title: "Private Document",
         description: undefined,
-        tags: undefined
+        tags: []
       }
 
       const created = await expectAsyncSuccess(
@@ -602,7 +602,7 @@ describe("DocumentWorkflow", () => {
         actorId: actors.owner.id,
         title: "Workspace 1 Document",
         description: undefined,
-        tags: undefined
+        tags: []
       }
 
       const created = await expectAsyncSuccess(
@@ -640,7 +640,7 @@ describe("DocumentWorkflow", () => {
               actorId: actors.owner.id,
               title: `WS1 Document ${i}`,
               description: undefined,
-              tags: undefined
+              tags: []
             }),
             Date.now() + i * 1000
           )
@@ -657,7 +657,7 @@ describe("DocumentWorkflow", () => {
               actorId: actors.owner.id,
               title: `WS2 Document ${i}`,
               description: undefined,
-              tags: undefined
+              tags: []
             }),
             Date.now() + i * 1000
           )
@@ -668,7 +668,7 @@ describe("DocumentWorkflow", () => {
       const listQueryWS1 = {
         workspaceId: TEST_WORKSPACE_ID,
         actorId: actors.owner.id,
-        tags: null,
+        // omit tags to not filter by tags
         pageNum: 1,
         pageSize: 10
       }
@@ -684,7 +684,7 @@ describe("DocumentWorkflow", () => {
       const listQueryWS2 = {
         workspaceId: TEST_WORKSPACE_ID_2,
         actorId: actors.owner.id,
-        tags: null,
+        // omit tags to not filter by tags
         pageNum: 1,
         pageSize: 10
       }
@@ -705,7 +705,7 @@ describe("DocumentWorkflow", () => {
         actorId: actors.owner.id,
         title: "Original Title",
         description: undefined,
-        tags: undefined
+        tags: []
       }
 
       const created = await expectAsyncSuccess(
@@ -746,7 +746,7 @@ describe("DocumentWorkflow", () => {
         actorId: actors.owner.id,
         title: "Document to Delete",
         description: undefined,
-        tags: undefined
+        tags: []
       }
 
       const created = await expectAsyncSuccess(
@@ -788,7 +788,7 @@ describe("DocumentWorkflow", () => {
         actorId: actors.owner.id,
         title: "Document to Delete",
         description: undefined,
-        tags: undefined
+        tags: []
       }
 
       const created = await expectAsyncSuccess(
@@ -838,7 +838,7 @@ describe("DocumentWorkflow", () => {
         actorId: actors.owner.id,
         title: "Document to Force Delete",
         description: undefined,
-        tags: undefined
+        tags: []
       }
 
       const created = await expectAsyncSuccess(
@@ -941,6 +941,69 @@ describe("DocumentWorkflow", () => {
         harness.documentRepository.findById(document.id as any)
       )
       expect(Option.isNone(foundOption)).toBe(true)
+    })
+  })
+
+  describe("regression - tags lifecycle", () => {
+    it("should create, add tags, then clear tags with arrays only", async () => {
+      const createCommand = {
+        workspaceId: TEST_WORKSPACE_ID,
+        ownerId: actors.owner.id,
+        actorId: actors.owner.id,
+        title: "Tags Lifecycle",
+        description: undefined,
+        tags: [] as readonly string[]
+      }
+
+      const created = await expectAsyncSuccess(
+        withTestClock(
+          harness.documentWorkflow.createDocument(createCommand),
+          Date.now()
+        )
+      )
+
+      expect(created.tags).toEqual([])
+
+      // Add tags
+      const addTagsCommand = {
+        workspaceId: TEST_WORKSPACE_ID,
+        id: created.id as any,
+        actorId: actors.owner.id,
+        tags: ["alpha", "beta"] as readonly string[]
+      }
+
+      const withTags = await expectAsyncSuccess(
+        withTestClock(
+          harness.documentWorkflow.updateDocument(addTagsCommand),
+          Date.now() + 1000
+        )
+      )
+
+      expect(withTags.tags).toEqual(["alpha", "beta"])
+
+      // Clear tags
+      const clearTagsCommand = {
+        workspaceId: TEST_WORKSPACE_ID,
+        id: created.id as any,
+        actorId: actors.owner.id,
+        tags: [] as readonly string[]
+      }
+
+      const cleared = await expectAsyncSuccess(
+        withTestClock(
+          harness.documentWorkflow.updateDocument(clearTagsCommand),
+          Date.now() + 2000
+        )
+      )
+
+      expect(cleared.tags).toEqual([])
+
+      // Verify persistence
+      const foundOption = await expectAsyncSuccess(
+        harness.documentRepository.findById(created.id as any)
+      )
+      const found = expectSome(foundOption)
+      expect(found.tagsOrEmpty).toEqual([])
     })
   })
 })

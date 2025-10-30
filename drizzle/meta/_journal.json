@@ -85,6 +85,13 @@
       "when": 1761683600086,
       "tag": "0011_rich_dagger",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1761827637449,
+      "tag": "0012_glamorous_gideon",
+      "breakpoints": true
     }
   ]
 }

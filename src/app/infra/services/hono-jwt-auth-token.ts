@@ -1,8 +1,7 @@
-import { Effect } from "effect"
+import { Effect, Option } from "effect"
 import { sign } from "hono/jwt"
 import { AuthTokenPort, AuthTokenError, TokenPayload, GeneratedToken } from "@application/services/ports/auth-token.port"
 import { JWT_CONFIG } from "@infra/config/http-config"
-import { JWTPayloadInput } from "@infra/config/jwt-types"
 
 export class HonoJWTAuthToken extends AuthTokenPort {
   constructor(
@@ -22,20 +21,31 @@ export class HonoJWTAuthToken extends AuthTokenPort {
       const now = Math.floor(Date.now() / 1000)
       const expiresInSeconds = yield* Effect.sync(() => parseExpiresIn(expiresIn))
 
-      const jwtPayload: JWTPayloadInput = {
+      // Encode Option<WorkspaceId> to undefined for JWT
+      // When Option.none(), workspaceId should be undefined (will be omitted from JWT)
+      // When Option.some(value), include the workspace ID
+      const workspaceIdEncoded = Option.match(payload.workspaceId, {
+        onNone: () => undefined,
+        onSome: (wid) => wid as string
+      })
+
+      // Build JWT payload - workspaceId will be undefined if not present (won't appear in token)
+      const jwtPayloadToSign: Record<string, unknown> = {
         sub: payload.userId,
-        workspaceId: payload.workspaceId,
-        roles: payload.roles as any,
+        roles: payload.roles,
+        iat: now,
+        exp: now + expiresInSeconds,
         jti: crypto.randomUUID()
+      }
+
+      // Only include workspaceId if it exists
+      if (workspaceIdEncoded !== undefined) {
+        jwtPayloadToSign.workspaceId = workspaceIdEncoded
       }
 
       const token = yield* Effect.tryPromise({
         try: () => sign(
-          {
-            ...jwtPayload,
-            iat: now,
-            exp: now + expiresInSeconds
-          },
+          jwtPayloadToSign,
           secret,
           algorithm as any
         ),

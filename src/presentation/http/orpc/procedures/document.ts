@@ -48,7 +48,7 @@ export const create = os
     const command = withActorWorkspaceAndOwner({
       title: input.title,
       description: input.description,
-      tags: input.tags
+      tags: input.tags ?? []
     }, context)
     
     const result = await executeEffect(
@@ -93,7 +93,7 @@ export const list = os
     
     const query = withActorAndWorkspace({
       ownerId: input.ownerId,
-      tags: input.tags,
+      tags: input.tags ?? [],
       search: input.search,
       pageNum: input.pageNum,
       pageSize: input.pageSize

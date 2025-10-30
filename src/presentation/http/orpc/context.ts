@@ -205,10 +205,11 @@ function verifyJWT(token: string): Effect.Effect<AppJWTPayload, ORPCError<string
  * Extracts workspace information from the JWT payload and x-workspace-id header.
  * 1. Prefer header if present and validate with makeWorkspaceId
  * 2. If JWT workspace exists and header exists, ensure equality; else error
- * 3. If no header, use JWT Option directly
- * 4. If both absent, error "FORBIDDEN"
+ * 3. If no header, use JWT Option directly (may be Option.none())
+ * 4. If both absent, return Option.none() (workspace is optional at context level)
  * 
  * Returns Option<WorkspaceId> - workspace may be present or absent.
+ * Individual procedures enforce workspace requirements via withActorAndWorkspace().
  */
 function deriveWorkspace(
   payload: AppJWTPayload,
@@ -221,18 +222,8 @@ function deriveWorkspace(
     // Read x-workspace-id header (case-insensitive)
     const headerValue = honoContext.req.header("x-workspace-id")
     
-    // If no header, use JWT workspace or fail if absent
+    // If no header, use JWT workspace (which may be Option.none() - that's OK)
     if (!headerValue) {
-      if (Option.isNone(jwtWorkspace)) {
-        return yield* Effect.fail(new ORPCError("FORBIDDEN", {
-          message: "Workspace context is required for this operation",
-          status: 403,
-          data: {
-            code: "MISSING_WORKSPACE",
-            details: "This operation requires either an x-workspace-id header or a workspace-scoped JWT token"
-          }
-        }))
-      }
       return jwtWorkspace
     }
     

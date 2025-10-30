@@ -62,7 +62,6 @@ import {
   mapDocumentPersistenceError,
   optionToUndefined,
   optionToNull,
-  optionArrayToUndefined,
   filterUndefined,
   recordAudit
 } from "@application/workflow/helpers"
@@ -232,7 +231,7 @@ export class DocumentWorkflow {
               ownerId: dto.ownerId,
               title: dto.title,
               description: optionToUndefined(dto.description),
-              tags: optionArrayToUndefined(dto.tags),
+              tags: dto.tags ?? [],
               publishStatus: "draft" as const,
               publishNotes: undefined,
               createdAt: now.toISOString(),
@@ -314,25 +313,18 @@ export class DocumentWorkflow {
                   // Apply tags mutation if provided
                   Effect.flatMap((doc) =>
                     dto.tags !== undefined
-                      ? pipe(
-                          // Handle Option<readonly string[]> for tags
-                          Option.match(dto.tags, {
-                            onNone: () => Effect.succeed(doc),
-                            onSome: (tagsArray) => {
-                              if (tagsArray.length > 0) {
-                                // Remove all existing tags first, then add new ones
-                                return doc.removeTags([...doc.tagsOrEmpty]).pipe(
-                                  Effect.flatMap((docWithoutTags) => 
-                                    docWithoutTags.addTags([...tagsArray]) // Convert readonly to mutable
-                                  )
-                                )
-                              } else {
-                                // Remove all tags if empty array provided
-                                return doc.removeTags([...doc.tagsOrEmpty])
-                              }
-                            }
-                          })
-                        )
+                      ? (() => {
+                          const tagsArray = dto.tags
+                          if (tagsArray.length > 0) {
+                            return doc.removeTags([...doc.tagsOrEmpty]).pipe(
+                              Effect.flatMap((docWithoutTags) =>
+                                docWithoutTags.addTags([...tagsArray])
+                              )
+                            )
+                          } else {
+                            return doc.removeTags([...doc.tagsOrEmpty])
+                          }
+                        })()
                       : Effect.succeed(doc)
                   ),
                   Effect.map((doc) => ({ document: doc, dto }))
@@ -504,7 +496,7 @@ export class DocumentWorkflow {
             const searchFilters: DocumentSearchFilters = {
               workspaceId: dto.workspaceId,
               ...(dto.search && { query: dto.search }),
-              ...(Option.isSome(dto.tags) && { tags: Option.getOrElse(dto.tags, () => []) }),
+              ...(dto.tags && { tags: dto.tags }),
               ...(dto.ownerId && { ownerId: dto.ownerId }),
               actorId: dto.actorId, // Pass actor context for repository-level permission filtering
               paginationOptions: {

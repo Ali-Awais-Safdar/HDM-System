@@ -14,7 +14,7 @@ const deterministicDefaults = (): EncodedDocument => {
     ownerId: faker.string.uuid() as UserId,
     title: `Document ${faker.string.alphanumeric(8)}`,
     description: undefined,
-    tags: undefined,
+    tags: [],
     publishStatus: "draft" as const,
     publishNotes: undefined,
     createdAt: FIXED_CREATED_AT.toISOString(),
@@ -39,7 +39,7 @@ export const createDocumentWithTags = (
 export const createDocumentWithoutTags = (
   overrides: Partial<EncodedDocument> = {}
 ): EncodedDocument => {
-  return generateDocument({ tags: undefined, ...overrides })
+  return generateDocument({ tags: [], ...overrides })
 }
 
 export const createPublishedDocument = (

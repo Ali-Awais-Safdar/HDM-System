@@ -21,20 +21,6 @@ import { AccessPolicySchema } from "@domain/accessPolicy/access-policy.schema"
 
 // ===== ID GENERATION HELPERS =====
 
-/**
- * Generate and validate a new entity ID using crypto.randomUUID()
- * 
- * @param schema - The ID schema to validate against (e.g., DocumentId, UserId)
- * @param label - Human-readable label for error messages (e.g., "DocumentId", "UserId")
- * @returns Effect that produces a validated ID or fails with WorkflowDependencyError
- * 
- * @example
- * ```typescript
- * const documentId = await Effect.runPromise(
- *   createEntityId(DocumentId, "DocumentId")
- * )
- * ```
- */
 export const createEntityId = <A, I, R = never>(
   schema: S.Schema<A, I, R>,
   label: string
@@ -67,13 +53,6 @@ export const optionToNull = <T>(option: Option.Option<T>): T | null => {
   return Option.match(option, {
     onNone: () => null,
     onSome: (value) => value
-  })
-}
-
-export const optionArrayToUndefined = <T>(option: Option.Option<readonly T[]>): readonly T[] | undefined => {
-  return Option.match(option, {
-    onNone: () => undefined,
-    onSome: (arr) => arr
   })
 }
 
@@ -225,8 +204,8 @@ export const serializeDocumentSummary = (
   id: string;
   ownerId: string;
   title: string;
-  description: string | undefined;
-  tags: readonly string[] | undefined;
+  description: string | null | undefined;
+  tags: readonly string[];
   publishStatus: "draft" | "published" | "unpublished";
   createdAt: string;
 }, WorkflowDependencyError> => {
@@ -236,8 +215,8 @@ export const serializeDocumentSummary = (
       id: serialized.id,
       ownerId: serialized.ownerId,
       title: serialized.title,
-      description: serialized.description === null ? undefined : serialized.description,
-      tags: serialized.tags === null ? undefined : serialized.tags,
+      description: serialized.description,
+      tags: serialized.tags,
       publishStatus: serialized.publishStatus,
       createdAt: serialized.createdAt
     })),

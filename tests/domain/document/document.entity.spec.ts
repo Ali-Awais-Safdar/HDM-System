@@ -33,7 +33,7 @@ describe("DocumentEntity", () => {
       const data = generateDocument({
         title: "Minimal Doc",
         description: undefined,
-        tags: undefined,
+        tags: [],
       })
 
       const document = TestPatterns.Effect.expectSuccess(
@@ -135,7 +135,7 @@ describe("DocumentEntity", () => {
         withTestClock(DocumentEntity.create(generateDocument({ tags: ["test"] })), Date.now())
       )
       const withoutTags = TestPatterns.Effect.expectSuccess(
-        withTestClock(DocumentEntity.create(generateDocument({ tags: undefined })), Date.now())
+        withTestClock(DocumentEntity.create(generateDocument({ tags: [] })), Date.now())
       )
 
       expect(withTags.hasTagsValue).toBe(true)
@@ -174,7 +174,7 @@ describe("DocumentEntity", () => {
       
       // Test None case
       const withoutTags = TestPatterns.Effect.expectSuccess(
-        withTestClock(DocumentEntity.create(generateDocument({ tags: undefined })), Date.now())
+        withTestClock(DocumentEntity.create(generateDocument({ tags: [] })), Date.now())
       )
       
       expect(withoutTags.hasTagsValue).toBe(false)
@@ -195,7 +195,7 @@ describe("DocumentEntity", () => {
       const mixed = TestPatterns.Effect.expectSuccess(
         withTestClock(DocumentEntity.create(generateDocument({ 
           description: "Has description", 
-          tags: undefined 
+          tags: [] 
         })), Date.now())
       )
       
@@ -315,18 +315,16 @@ describe("DocumentEntity", () => {
       expect((error as BusinessRuleViolationError).details?.rule).toBe("INVALID_TAGS")
     })
 
-    it("should fail removing empty tag array", () => {
+    it("should no-op when removing empty tag array (tags unchanged)", () => {
       const original = TestPatterns.Effect.expectSuccess(
         withTestClock(DocumentEntity.create(generateDocument()), FIXED_TIME)
       )
 
-      const error = TestPatterns.Effect.expectFailure(
-        withTestClock(original.removeTags([]), LATER_TIME),
-        DocumentValidationError
+      const updated = TestPatterns.Effect.expectSuccess(
+        withTestClock(original.removeTags([]), LATER_TIME)
       )
 
-      expect(error).toBeInstanceOf(DocumentValidationError)
-      expect(error.field).toBe("tags")
+      expect(updated.tagsOrEmpty).toEqual(original.tagsOrEmpty)
     })
   })
 

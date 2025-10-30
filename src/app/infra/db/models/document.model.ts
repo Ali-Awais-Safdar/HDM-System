@@ -11,7 +11,7 @@ export const documents = pgTable("documents", {
     .references(() => users.id, { onDelete: "cascade" }),
   title: varchar("title", { length: 255 }).notNull(),
   description: text("description"),
-  tags: jsonb("tags").$type<string[]>(),
+  tags: jsonb("tags").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
   publishStatus: varchar("publish_status", { length: 20 }).notNull().default("draft"),
   publishNotes: text("publish_notes"),
 }, (table) => ({

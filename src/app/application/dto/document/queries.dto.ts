@@ -1,6 +1,7 @@
 import { Schema as S } from "effect"
 import { DocumentId, UserId, WorkspaceId } from "@domain/refined/ids"
 import { DocumentFields } from "@domain/document/document.schema"
+import { TagList } from "@domain/document/tag-list.vo"
 import { PermissionLevelSchema, AccessPolicyFields } from "@domain/accessPolicy/access-policy.schema"
 import { PageNumber, DocumentPageSize } from "@domain/utils/pagination"
 
@@ -12,7 +13,7 @@ export const GetDocumentInputSchema = S.Struct({
 
 export const ListDocumentsInputSchema = S.Struct({
   ownerId: S.optional(DocumentFields.ownerId),
-  tags: DocumentFields.tags,
+  tags: S.optional(TagList),
   search: S.optional(S.String.pipe(
     S.transform(S.String, {
       decode: (input) => input.trim(),

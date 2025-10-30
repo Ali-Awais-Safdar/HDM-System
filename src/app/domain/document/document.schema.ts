@@ -13,7 +13,7 @@ export const DocumentStruct = S.Struct({
   ownerId: UserId,
   title: DocumentTitle,
   description: Optional(DocumentDescription),
-  tags: Optional(TagList),
+  tags: TagList,
   publishStatus: DocumentPublishStatus,
   publishNotes: Optional(DocumentPublishNotes)
 })

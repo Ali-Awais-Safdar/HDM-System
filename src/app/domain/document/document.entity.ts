@@ -21,7 +21,7 @@ export class DocumentEntity {
   readonly ownerId!: UserId
   readonly title!: DocumentTitle
   readonly description!: Option.Option<DocumentDescription>
-  readonly tags!: Option.Option<readonly string[]>
+  readonly tags!: readonly string[]
   readonly publishStatus!: DocumentPublishStatus
   readonly publishNotes!: Option.Option<DocumentPublishNotes>
   readonly createdAt!: Date
@@ -72,9 +72,7 @@ export class DocumentEntity {
   }
 
   get hasTagsValue(): boolean {
-    return (
-      Option.isSome(this.tags) && Option.getOrElse(this.tags, () => []).length > 0
-    )
+    return this.tags.length > 0
   }
 
   get isModified(): boolean {
@@ -82,7 +80,7 @@ export class DocumentEntity {
   }
 
   get tagCount(): number {
-    return Option.getOrElse(this.tags, () => []).length
+    return this.tags.length
   }
 
   get descriptionOrEmpty(): string {
@@ -93,7 +91,7 @@ export class DocumentEntity {
   }
 
   get tagsOrEmpty(): readonly string[] {
-    return Option.getOrElse(this.tags, () => [])
+    return this.tags
   }
 
   get hasPublishNotesValue(): boolean {
@@ -175,7 +173,7 @@ export class DocumentEntity {
   > {
     return newTags.length > 0
       ? (() => {
-          const existingTags = Option.getOrElse(this.tags, () => [] as string[])
+          const existingTags = this.tags as string[]
           return TagListAdd(existingTags, newTags).pipe(
             Effect.mapError((e) =>
               e instanceof ValidationError
@@ -207,38 +205,35 @@ export class DocumentEntity {
   removeTags(
     tagsToRemove: string[]
   ): Effect.Effect<DocumentEntity, DocumentValidationError, Clock.Clock> {
-    return tagsToRemove.length > 0
-      ? (() => {
-          const currentTags = Option.getOrElse(this.tags, () => [] as string[])
-          return TagListRemove(currentTags, tagsToRemove).pipe(
-            Effect.mapError(
-              (e) =>
-                new DocumentValidationError(
-                  e instanceof Error ? e.message : String(e),
-                  "tags",
-                  tagsToRemove
-                )
-            ),
-            Effect.flatMap((filteredTags) =>
-              applyMutationWithTimestamp(
-                DocumentSchema,
-                this as unknown,
-                (_now) => ({ tags: filteredTags.length > 0 ? filteredTags : undefined } as any),
-                (error) => new DocumentValidationError(
-                  `Failed to prepare document for tag removal: ${formatParseError(error as ParseResult.ParseError)}`,
-                  "tags",
-                  filteredTags
-                ),
-                (input) => DocumentEntity.create(input)
-              )
-            )
+    const currentTags = this.tags as string[]
+    return TagListRemove(currentTags, tagsToRemove).pipe(
+      Effect.mapError(
+        (e) =>
+          new DocumentValidationError(
+            e instanceof Error ? e.message : String(e),
+            "tags",
+            tagsToRemove
           )
-        })()
-      : Effect.fail(new DocumentValidationError(
-          "No valid tags to remove provided",
-          "tags",
-          tagsToRemove
-        ))
+      ),
+      Effect.flatMap((filteredTags) => {
+        const noChange = filteredTags.length === currentTags.length &&
+          filteredTags.every((t, i) => t === currentTags[i])
+        if (noChange) {
+          return Effect.succeed(this)
+        }
+        return applyMutationWithTimestamp(
+          DocumentSchema,
+          this as unknown,
+          (_now) => ({ tags: filteredTags }),
+          (error) => new DocumentValidationError(
+            `Failed to prepare document for tag removal: ${formatParseError(error as ParseResult.ParseError)}`,
+            "tags",
+            filteredTags
+          ),
+          (input) => DocumentEntity.create(input)
+        )
+      })
+    )
   }
 
   updatePublishStatus(

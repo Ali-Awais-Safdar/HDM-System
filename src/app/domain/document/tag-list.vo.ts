@@ -62,6 +62,9 @@ export const removeTags = (
   existing: readonly string[],
   toRemove: readonly string[]
 ): Effect.Effect<readonly string[], ValidationError> => {
+  if (toRemove.length === 0) {
+    return Effect.succeed(existing)
+  }
   const normalizedRemovals = toRemove.map(normalizeTag)
   const remainingTags = existing.filter(
     (tag) => !normalizedRemovals.includes(normalizeTag(tag))
