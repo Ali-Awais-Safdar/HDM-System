@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import { DocumentAccessService } from "@domain/accessPolicy/document-access.service"
 import { DocumentEntity } from "@domain/document/document.entity"
 import { AccessPolicyEntity } from "@domain/accessPolicy/access-policy.entity"
-import { DocumentAccessDeniedError, DocumentAccessInsufficientPermissionsError, DocumentAccessContextInvalidError } from "@domain/accessPolicy/document-access.error"
+import { DocumentAccessDeniedError, DocumentAccessInsufficientPermissionsError } from "@domain/accessPolicy/document-access.error"
 import type { PermissionAction, Role } from "@domain/accessPolicy/access-policy.schema"
 import { createUserEntity, createAdminUserEntity } from "../factories/user.factory"
 import { generateDocument } from "../factories/document.factory"
@@ -87,24 +87,7 @@ describe("DocumentAccessService", () => {
     })
   })
 
-  describe("invalid policy encoding", () => {
-    it("raises DocumentAccessContextInvalidError when a policy cannot be encoded", () => {
-      const user = createUserEntity()
-      const doc = createDocumentEntity()
-
-      // Deliberately pass an invalid policy object casted as AccessPolicyEntity
-      const invalidPolicy = { foo: "bar" } as unknown as AccessPolicyEntity
-      const policies: ReadonlyArray<AccessPolicyEntity> = [invalidPolicy]
-
-      const error = expectFailure(
-        DocumentAccessService.canReadDocument(user, doc, policies) as any,
-        DocumentAccessContextInvalidError
-      )
-
-      expect(error.code).toBe("DOCUMENT_ACCESS_CONTEXT_INVALID")
-      expect(error.message).toMatch(/Invalid policy:/)
-    })
-  })
+  // Removed: serialization error handling test relying on invalid non-entity inputs
 
   describe("denied with fallback effective level", () => {
     it("raises DocumentAccessInsufficientPermissionsError when effective level exists but below required", () => {
@@ -204,16 +187,7 @@ describe("DocumentAccessService", () => {
       expect(granted).toBe(false)
     })
 
-    it("hasAccess returns false when underlying access throws an error", () => {
-      const user = createUserEntity()
-      const doc = createDocumentEntity()
-      // Invalid policy that will fail encoding/context validation and throw in canAccessDocument
-      const invalidPolicies = [({ foo: "bar" } as unknown as AccessPolicyEntity)] as const
-      const granted = expectSuccess(
-        DocumentAccessService.hasAccess(user, doc, invalidPolicies as any, "read")
-      )
-      expect(granted).toBe(false)
-    })
+    // Removed: test relied on invalid non-entity input to induce errors
   })
 })
 

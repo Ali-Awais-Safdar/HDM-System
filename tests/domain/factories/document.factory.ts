@@ -1,7 +1,10 @@
-import { Schema as S } from "effect"
+import { Schema as S, Effect, Clock } from "effect"
 import { faker } from "../factories/common"
 import { Document as DocumentSchema } from "@domain/document/document.schema"
 import { DocumentId, UserId, WorkspaceId } from "@domain/refined/ids"
+import { DocumentAggregate } from "@domain/document/document.aggregate"
+import { type SerializedDocumentVersion } from "@domain/documentVersion/document-version.entity"
+import { FileMetadata } from "@domain/documentVersion/file-metadata.vo"
 
 type EncodedDocument = S.Schema.Encoded<typeof DocumentSchema>
 
@@ -72,4 +75,37 @@ export const createDraftDocument = (
   })
 }
 
+export const buildAggregate = (
+  overrides: Partial<EncodedDocument> = {},
+  versions: readonly SerializedDocumentVersion[] = []
+): Effect.Effect<DocumentAggregate, unknown, Clock.Clock> => {
+  const doc = generateDocument(overrides)
+  return DocumentAggregate.createFromSerialized(doc, versions)
+}
 
+export const versionFrom = (
+  input: {
+    documentId: DocumentId,
+    version: number,
+    checksum: S.Schema.Type<typeof FileMetadata>["checksum"],
+    fileKey: S.Schema.Type<typeof FileMetadata>["fileKey"],
+    mimeType: S.Schema.Type<typeof FileMetadata>["mimeType"],
+    size: S.Schema.Type<typeof FileMetadata>["size"],
+    createdBy?: UserId
+  }
+): SerializedDocumentVersion => {
+  return {
+    id: faker.string.uuid() as any,
+    documentId: input.documentId,
+    version: input.version,
+    file: {
+      checksum: input.checksum,
+      fileKey: input.fileKey,
+      mimeType: input.mimeType,
+      size: input.size
+    },
+    createdBy: input.createdBy ?? null,
+    createdAt: FIXED_CREATED_AT.toISOString(),
+    updatedAt: null
+  }
+}

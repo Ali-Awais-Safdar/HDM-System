@@ -1,5 +1,8 @@
 import { Effect as E, Clock } from "effect"
 import { DocumentEntity, type SerializedDocument } from "@domain/document/document.entity"
+import { DocumentAggregate } from "@domain/document/document.aggregate"
+import { DocumentVersionMapper } from "@infra/db/mappers"
+import type { DocumentVersionModel } from "@infra/db/models/document-version.model"
 import { DocumentValidationError } from "@domain/document/document.error"
 import type { DocumentModel, NewDocumentModel } from "@infra/db/models/document.model"
 
@@ -53,5 +56,22 @@ export const fromDb = (
   }
   
   return DocumentEntity.create(serialized)
+}
+
+export const toAggregate = (
+  docRow: DocumentModel,
+  versionRows: readonly DocumentVersionModel[]
+): E.Effect<
+  DocumentAggregate,
+  DocumentValidationError | import("@domain/documentVersion/document-version.error").DocumentVersionValidationError | import("@domain/utils/base.errors").BusinessRuleViolationError,
+  Clock.Clock
+> => {
+  const ordered = [...versionRows].sort((a, b) => a.version - b.version)
+  return E.all([
+    fromDb(docRow),
+    E.forEach(ordered, (vr) => DocumentVersionMapper.fromDb(vr))
+  ] as const).pipe(
+    E.flatMap(([doc, versions]) => DocumentAggregate.initialize(doc, versions))
+  )
 }
 

@@ -1,8 +1,9 @@
-import { Effect, Schema as S, ParseResult } from "effect"
+import { Effect, Schema as S } from "effect"
 import { DocumentEntity } from "@domain/document/document.entity"
+import type { DocumentAggregate } from "@domain/document/document.aggregate"
 import { UserEntity } from "@domain/user/user.entity"
 import { AccessPolicyEntity } from "@domain/accessPolicy/access-policy.entity"
-import { PermissionLevel, Role, AccessPolicySchema } from "@domain/accessPolicy/access-policy.schema"
+import { PermissionLevel, Role } from "@domain/accessPolicy/access-policy.schema"
 import { DocumentAccessPolicy, DocumentAccessResult } from "@domain/accessPolicy/document-access.policy"
 import type { DocumentAccessContext } from "@domain/accessPolicy/document-access.policy"
 import type { SerializedAccessPolicy } from "@domain/accessPolicy/access-policy.entity"
@@ -49,22 +50,18 @@ export class DocumentAccessService {
 
   static canAccessDocument(
     user: UserEntity,
-    document: DocumentEntity,
+    documentOrAggregate: DocumentEntity | DocumentAggregate,
     userPolicies: ReadonlyArray<AccessPolicyEntity>,
     requiredLevel: PermissionLevel
   ): Effect.Effect<
     DocumentAccessResult,
     DocumentAccessContextInvalidError | DocumentAccessDeniedError | DocumentAccessInsufficientPermissionsError
   > {
-    // Encode AccessPolicyEntity instances to schema-encoded form (entity-optimized when available)
+    const document: DocumentEntity = (documentOrAggregate as any)?.document ?? (documentOrAggregate as DocumentEntity)
+    // Serialize all policies - they are always entities
     return Effect.forEach(
       userPolicies,
-      (p): Effect.Effect<SerializedAccessPolicy, ParseResult.ParseError, never> => {
-        if (typeof (p)?.serialized === "function") {
-          return (p as AccessPolicyEntity).serialized()
-        }
-        return S.encode(AccessPolicySchema)(p as any) as Effect.Effect<SerializedAccessPolicy, ParseResult.ParseError, never>
-      }
+      (p) => p.serialized()
     ).pipe(
       Effect.mapError((e) => new DocumentAccessContextInvalidError(
         `Invalid policy: ${mapParseError(e, (m) => m)}`
@@ -103,31 +100,32 @@ export class DocumentAccessService {
 
   static canReadDocument(
     user: UserEntity,
-    document: DocumentEntity,
+    documentOrAggregate: DocumentEntity | DocumentAggregate,
     userPolicies: ReadonlyArray<AccessPolicyEntity>
   ): Effect.Effect<DocumentAccessResult, DocumentAccessContextInvalidError | DocumentAccessDeniedError | DocumentAccessInsufficientPermissionsError> {
-    return DocumentAccessService.canAccessDocument(user, document, userPolicies, "read")
+    return DocumentAccessService.canAccessDocument(user, documentOrAggregate, userPolicies, "read")
   }
 
 
   static canWriteDocument(
     user: UserEntity,
-    document: DocumentEntity,
+    documentOrAggregate: DocumentEntity | DocumentAggregate,
     userPolicies: ReadonlyArray<AccessPolicyEntity>
   ): Effect.Effect<DocumentAccessResult, DocumentAccessContextInvalidError | DocumentAccessDeniedError | DocumentAccessInsufficientPermissionsError> {
-    return DocumentAccessService.canAccessDocument(user, document, userPolicies, "write")
+    return DocumentAccessService.canAccessDocument(user, documentOrAggregate, userPolicies, "write")
   }
 
 
   static canAdminDocument(
     user: UserEntity,
-    document: DocumentEntity,
+    documentOrAggregate: DocumentEntity | DocumentAggregate,
     userPolicies: ReadonlyArray<AccessPolicyEntity>
   ): Effect.Effect<DocumentAccessResult, DocumentAccessContextInvalidError | DocumentAccessDeniedError | DocumentAccessInsufficientPermissionsError> {
-    return DocumentAccessService.canAccessDocument(user, document, userPolicies, "admin")
+    return DocumentAccessService.canAccessDocument(user, documentOrAggregate, userPolicies, "admin")
   }
 
-  static isOwner(user: UserEntity, document: DocumentEntity): boolean {
+  static isOwner(user: UserEntity, documentOrAggregate: DocumentEntity | DocumentAggregate): boolean {
+    const document: DocumentEntity = (documentOrAggregate as any)?.document ?? (documentOrAggregate as DocumentEntity)
     return user.id === document.ownerId
   }
 

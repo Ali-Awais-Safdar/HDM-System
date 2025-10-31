@@ -5,8 +5,7 @@ import { DocumentEntity, SerializedDocument } from "@domain/document/document.en
 import { DocumentVersionEntity, SerializedDocumentVersion } from "@domain/documentVersion/document-version.entity"
 import { UserEntity } from "@domain/user/user.entity"
 import { AccessPolicyEntity } from "@domain/accessPolicy/access-policy.entity"
-import { DocumentRepository } from "@domain/document/document.repository"
-import { DocumentVersionRepository } from "@domain/documentVersion/document-version.repository"
+import { DocumentAggregateRepository } from "@domain/document/document-aggregate.repository"
 import { AccessPolicyRepository } from "@domain/accessPolicy/access-policy.repository"
 import { UserRepository } from "@domain/user/user.repository"
 import { DocumentAccessService } from "@domain/accessPolicy/document-access.service"
@@ -95,18 +94,18 @@ export const loadActor = (
 // ===== DOCUMENT LOADING =====
 
 export const loadDocument = (
-  documentRepository: DocumentRepository,
+  aggregateRepository: DocumentAggregateRepository,
   documentId: DocumentId,
   workspaceId: WorkspaceId
 ): Effect.Effect<DocumentEntity, DocumentNotFoundError | WorkflowDependencyError> => {
   return pipe(
-    documentRepository.findById(documentId),
+    aggregateRepository.findDocumentById(documentId),
     Effect.mapError((error) => {
       if (error instanceof DatabaseError) {
         return new WorkflowDependencyError(
           `Database error loading document: ${documentId}`,
-          "DocumentRepository",
-          "findById",
+          "DocumentAggregateRepository",
+          "findDocumentById",
           { originalError: error }
         )
       }
@@ -148,22 +147,23 @@ export const loadDocument = (
 // ===== DOCUMENT VERSION LOADING =====
 
 export const loadDocumentVersion = (
-  versionRepository: DocumentVersionRepository,
+  aggregateRepository: DocumentAggregateRepository,
   versionId: DocumentVersionId
 ): Effect.Effect<DocumentVersionEntity, DocumentVersionNotFoundError | WorkflowDependencyError> => {
   return pipe(
-    versionRepository.findById(versionId),
+    // 1. Find document ID by version ID (lightweight lookup)
+    aggregateRepository.findDocumentIdByVersionId(versionId).pipe(
     Effect.mapError((error) => {
       if (error instanceof DatabaseError) {
         return new WorkflowDependencyError(
-          `Database error loading document version: ${versionId}`,
-          "DocumentVersionRepository",
-          "findById",
+            `Database error finding document by version: ${versionId}`,
+          "DocumentAggregateRepository",
+            "findDocumentIdByVersionId",
           { originalError: error }
         )
       }
       return new DocumentVersionNotFoundError(
-        `Failed to load document version: ${versionId}`,
+          `Version not found: ${versionId}`,
         "id",
         versionId,
         { originalError: error }
@@ -173,12 +173,57 @@ export const loadDocumentVersion = (
       Option.match({
         onNone: () => Effect.fail(new DocumentVersionNotFoundError(
           `Document version not found: ${versionId}`,
+            "id",
+            versionId
+          )),
+          onSome: (documentId) => Effect.succeed(documentId)
+        })
+      )
+    ),
+    // 2. Load aggregate to access versions
+    Effect.flatMap((documentId) =>
+      aggregateRepository.loadById(documentId).pipe(
+        Effect.mapError((error) => {
+          if (error instanceof DatabaseError) {
+            return new WorkflowDependencyError(
+              `Database error loading aggregate: ${documentId}`,
+              "DocumentAggregateRepository",
+              "loadById",
+              { originalError: error }
+            )
+          }
+          return new WorkflowDependencyError(
+            `Failed to load aggregate: ${documentId}`,
+            "DocumentAggregateRepository",
+            "loadById",
+            { originalError: error }
+          )
+        }),
+        Effect.flatMap(
+          Option.match({
+            onNone: () => Effect.fail(new WorkflowDependencyError(
+              `Document aggregate not found: ${documentId}`,
+              "DocumentAggregateRepository",
+              "loadById",
+              {}
+            )),
+            onSome: (aggregate) => Effect.succeed(aggregate)
+          })
+        )
+      )
+    ),
+    // 3. Get version by ID from aggregate
+    Effect.flatMap((aggregate) => {
+      const versionOption = aggregate.getVersionById(versionId)
+      return Option.match(versionOption, {
+        onNone: () => Effect.fail(new DocumentVersionNotFoundError(
+          `Document version not found in aggregate: ${versionId}`,
           "id",
           versionId
         )),
         onSome: (version) => Effect.succeed(version)
       })
-    )
+    })
   )
 }
 

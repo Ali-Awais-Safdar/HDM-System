@@ -4,12 +4,9 @@ import { Effect, Option, pipe, Schema as S, ParseResult, Clock } from "effect"
 import { injectable, inject } from "tsyringe"
 
 // Domain entities
-import { DocumentEntity, SerializedDocument } from "@domain/document/document.entity"
-import { AccessPolicyEntity } from "@domain/accessPolicy/access-policy.entity"
-
-// Domain repositories
-import { DocumentRepository, DocumentSearchFilters } from "@domain/document/document.repository"
-import { DocumentVersionRepository } from "@domain/documentVersion/document-version.repository"
+import { SerializedDocument } from "@domain/document/document.entity"
+import { DocumentAggregate } from "@domain/document/document.aggregate"
+import { DocumentAggregateRepository, type DocumentSearchFilters } from "@domain/document/document-aggregate.repository"
 import { DownloadTokenRepository } from "@domain/downloadToken/download-token.repository"
 import { AccessPolicyRepository } from "@domain/accessPolicy/access-policy.repository"
 import { UserRepository } from "@domain/user/user.repository"
@@ -19,7 +16,7 @@ import { DocumentAccessService } from "@domain/accessPolicy/document-access.serv
 
 // Domain errors
 import { DocumentNotFoundError } from "@domain/document/document.error"
-import { DatabaseError } from "@domain/utils/base.errors"
+import { DatabaseError, ValidationError } from "@domain/utils/base.errors"
 
 // Application errors
 import { PermissionCheckError, WorkflowError, WorkflowDependencyError } from "@application/errors/application.errors"
@@ -69,6 +66,9 @@ import {
 // Application workflows
 import { AccessPolicyWorkflow } from "./access-policy.workflow"
 
+// Application services
+import { DocumentPolicySyncService } from "@application/services/document-policy-sync.service"
+
 // Refined types
 import { DocumentId } from "@domain/refined/ids"
 
@@ -84,12 +84,6 @@ import { AuditPort } from "@application/services/ports/audit.port"
 @injectable()
 export class DocumentWorkflow {
   constructor(
-    @inject(TOKENS.DOCUMENT_REPOSITORY)
-    private readonly documentRepository: DocumentRepository,
-    
-    @inject(TOKENS.DOCUMENT_VERSION_REPOSITORY)
-    private readonly documentVersionRepository: DocumentVersionRepository,
-    
     @inject(TOKENS.DOWNLOAD_TOKEN_REPOSITORY)
     private readonly downloadTokenRepository: DownloadTokenRepository,
     
@@ -99,115 +93,18 @@ export class DocumentWorkflow {
     @inject(TOKENS.USER_REPOSITORY)
     private readonly userRepository: UserRepository,
     
+    @inject(TOKENS.DOCUMENT_AGGREGATE_REPOSITORY)
+    private readonly documentAggregateRepository: DocumentAggregateRepository,
+    
     @inject(TOKENS.ACCESS_POLICY_WORKFLOW)
     private readonly accessPolicyWorkflow: AccessPolicyWorkflow,
+    
+    @inject(TOKENS.DOCUMENT_POLICY_SYNC_SERVICE)
+    private readonly documentPolicySyncService: DocumentPolicySyncService,
     
     @inject(TOKENS.AUDIT_PORT)
     private readonly audit: AuditPort
   ) {}
-
-  private syncCollaboratorPoliciesOnPublishStatusChange(
-    document: DocumentEntity, 
-    newPublishStatus: "draft" | "published" | "unpublished"
-  ): Effect.Effect<void, WorkflowDependencyError, Clock.Clock> {
-    return pipe(
-      // 1. Get all existing policies for the document
-      this.accessPolicyWorkflow.getPoliciesForDocument(document.id),
-      Effect.flatMap((allPolicies) => {
-        // 2. Filter out owner policies (owner always has full access)
-        const collaboratorPolicies = allPolicies.filter((policy) => {
-          // Keep policies that are not for the document owner
-          return Option.match(policy.subjectId, {
-            onNone: () => true, // Role-based policies
-            onSome: (subjectId) => subjectId !== document.ownerId
-          })
-        })
-
-        // 3. Apply business rules based on publish status transition
-        return this.applyPublishStatusPolicyRules(document, newPublishStatus, collaboratorPolicies)
-      }),
-      Effect.mapError((error) => new WorkflowDependencyError(
-        `Failed to sync collaborator policies for document ${document.id}`,
-        "AccessPolicyWorkflow",
-        "syncPolicies",
-        { documentId: document.id, newPublishStatus, originalError: error }
-      ))
-    )
-  }
-
-  private applyPublishStatusPolicyRules(
-    document: DocumentEntity,
-    newPublishStatus: "draft" | "published" | "unpublished",
-    collaboratorPolicies: readonly AccessPolicyEntity[]
-  ): Effect.Effect<void, WorkflowDependencyError, Clock.Clock> {
-    switch (newPublishStatus) {
-      case "published":
-        // When publishing: ensure collaborators maintain their access
-        // No policy changes needed - existing policies remain valid
-        return Effect.void
-
-      case "unpublished":
-        // When unpublishing: restrict collaborator access to read-only
-        return this.restrictCollaboratorAccessToReadOnly(document, collaboratorPolicies)
-
-      case "draft":
-        // When returning to draft: maintain existing access policies
-        // No policy changes needed - existing policies remain valid
-        return Effect.void
-
-      default:
-        return Effect.void
-    }
-  }
-
-  /**
-   * Restrict collaborator access to read-only when document is unpublished
-   * Collects all failures and surfaces them via WorkflowDependencyError
-   * Only proceeds when every policy update succeeds
-   */
-  private restrictCollaboratorAccessToReadOnly(
-    document: DocumentEntity,
-    collaboratorPolicies: readonly AccessPolicyEntity[]
-  ): Effect.Effect<void, WorkflowDependencyError, Clock.Clock> {
-    if (collaboratorPolicies.length === 0) {
-      return Effect.void
-    }
-
-    // Update each collaborator policy to only allow read access
-    // Collect results with both successes and failures
-    return pipe(
-      Effect.forEach(
-        collaboratorPolicies,
-        (policy) => 
-          this.accessPolicyWorkflow.updatePolicyActions({
-            workspaceId: document.workspaceId,
-            policyId: policy.id,
-            actions: ["read"],
-            actorId: document.ownerId // Owner is performing the update
-          }).pipe(
-            Effect.map(() => ({ success: true as const, policyId: policy.id })),
-            Effect.catchAll((error) => Effect.succeed({ success: false as const, policyId: policy.id, error: error as WorkflowError }))
-          )
-      ),
-      Effect.flatMap((results) => {
-        const failures = results.filter((r) => !r.success)
-        
-        if (failures.length > 0) {
-          return Effect.fail(new WorkflowDependencyError(
-            `Failed to update ${failures.length} of ${collaboratorPolicies.length} collaborator policies`,
-            "AccessPolicyWorkflow",
-            "updatePolicyActions",
-            { 
-              failedPolicyIds: failures.map(f => f.policyId),
-              errors: failures.map(f => f.error),
-              documentId: document.id
-            }
-          ))
-        }
-        return Effect.void
-      })
-    )
-  }
 
   createDocument(input: CreateDocumentCommandEncoded): Effect.Effect<SerializedDocument, WorkflowError | ParseResult.ParseError, Clock.Clock> {
     return pipe(
@@ -224,51 +121,47 @@ export class DocumentWorkflow {
             ])
           ),
           Effect.flatMap(([validatedId, now]) => {
-            // 4. Build SerializedDocument with validated ID, workspaceId, and timestamp
-            const documentData: Partial<SerializedDocument> = {
+            // Use aggregate to create the document (no versions initially)
+            const serialized: SerializedDocument = {
               id: validatedId,
               workspaceId: dto.workspaceId,
               ownerId: dto.ownerId,
               title: dto.title,
               description: optionToUndefined(dto.description),
               tags: dto.tags ?? [],
-              publishStatus: "draft" as const,
+              publishStatus: "draft",
               publishNotes: undefined,
               createdAt: now.toISOString(),
               updatedAt: undefined
             }
-            
-            // 5. Create document entity (will validate and fill defaults)
-            return pipe(
-              DocumentEntity.create(documentData as SerializedDocument),
-              Effect.map((doc) => ({ document: doc, dto }))
+            return DocumentAggregate.createFromSerialized(serialized, []).pipe(
+              Effect.map((aggregate) => ({ aggregate, dto }))
             )
           })
         )
       ),
       Effect.mapError(mapDocumentDomainError("create")),
-      Effect.flatMap(({ document, dto }) =>
-        // 7. Persist with repository
-        this.documentRepository.save(document).pipe(
+      Effect.flatMap(({ aggregate, dto }) =>
+        this.documentAggregateRepository.save(aggregate).pipe(
           Effect.mapError(mapDocumentPersistenceError("save")),
-          Effect.map((saved) => ({ savedDocument: saved, dto }))
+          Effect.map((savedAggregate) => ({ savedAggregate, dto }))
         )
       ),
-      Effect.flatMap(({ savedDocument, dto }) =>
+      Effect.flatMap(({ savedAggregate, dto }) =>
         // 8. Record audit event
         recordAudit(this.audit, {
           actorId: dto.actorId,
           workspaceId: dto.workspaceId,
           resourceType: "document",
-          resourceId: savedDocument.id,
+          resourceId: savedAggregate.document.id,
           action: "create",
           outcome: "success" as const,
           metadata: {
-            title: savedDocument.title,
-            publishStatus: savedDocument.publishStatus
+            title: savedAggregate.document.title,
+            publishStatus: savedAggregate.document.publishStatus
           }
         }).pipe(
-          Effect.map(() => savedDocument)
+          Effect.map(() => savedAggregate.document)
         )
       ),
       Effect.flatMap((savedDocument) =>
@@ -283,76 +176,104 @@ export class DocumentWorkflow {
       // 1. Decode DTO using schema validation
       S.decodeUnknown(UpdateDocumentCommandSchema)(input),
       Effect.flatMap((dto) => 
-        // 2. Load actor and document in parallel (with workspace validation)
+        // 2. Load actor and aggregate in parallel
         Effect.all([
           loadActor(this.userRepository, dto.actorId),
-          loadDocument(this.documentRepository, dto.id, dto.workspaceId)
+          this.documentAggregateRepository.loadById(dto.id)
         ]).pipe(
-          Effect.flatMap(([actor, document]) =>
-            // 3. Check write permission
-            ensurePermission(this.accessPolicyRepository, actor, document, "write").pipe(
-              Effect.flatMap(() => {
-                // 4. Apply domain mutations in declarative pipeline
-                return pipe(
-                  Effect.succeed(document),
-                  // Apply title mutation if provided
-                  Effect.flatMap((doc) =>
-                    dto.title !== undefined
-                      ? doc.rename(dto.title)
-                      : Effect.succeed(doc)
-                  ),
-                  // Apply description mutation if provided
-                  Effect.flatMap((doc) =>
-                    dto.description !== undefined
-                      ? pipe(
-                          filterUndefined(dto.description),
-                          (descriptionOption) => doc.updateDescription(descriptionOption)
-                        )
-                      : Effect.succeed(doc)
-                  ),
-                  // Apply tags mutation if provided
-                  Effect.flatMap((doc) =>
-                    dto.tags !== undefined
-                      ? (() => {
-                          const tagsArray = dto.tags
-                          if (tagsArray.length > 0) {
-                            return doc.removeTags([...doc.tagsOrEmpty]).pipe(
-                              Effect.flatMap((docWithoutTags) =>
-                                docWithoutTags.addTags([...tagsArray])
-                              )
+          Effect.mapError((error) => {
+            // Map aggregate load errors to WorkflowDependencyError
+            if (error instanceof DatabaseError || error instanceof ValidationError) {
+              return new WorkflowDependencyError(
+                `Failed to load document aggregate: ${error.message}`,
+                "DocumentAggregateRepository",
+                "loadById",
+                { originalError: error, documentId: dto.id }
+              )
+            }
+            return error
+          }),
+          Effect.flatMap(([actor, aggregateOption]) =>
+            // Handle Option.none - fail with WorkflowDependencyError
+            Option.match(aggregateOption, {
+              onNone: () => Effect.fail(new WorkflowDependencyError(
+                `Document aggregate not found: ${dto.id}`,
+                "DocumentAggregateRepository",
+                "loadById",
+                { documentId: dto.id }
+              )),
+              onSome: (aggregate) => {
+                // Validate workspace isolation
+                if (aggregate.document.workspaceId !== dto.workspaceId) {
+                  return Effect.fail(new WorkflowDependencyError(
+                    `Document not found in workspace: ${dto.id}`,
+                    "DocumentAggregateRepository",
+                    "loadById",
+                    { documentId: dto.id, requestedWorkspaceId: dto.workspaceId, actualWorkspaceId: aggregate.document.workspaceId }
+                  ))
+                }
+                // 3. Check write permission
+                return ensurePermission(this.accessPolicyRepository, actor, aggregate.document, "write").pipe(
+                  Effect.flatMap(() => {
+                    // Reuse loaded aggregate for field mutations
+                    return pipe(
+                      // Apply title mutation if provided
+                      dto.title !== undefined
+                        ? aggregate.rename(dto.title)
+                        : Effect.succeed(aggregate),
+                      // Apply description mutation if provided
+                      Effect.flatMap((agg) =>
+                        dto.description !== undefined
+                          ? pipe(
+                              filterUndefined(dto.description),
+                              (descriptionOption) => agg.updateDescription(descriptionOption)
                             )
-                          } else {
-                            return doc.removeTags([...doc.tagsOrEmpty])
-                          }
-                        })()
-                      : Effect.succeed(doc)
-                  ),
-                  Effect.map((doc) => ({ document: doc, dto }))
+                          : Effect.succeed(agg)
+                      ),
+                      // Apply tags mutation if provided
+                      Effect.flatMap((agg) =>
+                        dto.tags !== undefined
+                          ? (() => {
+                              const tagsArray = dto.tags
+                              if (tagsArray.length > 0) {
+                                return agg.removeTags([...agg.document.tagsOrEmpty]).pipe(
+                                  Effect.flatMap((noTagsAgg) =>
+                                    noTagsAgg.addTags([...tagsArray])
+                                  )
+                                )
+                              } else {
+                                return agg.removeTags([...agg.document.tagsOrEmpty])
+                              }
+                            })()
+                          : Effect.succeed(agg)
+                      ),
+                      Effect.map((updatedAggregate) => ({ aggregate: updatedAggregate, dto }))
+                    )
+                  })
                 )
-              })
-            )
+              }
+            })
           )
         )
       ),
       Effect.mapError(mapDocumentDomainError("update")),
-      Effect.flatMap(({ document: updatedDocument, dto }) =>
-        // 5. Persist with repository
-        this.documentRepository.save(updatedDocument).pipe(
+      Effect.flatMap(({ aggregate, dto }) =>
+        this.documentAggregateRepository.save(aggregate).pipe(
           Effect.mapError(mapDocumentPersistenceError("save")),
-          Effect.map((saved) => ({ savedDocument: saved, dto }))
+          Effect.map((savedAggregate) => ({ savedAggregate, dto }))
         )
       ),
-      Effect.flatMap(({ savedDocument, dto }) =>
+      Effect.flatMap(({ savedAggregate, dto }) =>
         // 6. Record audit event
         recordAudit(this.audit, {
           actorId: dto.actorId,
           workspaceId: dto.workspaceId,
           resourceType: "document",
-          resourceId: savedDocument.id,
+          resourceId: savedAggregate.document.id,
           action: "update",
           outcome: "success" as const,
           metadata: {
-            title: savedDocument.title,
+            title: savedAggregate.document.title,
             fieldsUpdated: {
               title: dto.title !== undefined,
               description: dto.description !== undefined,
@@ -360,7 +281,7 @@ export class DocumentWorkflow {
             }
           }
         }).pipe(
-          Effect.map(() => savedDocument)
+          Effect.map(() => savedAggregate.document)
         )
       ),
       Effect.flatMap((savedDocument) =>
@@ -375,66 +296,94 @@ export class DocumentWorkflow {
       // 1. Decode DTO using schema validation
       S.decodeUnknown(PublishDocumentCommandSchema)(input),
       Effect.flatMap((dto) => 
-        // 2. Load actor and document (with workspace validation)
+        // 2. Load actor and aggregate in parallel
         Effect.all([
           loadActor(this.userRepository, dto.actorId),
-          loadDocument(this.documentRepository, dto.documentId, dto.workspaceId)
+          this.documentAggregateRepository.loadById(dto.documentId)
         ]).pipe(
-          Effect.flatMap(([actor, document]) =>
-            // 3. Check admin access using ensurePermission helper
-            ensurePermission(this.accessPolicyRepository, actor, document, "admin").pipe(
-              Effect.flatMap(() => {
-                // 4. Apply domain mutations in declarative pipeline
-                return pipe(
-                  Effect.succeed(document),
-                  // Update publish status
-                  Effect.flatMap((doc) => doc.updatePublishStatus(dto.publishStatus)),
-                  // Update publish notes if provided
-                  Effect.flatMap((doc) =>
-                    dto.publishNotes !== undefined
-                      ? pipe(
-                          filterUndefined(dto.publishNotes),
-                          (notesOption) => doc.updatePublishNotes(notesOption)
-                        )
-                      : Effect.succeed(doc)
-                  ),
-                  Effect.map((doc) => ({ document: doc, dto }))
+          Effect.mapError((error) => {
+            // Map aggregate load errors to WorkflowDependencyError
+            if (error instanceof DatabaseError || error instanceof ValidationError) {
+              return new WorkflowDependencyError(
+                `Failed to load document aggregate: ${error.message}`,
+                "DocumentAggregateRepository",
+                "loadById",
+                { originalError: error, documentId: dto.documentId }
+              )
+            }
+            return error
+          }),
+          Effect.flatMap(([actor, aggregateOption]) =>
+            // Handle Option.none - fail with WorkflowDependencyError
+            Option.match(aggregateOption, {
+              onNone: () => Effect.fail(new WorkflowDependencyError(
+                `Document aggregate not found: ${dto.documentId}`,
+                "DocumentAggregateRepository",
+                "loadById",
+                { documentId: dto.documentId }
+              )),
+              onSome: (aggregate) => {
+                // Validate workspace isolation
+                if (aggregate.document.workspaceId !== dto.workspaceId) {
+                  return Effect.fail(new WorkflowDependencyError(
+                    `Document not found in workspace: ${dto.documentId}`,
+                    "DocumentAggregateRepository",
+                    "loadById",
+                    { documentId: dto.documentId, requestedWorkspaceId: dto.workspaceId, actualWorkspaceId: aggregate.document.workspaceId }
+                  ))
+                }
+                // 3. Check admin access using ensurePermission helper
+                return ensurePermission(this.accessPolicyRepository, actor, aggregate.document, "admin").pipe(
+                  Effect.flatMap(() => {
+                    // Reuse loaded aggregate for status/notes updates
+                    return aggregate.updatePublishStatus(dto.publishStatus).pipe(
+                      Effect.flatMap((agg) =>
+                        dto.publishNotes !== undefined
+                          ? pipe(
+                              filterUndefined(dto.publishNotes),
+                              (notesOption) => agg.updatePublishNotes(notesOption)
+                            )
+                          : Effect.succeed(agg)
+                      ),
+                      Effect.map((updatedAggregate) => ({ aggregate: updatedAggregate, dto }))
+                    )
+                  })
                 )
-              })
+              }
+            })
+          ),
+          Effect.flatMap(({ aggregate, dto }) =>
+            // 4. Sync collaborator policies before persistence (in same transactional workflow)
+            this.documentPolicySyncService.syncCollaboratorPolicies(aggregate).pipe(
+              Effect.map(() => ({ aggregate, dto }))
             )
           ),
-          Effect.flatMap(({ document: updatedDocument, dto }) =>
-            // 5. Persist with repository
-            this.documentRepository.save(updatedDocument).pipe(
+          Effect.flatMap(({ aggregate, dto }) =>
+            // 5. Save document aggregate after policy sync
+            this.documentAggregateRepository.save(aggregate).pipe(
               Effect.mapError(mapDocumentPersistenceError("save")),
-              Effect.map((saved) => ({ savedDocument: saved, dto }))
+              Effect.map((savedAggregate) => ({ savedAggregate, dto }))
             )
           ),
-          Effect.flatMap(({ savedDocument, dto }) =>
-            // 6. Sync collaborator policies when publish status transitions (BEFORE audit)
-            this.syncCollaboratorPoliciesOnPublishStatusChange(savedDocument, dto.publishStatus).pipe(
-              Effect.map(() => ({ savedDocument, dto }))
-            )
-          ),
-          Effect.flatMap(({ savedDocument, dto }) =>
-            // 7. Record audit event AFTER successful sync
+          Effect.flatMap(({ savedAggregate, dto }) =>
+            // 6. Record audit event AFTER successful sync and save
             recordAudit(this.audit, {
               actorId: dto.actorId,
               workspaceId: dto.workspaceId,
               resourceType: "document",
-              resourceId: savedDocument.id,
+              resourceId: savedAggregate.document.id,
               action: "publish",
               outcome: "success" as const,
               metadata: {
                 publishStatus: dto.publishStatus,
-                title: savedDocument.title
+                title: savedAggregate.document.title
               }
             }).pipe(
-              Effect.map(() => savedDocument)
+              Effect.map(() => savedAggregate.document)
             )
           ),
           Effect.flatMap((savedDocument) =>
-            // 8. Return serialized document
+            // 7. Return serialized document
             serializeDocument(savedDocument)
           )
         )
@@ -451,7 +400,7 @@ export class DocumentWorkflow {
         // 2. Load actor and document (with workspace validation)
         Effect.all([
           loadActor(this.userRepository, dto.actorId),
-          loadDocument(this.documentRepository, dto.documentId, dto.workspaceId)
+          loadDocument(this.documentAggregateRepository, dto.documentId, dto.workspaceId)
         ]).pipe(
           Effect.flatMap(([actor, document]) =>
             // 3. Check read permission
@@ -469,8 +418,8 @@ export class DocumentWorkflow {
         if (error instanceof DocumentNotFoundError) {
           return new WorkflowDependencyError(
             `Document not found: ${error.message}`,
-            "DocumentRepository",
-            "findById",
+            "DocumentAggregateRepository",
+            "findDocumentById",
             { originalError: error }
           )
         }
@@ -506,7 +455,7 @@ export class DocumentWorkflow {
             }
 
             // 4. Search documents with repository-level permission filtering
-            return this.documentRepository.search(searchFilters).pipe(
+            return this.documentAggregateRepository.searchDocuments(searchFilters).pipe(
               Effect.mapError(mapDocumentPersistenceError("search")),
               Effect.flatMap((paginatedResults) => {
                 // 5. Serialize accessible documents (already filtered by repository)
@@ -540,11 +489,10 @@ export class DocumentWorkflow {
   private checkDocumentDependencies(
     documentId: DocumentId
   ): Effect.Effect<void, WorkflowDependencyError | DatabaseError> {
+    // Check non-aggregate dependencies (tokens and policies)
+    // Version checks are handled by aggregate.canDelete(force)
     return pipe(
       Effect.all([
-        this.documentVersionRepository.findByDocumentId(documentId).pipe(
-          Effect.map((versions) => ({ type: "versions" as const, count: versions.length }))
-        ),
         this.downloadTokenRepository.findByDocumentId(documentId).pipe(
           Effect.map((tokens) => ({ type: "tokens" as const, count: tokens.length }))
         ),
@@ -589,51 +537,94 @@ export class DocumentWorkflow {
       // 1. Decode DTO using schema validation
       S.decodeUnknown(DeleteDocumentCommandSchema)(input),
       Effect.flatMap((dto) =>
-        // 2. Load actor and document in parallel (with workspace validation)
+        // 2. Load actor and aggregate in parallel
         Effect.all([
           loadActor(this.userRepository, dto.actorId),
-          loadDocument(this.documentRepository, dto.id, dto.workspaceId)
+          this.documentAggregateRepository.loadById(dto.id)
         ]).pipe(
-          Effect.flatMap(([actor, document]) =>
-            // 3. Check admin permission
-            ensurePermission(this.accessPolicyRepository, actor, document, "admin").pipe(
-              Effect.flatMap(() => {
-                // 4. Check for dependencies if force flag is not set
-                if (!dto.force) {
-                  return this.checkDocumentDependencies(dto.id)
-                }
-                return Effect.void
-              }),
-              Effect.flatMap(() =>
-                // 5. Delete document via repository
-                this.documentRepository.delete(dto.id).pipe(
-                  Effect.map(() => ({ deleted: true, document, dto })),
-                  Effect.mapError((error) => new WorkflowDependencyError(
-                    `Failed to delete document: ${error instanceof Error ? error.message : String(error)}`,
-                    "DocumentRepository",
-                    "delete",
-                    { originalError: error }
-                  ))
-                )
-              ),
-              Effect.flatMap(({ deleted, document, dto }) =>
-                // 6. Record audit event
-                recordAudit(this.audit, {
-                  actorId: dto.actorId,
-                  workspaceId: dto.workspaceId,
-                  resourceType: "document",
-                  resourceId: document.id,
-                  action: "delete",
-                  outcome: "success" as const,
-                  metadata: {
-                    title: document.title,
-                    force: dto.force
-                  }
-                }).pipe(
-                  Effect.map(() => deleted)
-                )
+          Effect.mapError((error) => {
+            // Map aggregate load errors to WorkflowDependencyError
+            if (error instanceof DatabaseError || error instanceof ValidationError) {
+              return new WorkflowDependencyError(
+                `Failed to load document aggregate: ${error.message}`,
+                "DocumentAggregateRepository",
+                "loadById",
+                { originalError: error, documentId: dto.id }
               )
-            )
+            }
+            return error
+          }),
+          Effect.flatMap(([actor, aggregateOption]) =>
+            // Handle Option.none - fail with WorkflowDependencyError
+            Option.match(aggregateOption, {
+              onNone: () => Effect.fail(new WorkflowDependencyError(
+                `Document aggregate not found: ${dto.id}`,
+                "DocumentAggregateRepository",
+                "loadById",
+                { documentId: dto.id }
+              )),
+              onSome: (aggregate) => {
+                // Validate workspace isolation
+                if (aggregate.document.workspaceId !== dto.workspaceId) {
+                  return Effect.fail(new WorkflowDependencyError(
+                    `Document not found in workspace: ${dto.id}`,
+                    "DocumentAggregateRepository",
+                    "loadById",
+                    { documentId: dto.id, requestedWorkspaceId: dto.workspaceId, actualWorkspaceId: aggregate.document.workspaceId }
+                  ))
+                }
+                // 3. Check admin permission
+                return ensurePermission(this.accessPolicyRepository, actor, aggregate.document, "admin").pipe(
+                  Effect.flatMap(() => {
+                    // 4. Check version dependencies via aggregate.canDelete(force)
+                    return aggregate.canDelete(Boolean(dto.force)).pipe(
+                      Effect.mapError((error) => new WorkflowDependencyError(
+                        `Cannot delete document: ${error.message}`,
+                        "DocumentAggregate",
+                        "canDelete",
+                        { originalError: error, documentId: dto.id }
+                      )),
+                      Effect.flatMap(() => {
+                        // 5. Check non-aggregate dependencies (tokens/policies) if force flag is not set
+                        if (!dto.force) {
+                          return this.checkDocumentDependencies(dto.id)
+                        }
+                        return Effect.void
+                      }),
+                      Effect.flatMap(() =>
+                        // 6. Delete via aggregate repository (will cascade)
+                        this.documentAggregateRepository.delete(dto.id, { force: Boolean(dto.force) }).pipe(
+                          Effect.map((deleted) => ({ deleted, aggregate, dto })),
+                          Effect.mapError((error) => new WorkflowDependencyError(
+                            `Failed to delete document: ${error instanceof Error ? error.message : String(error)}`,
+                            "DocumentAggregateRepository",
+                            "delete",
+                            { originalError: error }
+                          ))
+                        )
+                      ),
+                      Effect.flatMap(({ deleted, aggregate, dto }) =>
+                        // 7. Record audit event
+                        recordAudit(this.audit, {
+                          actorId: dto.actorId,
+                          workspaceId: dto.workspaceId,
+                          resourceType: "document",
+                          resourceId: aggregate.document.id,
+                          action: "delete",
+                          outcome: "success" as const,
+                          metadata: {
+                            title: aggregate.document.title,
+                            force: dto.force
+                          }
+                        }).pipe(
+                          Effect.map(() => deleted)
+                        )
+                      )
+                    )
+                  })
+                )
+              }
+            })
           )
         )
       ),
@@ -656,7 +647,7 @@ export class DocumentWorkflow {
         // 2. Load actor and document (with workspace validation)
         Effect.all([
           loadActor(this.userRepository, dto.actorId),
-          loadDocument(this.documentRepository, dto.documentId, dto.workspaceId)
+          loadDocument(this.documentAggregateRepository, dto.documentId, dto.workspaceId)
         ]).pipe(
           Effect.flatMap(([actor, document]) =>
             // 3. Load actor access context (policies)

@@ -4,16 +4,16 @@ import { Effect, Option, pipe, Schema as S, ParseResult, Clock } from "effect"
 import { injectable, inject } from "tsyringe"
 
 // Domain repositories
-import { DocumentRepository } from "@domain/document/document.repository"
-import { DocumentVersionRepository } from "@domain/documentVersion/document-version.repository"
+import { DocumentAggregateRepository } from "@domain/document/document-aggregate.repository"
 import { AccessPolicyRepository } from "@domain/accessPolicy/access-policy.repository"
 import { UserRepository } from "@domain/user/user.repository"
 
 // Domain errors
 import { DocumentVersionNotFoundError } from "@domain/documentVersion/document-version.error"
+import { DatabaseError } from "@domain/utils/base.errors"
 
 // Application errors
-import { WorkflowError } from "@application/errors/application.errors"
+import { WorkflowError, WorkflowDependencyError } from "@application/errors/application.errors"
 
 // Application DTOs
 import {
@@ -37,7 +37,6 @@ import {
   loadDocumentVersion,
   ensureRead,
   serializeDocumentVersion,
-  mapDocumentVersionPersistenceError,
   mapDocumentVersionError,
   applyPagination
 } from "@application/workflow/helpers"
@@ -55,11 +54,8 @@ import { TOKENS } from "@infra/di/container"
 @injectable()
 export class DocumentVersionWorkflow {
   constructor(
-    @inject(TOKENS.DOCUMENT_VERSION_REPOSITORY)
-    private readonly documentVersionRepository: DocumentVersionRepository,
-    
-    @inject(TOKENS.DOCUMENT_REPOSITORY)
-    private readonly documentRepository: DocumentRepository,
+    @inject(TOKENS.DOCUMENT_AGGREGATE_REPOSITORY)
+    private readonly documentAggregateRepository: DocumentAggregateRepository,
     
     @inject(TOKENS.USER_REPOSITORY)
     private readonly userRepository: UserRepository,
@@ -78,27 +74,56 @@ export class DocumentVersionWorkflow {
         // 2. Load actor and document in parallel (with workspace validation)
         Effect.all([
           loadActor(this.userRepository, dto.actorId),
-          loadDocument(this.documentRepository, dto.documentId, dto.workspaceId)
+          loadDocument(this.documentAggregateRepository, dto.documentId, dto.workspaceId)
         ]).pipe(
           Effect.flatMap(([actor, document]) =>
             // 3. Check read permission
             ensureRead(this.accessPolicyRepository, actor, document).pipe(
               Effect.flatMap(() =>
-                // 4. Fetch all versions for the document
-                this.documentVersionRepository.findByDocumentId(dto.documentId).pipe(
-                  Effect.mapError(mapDocumentVersionPersistenceError("findByDocumentId"))
+                // 4. Load aggregate to access versions
+                this.documentAggregateRepository.loadById(dto.documentId).pipe(
+                  Effect.mapError((error) => {
+                    if (error instanceof DatabaseError) {
+                      return new WorkflowDependencyError(
+                        `Database error loading aggregate: ${dto.documentId}`,
+                        "DocumentAggregateRepository",
+                        "loadById",
+                        { originalError: error }
+                      )
+                    }
+                    return new WorkflowDependencyError(
+                      `Failed to load aggregate: ${dto.documentId}`,
+                      "DocumentAggregateRepository",
+                      "loadById",
+                      { originalError: error }
+                    )
+                  }),
+                  Effect.flatMap(
+                    Option.match({
+                      onNone: () => Effect.fail(new WorkflowDependencyError(
+                        `Document aggregate not found: ${dto.documentId}`,
+                        "DocumentAggregateRepository",
+                        "loadById",
+                        {}
+                      )),
+                      onSome: (aggregate) => Effect.succeed(aggregate)
+                    })
+                  )
                 )
               )
             )
           ),
-          Effect.flatMap((versions) => {
-            // 5. Apply pagination and serialize versions using applyPagination helper
+          Effect.flatMap((aggregate) => {
+            // 5. Get versions from aggregate and apply pagination
+            const versions = aggregate.getVersions()
+            // Reverse to show latest first (descending order for UX)
+            const versionsDescending = [...versions].reverse()
             const pageNum = dto.pageNum || 1
             const pageSize = dto.pageSize || 10
             
             return applyPagination(
-              versions,
-              versions.length,
+              versionsDescending,
+              versionsDescending.length,
               pageNum,
               pageSize,
               serializeDocumentVersion
@@ -129,7 +154,7 @@ export class DocumentVersionWorkflow {
         if (error instanceof WorkflowError) {
           return error
         }
-        return mapDocumentVersionError("findByDocumentId")(error)
+        return mapDocumentVersionError("loadById")(error)
       })
     )
   }
@@ -144,32 +169,57 @@ export class DocumentVersionWorkflow {
         // 2. Load actor and document in parallel (with workspace validation)
         Effect.all([
           loadActor(this.userRepository, dto.actorId),
-          loadDocument(this.documentRepository, dto.documentId, dto.workspaceId)
+          loadDocument(this.documentAggregateRepository, dto.documentId, dto.workspaceId)
         ]).pipe(
           Effect.flatMap(([actor, document]) =>
             // 3. Check read permission
             ensureRead(this.accessPolicyRepository, actor, document).pipe(
               Effect.flatMap(() =>
-                // 4. Fetch latest version, carrying dto through the pipeline
-                this.documentVersionRepository.findLatestByDocumentId(dto.documentId).pipe(
-                  Effect.mapError(mapDocumentVersionPersistenceError("findLatestByDocumentId")),
-                  Effect.map((versionOption) => ({ dto, versionOption }))
+                // 4. Load aggregate to access versions
+                this.documentAggregateRepository.loadById(dto.documentId).pipe(
+                  Effect.mapError((error) => {
+                    if (error instanceof DatabaseError) {
+                      return new WorkflowDependencyError(
+                        `Database error loading aggregate: ${dto.documentId}`,
+                        "DocumentAggregateRepository",
+                        "loadById",
+                        { originalError: error }
+                      )
+                    }
+                    return new WorkflowDependencyError(
+                      `Failed to load aggregate: ${dto.documentId}`,
+                      "DocumentAggregateRepository",
+                      "loadById",
+                      { originalError: error }
+                    )
+                  }),
+                  Effect.flatMap(
+                    Option.match({
+                      onNone: () => Effect.fail(new WorkflowDependencyError(
+                        `Document aggregate not found: ${dto.documentId}`,
+                        "DocumentAggregateRepository",
+                        "loadById",
+                        {}
+                      )),
+                      onSome: (aggregate) => Effect.succeed(aggregate)
+                    })
+                  )
                 )
               )
             )
           ),
-          Effect.mapError(mapDocumentVersionError("findLatestByDocumentId")),
-          Effect.flatMap(({ dto, versionOption }) =>
-            // 5. Handle Option.none case using decoded dto.documentId
-            Option.match(versionOption, {
-              onNone: () => Effect.fail(new DocumentVersionNotFoundError(
-                `No versions found for document: ${dto.documentId}`,
-                "documentId",
-                dto.documentId
-              )),
-              onSome: (version) => Effect.succeed(version)
-            })
-          ),
+          Effect.flatMap((aggregate) => {
+                // 5. Get latest version from aggregate
+                const latestVersionOption = aggregate.getLatestVersion()
+                return Option.match(latestVersionOption, {
+                  onNone: () => Effect.fail(new DocumentVersionNotFoundError(
+                    `No versions found for document: ${dto.documentId}`,
+                    "documentId",
+                    dto.documentId
+                  )),
+                  onSome: (version) => Effect.succeed(version)
+                })
+          }),
           Effect.flatMap((version) =>
             // 6. Serialize and return
             serializeDocumentVersion(version)
@@ -201,27 +251,24 @@ export class DocumentVersionWorkflow {
       // 1. Decode query DTO using schema validation
       S.decodeUnknown(GetDocumentVersionQuerySchema)(input),
       Effect.flatMap((dto) =>
-        // 2. Load actor
-        loadActor(this.userRepository, dto.actorId).pipe(
-          Effect.flatMap((actor) =>
-            // 3. Load version by ID
-            loadDocumentVersion(this.documentVersionRepository, dto.versionId).pipe(
-              Effect.mapError(mapDocumentVersionError("getVersion")),
-              Effect.flatMap((version) =>
-                // 4. Load parent document to check access (with workspace validation)
-                loadDocument(this.documentRepository, version.documentId, dto.workspaceId).pipe(
-                  Effect.flatMap((document) =>
-                    // 5. Ensure read permission for parent document
-                    ensureRead(this.accessPolicyRepository, actor, document).pipe(
-                      Effect.map(() => version)
-                    )
-                  )
+        // 2. Load actor and document version in parallel
+        Effect.all([
+          loadActor(this.userRepository, dto.actorId),
+          loadDocumentVersion(this.documentAggregateRepository, dto.versionId)
+        ]).pipe(
+          Effect.flatMap(([actor, version]) =>
+            // 3. Load parent document to check access (with workspace validation)
+            loadDocument(this.documentAggregateRepository, version.documentId, dto.workspaceId).pipe(
+            Effect.flatMap((document) =>
+            // 4. Ensure read permission for parent document
+            ensureRead(this.accessPolicyRepository, actor, document).pipe(
+              Effect.map(() => version)
                 )
               )
             )
           ),
           Effect.flatMap((version) =>
-            // 6. Serialize and return
+            // 5. Serialize and return
             serializeDocumentVersion(version)
           ),
           Effect.map((serialized): DocumentVersionResponseEncoded => ({

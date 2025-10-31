@@ -19,8 +19,7 @@ describe("Workflow Test Harness", () => {
 
   it("should setup harness with all workflows", () => {
     expect(harness.db).toBeDefined()
-    expect(harness.documentRepository).toBeDefined()
-    expect(harness.documentVersionRepository).toBeDefined()
+    expect(harness.documentAggregateRepository).toBeDefined()
     expect(harness.accessPolicyRepository).toBeDefined()
     expect(harness.downloadTokenRepository).toBeDefined()
     expect(harness.userRepository).toBeDefined()

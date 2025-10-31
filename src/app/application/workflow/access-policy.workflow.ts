@@ -10,7 +10,7 @@ import { UserEntity } from "@domain/user/user.entity"
 
 // Domain repositories
 import { AccessPolicyRepository } from "@domain/accessPolicy/access-policy.repository"
-import { DocumentRepository } from "@domain/document/document.repository"
+import { DocumentAggregateRepository } from "@domain/document/document-aggregate.repository"
 import { UserRepository } from "@domain/user/user.repository"
 
 // Domain errors
@@ -74,8 +74,8 @@ export class AccessPolicyWorkflow {
     @inject(TOKENS.ACCESS_POLICY_REPOSITORY)
     private readonly accessPolicyRepository: AccessPolicyRepository,
     
-    @inject(TOKENS.DOCUMENT_REPOSITORY)
-    private readonly documentRepository: DocumentRepository,
+    @inject(TOKENS.DOCUMENT_AGGREGATE_REPOSITORY)
+    private readonly documentAggregateRepository: DocumentAggregateRepository,
     
     @inject(TOKENS.USER_REPOSITORY)
     private readonly userRepository: UserRepository,
@@ -148,7 +148,7 @@ export class AccessPolicyWorkflow {
         ]).pipe(
           Effect.flatMap(([actor, policy]) =>
             // 3. Load document from policy's resourceId (workspace from DTO)
-            loadDocument(this.documentRepository, policy.resourceId, dto.workspaceId).pipe(
+            loadDocument(this.documentAggregateRepository, policy.resourceId, dto.workspaceId).pipe(
               Effect.flatMap((document) =>
                 // 4. Check admin permission
                 this.ensureAdmin(actor, document).pipe(
@@ -200,7 +200,7 @@ export class AccessPolicyWorkflow {
         ]).pipe(
           Effect.flatMap(([actor, policy]) =>
             // 3. Load document from policy's resourceId (workspace from DTO)
-            loadDocument(this.documentRepository, policy.resourceId, dto.workspaceId).pipe(
+            loadDocument(this.documentAggregateRepository, policy.resourceId, dto.workspaceId).pipe(
               Effect.flatMap((document) =>
                 // 4. Check admin permission
                 this.ensureAdmin(actor, document).pipe(
@@ -285,7 +285,7 @@ export class AccessPolicyWorkflow {
         // 2. Load actor and document in parallel (with workspace validation)
         Effect.all([
           loadActor(this.userRepository, dto.actorId),
-          loadDocument(this.documentRepository, dto.resourceId, dto.workspaceId)
+          loadDocument(this.documentAggregateRepository, dto.resourceId, dto.workspaceId)
         ]).pipe(
           Effect.flatMap(([actor, document]) =>
             // 3. Validate subjectId user exists (if user-specific policy) to prevent orphan policies
@@ -389,7 +389,7 @@ export class AccessPolicyWorkflow {
         // 2. Load actor and document to validate workspace and permissions
         Effect.all([
           loadActor(this.userRepository, dto.actorId),
-          loadDocument(this.documentRepository, dto.documentId, dto.workspaceId)
+          loadDocument(this.documentAggregateRepository, dto.documentId, dto.workspaceId)
         ]).pipe(
           Effect.flatMap(([actor, document]) =>
             // 3. Ensure read permission to view policies
@@ -435,7 +435,7 @@ export class AccessPolicyWorkflow {
         // 2. Load actor and document to validate workspace and permissions
         Effect.all([
           loadActor(this.userRepository, dto.actorId),
-          loadDocument(this.documentRepository, dto.documentId, dto.workspaceId)
+          loadDocument(this.documentAggregateRepository, dto.documentId, dto.workspaceId)
         ]).pipe(
           Effect.flatMap(([actor, document]) =>
             // 3. Ensure read permission

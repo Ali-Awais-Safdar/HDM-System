@@ -9,8 +9,7 @@ import { loadConfig } from "@infra/config/env-config"
 import type { ConfigPort } from "@application/services/ports/config.port"
 
 // Repositories
-import { DocumentDrizzleRepository } from "@infra/repositories/document.repository"
-import { DocumentVersionDrizzleRepository } from "@infra/repositories/document-version.repository"
+import { DocumentAggregateDrizzleRepository } from "@infra/repositories/document-aggregate.repository"
 import { AccessPolicyDrizzleRepository } from "@infra/repositories/access-policy.repository"
 import { DownloadTokenDrizzleRepository } from "@infra/repositories/download-token.repository"
 import { UserDrizzleRepository } from "@infra/repositories/user.repository"
@@ -23,6 +22,9 @@ import { HonoJWTAuthToken } from "@infra/services/hono-jwt-auth-token"
 import { LocalFileStorage } from "@infra/services/local-file-storage"
 import { PinoLogger } from "@infra/services/logger.pino"
 import { AuditRepository } from "@infra/services/audit.repository"
+
+// Application Services
+import { DocumentPolicySyncService } from "@application/services/document-policy-sync.service"
 
 // Application Workflows
 import { DocumentWorkflow } from "@application/workflow/document.workflow"
@@ -58,8 +60,7 @@ export function initContainer(): void {
 
   container.registerInstance<DatabaseInterface>(TOKENS.DATABASE_CONNECTION, db)
 
-  container.registerSingleton(TOKENS.DOCUMENT_REPOSITORY, DocumentDrizzleRepository)
-  container.registerSingleton(TOKENS.DOCUMENT_VERSION_REPOSITORY, DocumentVersionDrizzleRepository)
+  container.registerSingleton(TOKENS.DOCUMENT_AGGREGATE_REPOSITORY, DocumentAggregateDrizzleRepository)
   container.registerSingleton(TOKENS.ACCESS_POLICY_REPOSITORY, AccessPolicyDrizzleRepository)
   container.registerSingleton(TOKENS.DOWNLOAD_TOKEN_REPOSITORY, DownloadTokenDrizzleRepository)
   container.registerSingleton(TOKENS.USER_REPOSITORY, UserDrizzleRepository)
@@ -72,6 +73,8 @@ export function initContainer(): void {
   container.registerSingleton(TOKENS.LOGGER_PORT, PinoLogger)
   
   container.registerSingleton(TOKENS.AUDIT_PORT, AuditRepository)
+
+  container.registerSingleton(TOKENS.DOCUMENT_POLICY_SYNC_SERVICE, DocumentPolicySyncService)
 
   container.registerSingleton(TOKENS.DOCUMENT_WORKFLOW, DocumentWorkflow)
   container.registerSingleton(TOKENS.DOCUMENT_VERSION_WORKFLOW, DocumentVersionWorkflow)

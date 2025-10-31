@@ -5,14 +5,17 @@ import { injectable, inject } from "tsyringe"
 
 // Domain entities
 import { DocumentEntity } from "@domain/document/document.entity"
-import { DocumentVersionEntity, SerializedDocumentVersion } from "@domain/documentVersion/document-version.entity"
+import { DocumentVersionEntity } from "@domain/documentVersion/document-version.entity"
 import { UserEntity } from "@domain/user/user.entity"
+import { FileMetadata } from "@domain/documentVersion/file-metadata.vo"
 
 // Domain repositories
-import { DocumentRepository } from "@domain/document/document.repository"
-import { DocumentVersionRepository } from "@domain/documentVersion/document-version.repository"
+import { DocumentAggregateRepository } from "@domain/document/document-aggregate.repository"
 import { AccessPolicyRepository } from "@domain/accessPolicy/access-policy.repository"
 import { UserRepository } from "@domain/user/user.repository"
+
+// Domain errors
+import { DatabaseError } from "@domain/utils/base.errors"
 
 // Application services
 import { FileStoragePort, FileStorageError } from "@application/services/ports/file-storage.port"
@@ -41,15 +44,13 @@ import {
 
 // Application workflow helpers
 import {
-  createEntityId,
   loadActor,
   loadDocument,
   ensurePermission,
-  mapDocumentVersionPersistenceError,
-  mapDocumentPersistenceError,
   mapUploadInitiationError,
   mapUploadConfirmationError,
-  recordAudit
+  recordAudit,
+  createEntityId
 } from "@application/workflow/helpers"
 import { LoggerPort } from "@application/services/ports/logger.port"
 
@@ -75,11 +76,8 @@ import { AuditPort } from "@application/services/ports/audit.port"
 @injectable()
 export class UploadWorkflow {
   constructor(
-    @inject(TOKENS.DOCUMENT_REPOSITORY)
-    private readonly documentRepository: DocumentRepository,
-
-    @inject(TOKENS.DOCUMENT_VERSION_REPOSITORY)
-    private readonly documentVersionRepository: DocumentVersionRepository,
+    @inject(TOKENS.DOCUMENT_AGGREGATE_REPOSITORY)
+    private readonly documentAggregateRepository: DocumentAggregateRepository,
 
     @inject(TOKENS.ACCESS_POLICY_REPOSITORY)
     private readonly accessPolicyRepository: AccessPolicyRepository,
@@ -108,21 +106,16 @@ export class UploadWorkflow {
           // 2. Load actor and document in parallel (with workspace validation)
           Effect.all([
             loadActor(this.userRepository, dto.actorId),
-            loadDocument(this.documentRepository, dto.documentId, dto.workspaceId)
+            loadDocument(this.documentAggregateRepository, dto.documentId, dto.workspaceId)
           ]).pipe(
             Effect.flatMap(([actor, document]) =>
               // 3. Check write permission
-              ensurePermission(this.accessPolicyRepository, actor, document, "write").pipe(
-                Effect.flatMap(() =>
-                  // 4. Compute next version number
-                  this.computeNextVersionNumber(dto.documentId).pipe(
-                    Effect.flatMap((nextVersion) =>
-                      // 5. Generate pre-signed upload URL
-                      this.createUploadUrl(dto, document, actor, nextVersion)
-                    )
-                  )
-                )
+            ensurePermission(this.accessPolicyRepository, actor, document, "write").pipe(
+              Effect.flatMap(() =>
+                // 4. Generate pre-signed upload URL (version resolved at confirm)
+                this.createUploadUrl(dto, document, actor)
               )
+            )
             )
           ),
           Effect.mapError(mapUploadInitiationError({ documentId: dto.documentId }))
@@ -142,7 +135,7 @@ export class UploadWorkflow {
           // 2. Load actor and document (with workspace validation)
           Effect.all([
             loadActor(this.userRepository, dto.actorId),
-            loadDocument(this.documentRepository, dto.documentId, dto.workspaceId)
+            loadDocument(this.documentAggregateRepository, dto.documentId, dto.workspaceId)
           ]).pipe(
             Effect.flatMap(([actor, document]) =>
               // 3. Recheck write permission
@@ -198,42 +191,96 @@ export class UploadWorkflow {
                           Option.match(existingVersion, {
                             // If version exists, return it (idempotency)
                             onSome: (version) => this.buildConfirmUploadResponse(version),
-                            // Otherwise, create new version
+                            // Otherwise, create new version via aggregate
                             onNone: () =>
-                              // 6. Create new document version
-                              this.createDocumentVersion(dto, document, actor, verifiedMetadata).pipe(
-                                Effect.flatMap((newVersion) =>
-                                  // 7. Update document timestamp
-                                  this.updateDocumentTimestamp(document).pipe(
-                                    Effect.flatMap(() =>
-                                    // 8. Record audit event
-                                    recordAudit(this.audit, {
-                                      actorId: dto.actorId,
-                                      workspaceId: dto.workspaceId,
-                                      resourceType: "document_version",
-                                      resourceId: newVersion.id,
-                                      action: "upload_confirm",
-                                      outcome: "success" as const,
-                                      metadata: {
-                                        documentId: document.id,
-                                        version: newVersion.version,
-                                        mimeType: dto.mimeType,
-                                        expectedMimeType: dto.mimeType,
-                                        actualMimeType: verifiedMetadata.actualMimeType,
-                                        size: verifiedMetadata.actualSize,
-                                        expectedSize: dto.size,
-                                        contentRefValid: verifiedMetadata.contentRefValid,
-                                        checksum: verifiedMetadata.checksum
-                                      }
-                                    }).pipe(
-                                        Effect.flatMap(() =>
-                                          // 9. Return version response
-                                          this.buildConfirmUploadResponse(newVersion)
-                                        )
+                              // 6. Load aggregate and record upload
+                              this.documentAggregateRepository.loadById(dto.documentId).pipe(
+                                Effect.flatMap((aggOpt) =>
+                                  Option.match(aggOpt, {
+                                    onNone: () => Effect.fail(new WorkflowDependencyError(
+                                      `Document aggregate not found: ${dto.documentId}`,
+                                      "DocumentAggregateRepository",
+                                      "loadById",
+                                      { documentId: dto.documentId }
+                                    )),
+                                    onSome: (aggregate) => {
+                                      return pipe(
+                                        S.decodeUnknown(FileMetadata)({
+                                          checksum: verifiedMetadata.checksum,
+                                          fileKey: verifiedMetadata.fileKey,
+                                          mimeType: verifiedMetadata.actualMimeType,
+                                          size: verifiedMetadata.actualSize
+                                        }),
+                                        Effect.mapError((error) => new WorkflowDependencyError(
+                                          `Failed to decode file metadata: ${error.message}`,
+                                          "FileMetadata",
+                                          "decode",
+                                          { originalError: error }
+                                        )),
+                                        Effect.flatMap((fileMetadata) =>
+                                          createEntityId(DocumentVersionId, "DocumentVersionId").pipe(
+                                            Effect.flatMap((versionId) =>
+                                              aggregate.recordUpload(
+                                                fileMetadata,
+                                                Option.some(actor.id),
+                                                dto.versionHint,
+                                                versionId
+                                              )
+                                            )
+                                          )
+                                        ),
+                                        Effect.flatMap((updatedAggregate) =>
+                                          // 7. Persist aggregate (document + new version)
+                                          this.documentAggregateRepository.save(updatedAggregate)
+                                        ),
+                                        Effect.mapError((error) => new WorkflowDependencyError(
+                                          `Failed to record upload: ${error instanceof Error ? error.message : String(error)}`,
+                                          "DocumentAggregate",
+                                          "recordUpload",
+                                          { originalError: error, documentId: dto.documentId }
+                                        ))
                                       )
+                                    }
+                                  })
+                                ),
+                                Effect.flatMap((savedAggregate) => {
+                                  // 8. Get latest version (newly created)
+                                  const latestVersionOption = savedAggregate.getLatestVersion()
+                                  if (Option.isNone(latestVersionOption)) {
+                                    return Effect.fail(new WorkflowDependencyError(
+                                      "Failed to retrieve newly created version",
+                                      "DocumentAggregate",
+                                      "getLatestVersion",
+                                      {}
+                                    ))
+                                  }
+                                  const newVersion = latestVersionOption.value
+                                  // 9. Record audit event
+                                  return recordAudit(this.audit, {
+                                    actorId: dto.actorId,
+                                    workspaceId: dto.workspaceId,
+                                    resourceType: "document_version",
+                                    resourceId: newVersion.id,
+                                    action: "upload_confirm",
+                                    outcome: "success" as const,
+                                    metadata: {
+                                      documentId: document.id,
+                                      version: newVersion.version,
+                                      mimeType: dto.mimeType,
+                                      expectedMimeType: dto.mimeType,
+                                      actualMimeType: verifiedMetadata.actualMimeType,
+                                      size: verifiedMetadata.actualSize,
+                                      expectedSize: dto.size,
+                                      contentRefValid: verifiedMetadata.contentRefValid,
+                                      checksum: verifiedMetadata.checksum
+                                    }
+                                  }).pipe(
+                                    Effect.flatMap(() =>
+                                      // 9. Return version response
+                                      this.buildConfirmUploadResponse(newVersion)
                                     )
                                   )
-                                )
+                                })
                               )
                           })
                         )
@@ -252,25 +299,11 @@ export class UploadWorkflow {
 
   // ===== PRIVATE HELPER METHODS =====
 
-  private computeNextVersionNumber(
-    documentId: DocumentId
-  ): Effect.Effect<number, WorkflowDependencyError> {
-    return pipe(
-      this.documentVersionRepository.getNextVersionNumber(documentId),
-      Effect.mapError((error) => new WorkflowDependencyError(
-        `Failed to compute next version number for document: ${documentId}`,
-        "DocumentVersionRepository",
-        "getNextVersionNumber",
-        { originalError: error, documentId }
-      ))
-    )
-  }
-
   private createUploadUrl(
     dto: S.Schema.Type<typeof InitiateUploadCommandSchema>,
     document: DocumentEntity,
     _actor: UserEntity,
-    nextVersion: number
+    nextVersion?: number
   ): Effect.Effect<InitiateUploadResponse, UploadInitiationError, Clock.Clock> {
     // Default expiry: 15 minutes
     const expiryMs = 15 * 60 * 1000
@@ -282,7 +315,7 @@ export class UploadWorkflow {
         contentRef: dto.contentRef,
         mimeType: dto.mimeType,
         fileSize: dto.size,
-        fileName: `${document.title}-v${nextVersion}`,
+        fileName: `${document.title}`,
         expiryMs
       }),
       Effect.map((storageResponse): InitiateUploadResponse => ({
@@ -401,114 +434,38 @@ export class UploadWorkflow {
     checksum: Sha256
   ): Effect.Effect<Option.Option<DocumentVersionEntity>, WorkflowDependencyError> {
     return pipe(
-      this.documentVersionRepository.findByDocumentIdAndChecksum(documentId, checksum),
-      Effect.mapError(mapDocumentVersionPersistenceError("findByDocumentIdAndChecksum"))
-    )
-  }
-
-  private createDocumentVersion(
-    dto: S.Schema.Type<typeof ConfirmUploadCommandSchema>,
-    _document: DocumentEntity,
-    actor: UserEntity,
-    verifiedMetadata: { checksum: Sha256; fileKey: FileKey; actualSize: number; actualMimeType: string; contentRefValid: boolean }
-  ): Effect.Effect<DocumentVersionEntity, WorkflowDependencyError, Clock.Clock> {
-    return pipe(
-      // Generate new version ID
-      createEntityId(DocumentVersionId, "DocumentVersionId"),
-      Effect.flatMap((versionId) =>
-        // Determine version number
-            pipe(
-              dto.versionHint !== undefined
-                ? Effect.succeed(dto.versionHint)
-                : this.computeNextVersionNumber(dto.documentId),
-              Effect.flatMap((versionNumber) =>
-                // Get current timestamp
-                Clock.currentTimeMillis.pipe(
-                  Effect.map((ms) => new Date(ms)),
-                  Effect.flatMap((now) => {
-                    // Build SerializedDocumentVersion
-                const versionData: SerializedDocumentVersion = {
-                  id: versionId,
-                  documentId: dto.documentId,
-                  version: versionNumber,
-                  file: {
-                    checksum: verifiedMetadata.checksum,
-                    fileKey: verifiedMetadata.fileKey,
-                    mimeType: verifiedMetadata.actualMimeType as any,
-                    size: verifiedMetadata.actualSize as any
-                  },
-                  createdBy: actor.id,
-                  createdAt: now.toISOString(),
-                  updatedAt: undefined
-                }
-
-                // Create entity
-                return DocumentVersionEntity.create(versionData)
-              })
+      // Load aggregate to check for existing version by checksum
+      this.documentAggregateRepository.loadById(documentId).pipe(
+        Effect.mapError((error) => {
+          if (error instanceof DatabaseError) {
+            return new WorkflowDependencyError(
+              `Database error loading aggregate: ${documentId}`,
+              "DocumentAggregateRepository",
+              "loadById",
+              { originalError: error }
             )
-          )
-        )
-      ),
-      Effect.mapError((error) => {
-        if (error instanceof WorkflowDependencyError) {
-          return error
-        }
-        return new WorkflowDependencyError(
-          `Failed to create document version: ${error instanceof Error ? error.message : String(error)}`,
-          "DocumentVersionEntity",
-          "create",
-          { originalError: error }
-        )
-      }),
-      Effect.flatMap((versionEntity) =>
-        // Persist to repository
-        this.documentVersionRepository.save(versionEntity).pipe(
-          Effect.mapError(mapDocumentVersionPersistenceError("save"))
-        )
-      )
-    )
-  }
-
-  private updateDocumentTimestamp(
-    document: DocumentEntity
-  ): Effect.Effect<DocumentEntity, WorkflowDependencyError, Clock.Clock> {
-    return pipe(
-      // Get current timestamp
-      Clock.currentTimeMillis,
-      Effect.map((ms) => new Date(ms)),
-      Effect.flatMap((now) =>
-        // Serialize current document and update timestamp
-        document.serialized().pipe(
-          Effect.mapError((error) => new WorkflowDependencyError(
-            `Failed to serialize document for timestamp update: ${error.message}`,
-            "DocumentEntity",
-            "serialized",
+          }
+          return new WorkflowDependencyError(
+            `Failed to load aggregate: ${documentId}`,
+            "DocumentAggregateRepository",
+            "loadById",
             { originalError: error }
-          )),
-          Effect.flatMap((serialized) =>
-            // Create updated document with new timestamp
-            DocumentEntity.create({
-              ...serialized,
-              updatedAt: now.toISOString()
-            }).pipe(
-              Effect.mapError((error) => new WorkflowDependencyError(
-                `Failed to create document with updated timestamp: ${error.message}`,
-                "DocumentEntity",
-                "create",
-                { originalError: error }
-              ))
-            )
           )
-        )
-      ),
-      Effect.flatMap((updatedDocument) =>
-        // Persist updated document
-        this.documentRepository.save(updatedDocument).pipe(
-          Effect.mapError(mapDocumentPersistenceError("save"))
+        }),
+        Effect.flatMap(
+          Option.match({
+            onNone: () => Effect.succeed(Option.none<DocumentVersionEntity>()),
+            onSome: (aggregate) => {
+              // Use aggregate helper to check for existing version by checksum
+              const versionOption = aggregate.getVersionByChecksum(checksum)
+              return Effect.succeed(versionOption)
+            }
+          })
         )
       )
     )
   }
+
 
   private buildConfirmUploadResponse(
     version: DocumentVersionEntity

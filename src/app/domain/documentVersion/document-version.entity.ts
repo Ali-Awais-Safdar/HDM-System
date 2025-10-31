@@ -30,7 +30,7 @@ export class DocumentVersionEntity {
       Effect.flatMap((now) => {
         const dataWithAudit = {
           ...input,
-          createdAt: input.createdAt || now,
+          createdAt: input.createdAt || now.toISOString(),
           updatedAt: input.updatedAt
         }
         return S.decodeUnknown(DocumentVersionSchema)(dataWithAudit).pipe(

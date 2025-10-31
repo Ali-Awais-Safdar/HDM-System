@@ -2,14 +2,16 @@ import { setupSharedTestDatabase, cleanupSharedTestDatabase, clearTestDatabase }
 import type { DatabaseInterface } from "@infra/db/interfaces"
 
 // Repositories
-import { DocumentDrizzleRepository } from "@infra/repositories/document.repository"
-import { DocumentVersionDrizzleRepository } from "@infra/repositories/document-version.repository"
+import { DocumentAggregateDrizzleRepository } from "@infra/repositories/document-aggregate.repository"
 import { AccessPolicyDrizzleRepository } from "@infra/repositories/access-policy.repository"
 import { DownloadTokenDrizzleRepository } from "@infra/repositories/download-token.repository"
 import { UserDrizzleRepository } from "@infra/repositories/user.repository"
 
 // Domain services (all static, no construction needed)
 import { DocumentAccessService } from "@domain/accessPolicy/document-access.service"
+
+// Application services
+import { DocumentPolicySyncService } from "@application/services/document-policy-sync.service"
 
 // Application workflows
 import { DocumentWorkflow } from "@application/workflow/document.workflow"
@@ -333,8 +335,7 @@ export interface WorkflowTestHarness {
   db: DatabaseInterface
 
   // Repositories
-  documentRepository: DocumentDrizzleRepository
-  documentVersionRepository: DocumentVersionDrizzleRepository
+  documentAggregateRepository: DocumentAggregateDrizzleRepository
   accessPolicyRepository: AccessPolicyDrizzleRepository
   downloadTokenRepository: DownloadTokenDrizzleRepository
   userRepository: UserDrizzleRepository
@@ -367,8 +368,7 @@ export async function createWorkflowTestHarness(): Promise<WorkflowTestHarness> 
   const { db, cleanup: dbCleanup } = await setupSharedTestDatabase()
 
   // Create repositories
-  const documentRepository = new DocumentDrizzleRepository(db)
-  const documentVersionRepository = new DocumentVersionDrizzleRepository(db)
+  const documentAggregateRepository = new DocumentAggregateDrizzleRepository(db)
   const accessPolicyRepository = new AccessPolicyDrizzleRepository(db)
   const downloadTokenRepository = new DownloadTokenDrizzleRepository(db)
   const userRepository = new UserDrizzleRepository(db)
@@ -383,26 +383,30 @@ export async function createWorkflowTestHarness(): Promise<WorkflowTestHarness> 
   // AccessPolicyWorkflow dependencies  
   const accessPolicyWorkflow = new AccessPolicyWorkflow(
     accessPolicyRepository,
-    documentRepository,
+    documentAggregateRepository,
     userRepository,
     auditPort
   )
 
+  // DocumentPolicySyncService
+  const documentPolicySyncService = new DocumentPolicySyncService(
+    accessPolicyRepository
+  )
+
   // DocumentWorkflow dependencies
   const documentWorkflow = new DocumentWorkflow(
-    documentRepository,
-    documentVersionRepository,
     downloadTokenRepository,
     accessPolicyRepository,
     userRepository,
+    documentAggregateRepository,
     accessPolicyWorkflow,
+    documentPolicySyncService,
     auditPort
   )
 
   // UploadWorkflow dependencies
   const uploadWorkflow = new UploadWorkflow(
-    documentRepository,
-    documentVersionRepository,
+    documentAggregateRepository,
     accessPolicyRepository,
     userRepository,
     fileStoragePort,
@@ -413,7 +417,7 @@ export async function createWorkflowTestHarness(): Promise<WorkflowTestHarness> 
   // DownloadTokenWorkflow dependencies
   const downloadTokenWorkflow = new DownloadTokenWorkflow(
     downloadTokenRepository,
-    documentRepository,
+    documentAggregateRepository,
     userRepository,
     accessPolicyRepository,
     auditPort
@@ -421,8 +425,7 @@ export async function createWorkflowTestHarness(): Promise<WorkflowTestHarness> 
 
   // DocumentVersionWorkflow dependencies
   const documentVersionWorkflow = new DocumentVersionWorkflow(
-    documentVersionRepository,
-    documentRepository,
+    documentAggregateRepository,
     userRepository,
     accessPolicyRepository
   )
@@ -438,8 +441,7 @@ export async function createWorkflowTestHarness(): Promise<WorkflowTestHarness> 
 
   return {
     db,
-    documentRepository,
-    documentVersionRepository,
+    documentAggregateRepository,
     accessPolicyRepository,
     downloadTokenRepository,
     userRepository,

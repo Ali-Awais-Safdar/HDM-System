@@ -26,7 +26,7 @@ export const mapDocumentPersistenceError = (
     if (error instanceof ValidationError) {
       return new WorkflowDependencyError(
         `Document persistence failed: ${error.message}`,
-        "DocumentRepository",
+        "DocumentAggregateRepository",
         source,
         { originalError: error }
       )
@@ -45,7 +45,7 @@ export const mapDocumentPersistenceError = (
     }
     return new WorkflowDependencyError(
       `Document ${source} failed: ${error instanceof Error ? error.message : String(error)}`,
-      "DocumentRepository",
+      "DocumentAggregateRepository",
       source,
       { originalError: error }
     )
@@ -53,13 +53,13 @@ export const mapDocumentPersistenceError = (
 }
 
 export const mapDocumentVersionPersistenceError = (
-  source: "save" | "findById" | "findByDocumentId" | "findLatestByDocumentId" | "findByDocumentIdAndChecksum"
+  source: "save" | "findDocumentIdByVersionId"
 ) => {
   return (error: unknown): WorkflowDependencyError => {
     if (error instanceof ValidationError) {
       return new WorkflowDependencyError(
         `Document version persistence failed: ${error.message}`,
-        "DocumentVersionRepository",
+        "DocumentAggregateRepository",
         source,
         { originalError: error }
       )
@@ -77,7 +77,7 @@ export const mapDocumentVersionPersistenceError = (
     }
     return new WorkflowDependencyError(
       `Document version ${source} failed: ${error instanceof Error ? error.message : String(error)}`,
-      "DocumentVersionRepository",
+      "DocumentAggregateRepository",
       source,
       { originalError: error }
     )
@@ -85,14 +85,14 @@ export const mapDocumentVersionPersistenceError = (
 }
 
 export const mapDocumentVersionError = (
-  source: "findById" | "findByDocumentId" | "findLatestByDocumentId" | "getVersion"
+  source: "getVersion" | "findDocumentIdByVersionId" | "loadById"
 ) => {
   return (error: unknown): WorkflowDependencyError | PermissionCheckError => {
     // Handle domain errors
     if (error instanceof DocumentVersionNotFoundError) {
       return new WorkflowDependencyError(
         `Document version not found: ${error.message}`,
-        "DocumentVersionRepository",
+        "DocumentAggregateRepository",
         source,
         { originalError: error }
       )
@@ -117,7 +117,7 @@ export const mapDocumentVersionError = (
     if (error instanceof ValidationError) {
       return new WorkflowDependencyError(
         `Document version validation failed: ${error.message}`,
-        "DocumentVersionRepository",
+        "DocumentAggregateRepository",
         source,
         { originalError: error }
       )
@@ -131,7 +131,7 @@ export const mapDocumentVersionError = (
     // Generic error mapping
     return new WorkflowDependencyError(
       `Document version ${source} failed: ${error instanceof Error ? error.message : String(error)}`,
-      "DocumentVersionRepository",
+      "DocumentAggregateRepository",
       source,
       { originalError: error }
     )
@@ -161,7 +161,7 @@ export const mapDocumentDomainError = (context: string) => {
     if (error instanceof DocumentNotFoundError) {
       return new WorkflowDependencyError(
         `Document not found: ${error.message}`,
-        "DocumentRepository",
+        "DocumentAggregateRepository",
         "findById",
         { originalError: error }
       )
@@ -483,7 +483,7 @@ export const mapUploadInitiationError = (
     if (error instanceof DocumentNotFoundError) {
       return new WorkflowDependencyError(
         `Document not found: ${error.message}`,
-        "DocumentRepository",
+        "DocumentAggregateRepository",
         "findById",
         { originalError: error }
       )
@@ -549,7 +549,7 @@ export const mapUploadConfirmationError = (
     if (error instanceof DocumentNotFoundError) {
       return new WorkflowDependencyError(
         `Document not found: ${error.message}`,
-        "DocumentRepository",
+        "DocumentAggregateRepository",
         "findById",
         { originalError: error }
       )

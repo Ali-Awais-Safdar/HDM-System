@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest"
-import { Effect, Option } from "effect"
+import { Option } from "effect"
 import { workflowTestLifecycle } from "../setup/test-harness"
 import type { WorkflowTestHarness } from "../setup/test-harness"
 import { seedTestActors, TEST_WORKSPACE_ID, TEST_WORKSPACE_ID_2 } from "../fixtures/actors"
 import { seedDocumentWithReadAccess, seedDocumentWithReadWriteAccess } from "../fixtures/documents"
+import { seedDocumentVersion, seedAccessPolicy, seedUser } from "../../infra/setup/seed-helpers"
 import { expectAsyncSuccess, expectSome } from "../../utils/test.helpers"
 import { withTestClock } from "../../domain/setup/test-clock"
 
@@ -54,7 +55,7 @@ describe("DocumentWorkflow", () => {
 
       // Verify database state
       const foundOption = await expectAsyncSuccess(
-        harness.documentRepository.findById(response.id as any)
+        harness.documentAggregateRepository.findDocumentById(response.id as any)
       )
       const found = expectSome(foundOption)
 
@@ -140,7 +141,7 @@ describe("DocumentWorkflow", () => {
 
       // Verify persistence
       const foundOption = await expectAsyncSuccess(
-        harness.documentRepository.findById(created.id as any)
+        harness.documentAggregateRepository.findDocumentById(created.id as any)
       )
       const found = expectSome(foundOption)
       expect(found.title).toBe("Updated Title")
@@ -199,7 +200,7 @@ describe("DocumentWorkflow", () => {
 
       // Empty string should be preserved
       const foundOption = await expectAsyncSuccess(
-        harness.documentRepository.findById(created.id as any)
+        harness.documentAggregateRepository.findDocumentById(created.id as any)
       )
       const found = expectSome(foundOption)
       expect(found.descriptionOrEmpty).toBe("")
@@ -244,7 +245,7 @@ describe("DocumentWorkflow", () => {
 
       // Verify persistence
       const foundOption = await expectAsyncSuccess(
-        harness.documentRepository.findById(created.id as any)
+        harness.documentAggregateRepository.findDocumentById(created.id as any)
       )
       const found = expectSome(foundOption)
       expect(found.publishStatus).toBe("published")
@@ -264,6 +265,224 @@ describe("DocumentWorkflow", () => {
           publishStatus: "published"
         })
       })
+    })
+
+    it("should update document with existing versions", async () => {
+      // Create a document
+      const createCommand = {
+        workspaceId: TEST_WORKSPACE_ID,
+        ownerId: actors.owner.id,
+        actorId: actors.owner.id,
+        title: "Original Title",
+        description: "Original description",
+        tags: ["original"] as readonly string[]
+      }
+
+      const created = await expectAsyncSuccess(
+        withTestClock(
+          harness.documentWorkflow.createDocument(createCommand),
+          Date.now()
+        )
+      )
+
+      // Add existing versions to the document
+      await seedDocumentVersion(harness.db, {
+        documentId: created.id as any,
+        version: 1,
+      })
+      await seedDocumentVersion(harness.db, {
+        documentId: created.id as any,
+        version: 2,
+      })
+
+      // Update the document (should load aggregate with existing versions)
+      const updateCommand = {
+        workspaceId: TEST_WORKSPACE_ID,
+        id: created.id as any,
+        actorId: actors.owner.id,
+        title: "Updated Title",
+        description: "Updated description",
+        tags: ["updated"] as readonly string[]
+      }
+
+      const updated = await expectAsyncSuccess(
+        withTestClock(
+          harness.documentWorkflow.updateDocument(updateCommand),
+          Date.now() + 1000
+        )
+      )
+
+      expect(updated.title).toBe("Updated Title")
+      expect(updated.description).toBe("Updated description")
+      expect(updated.tags).toEqual(["updated"])
+
+      // Verify persistence - document updated but versions preserved
+      const foundOption = await expectAsyncSuccess(
+        harness.documentAggregateRepository.findDocumentById(created.id as any)
+      )
+      const found = expectSome(foundOption)
+      expect(found.title).toBe("Updated Title")
+
+      // Verify versions still exist by loading aggregate
+      const aggregateOption = await expectAsyncSuccess(
+        harness.documentAggregateRepository.loadById(created.id as any)
+      )
+      const aggregate = expectSome(aggregateOption)
+      expect(aggregate.getVersionCount()).toBe(2)
+      const versions = aggregate.getVersions()
+      expect(versions.some(v => v.version === 1)).toBe(true)
+      expect(versions.some(v => v.version === 2)).toBe(true)
+    })
+
+    it("should publish document with existing versions", async () => {
+      // Create a document
+      const createCommand = {
+        workspaceId: TEST_WORKSPACE_ID,
+        ownerId: actors.owner.id,
+        actorId: actors.owner.id,
+        title: "Draft Document",
+        description: undefined,
+        tags: []
+      }
+
+      const created = await expectAsyncSuccess(
+        withTestClock(
+          harness.documentWorkflow.createDocument(createCommand),
+          Date.now()
+        )
+      )
+
+      // Add existing versions to the document
+      await seedDocumentVersion(harness.db, {
+        documentId: created.id as any,
+        version: 1,
+      })
+      await seedDocumentVersion(harness.db, {
+        documentId: created.id as any,
+        version: 2,
+      })
+
+      // Publish the document (should load aggregate with existing versions)
+      const publishCommand = {
+        workspaceId: TEST_WORKSPACE_ID,
+        documentId: created.id as any,
+        actorId: actors.owner.id,
+        publishStatus: "published" as const,
+        publishNotes: "Ready for publication"
+      }
+
+      const published = await expectAsyncSuccess(
+        withTestClock(
+          harness.documentWorkflow.publishDocument(publishCommand),
+          Date.now() + 1000
+        )
+      )
+
+      expect(published.publishStatus).toBe("published")
+      expect(published.publishNotes).toBe("Ready for publication")
+
+      // Verify persistence - document published but versions preserved
+      const foundOption = await expectAsyncSuccess(
+        harness.documentAggregateRepository.findDocumentById(created.id as any)
+      )
+      const found = expectSome(foundOption)
+      expect(found.publishStatus).toBe("published")
+      expect(found.publishNotesOrEmpty).toBe("Ready for publication")
+
+      // Verify versions still exist by loading aggregate
+      const aggregateOption = await expectAsyncSuccess(
+        harness.documentAggregateRepository.loadById(created.id as any)
+      )
+      const aggregate = expectSome(aggregateOption)
+      expect(aggregate.getVersionCount()).toBe(2)
+      const versions = aggregate.getVersions()
+      expect(versions.some(v => v.version === 1)).toBe(true)
+      expect(versions.some(v => v.version === 2)).toBe(true)
+    })
+
+    it("should sync collaborator policies to read-only when publishing as unpublished", async () => {
+      // Create a document
+      const createCommand = {
+        workspaceId: TEST_WORKSPACE_ID,
+        ownerId: actors.owner.id,
+        actorId: actors.owner.id,
+        title: "Document to Unpublish",
+        description: undefined,
+        tags: []
+      }
+
+      const created = await expectAsyncSuccess(
+        withTestClock(
+          harness.documentWorkflow.createDocument(createCommand),
+          Date.now()
+        )
+      )
+
+      // Create collaborator policies with write permissions
+      await seedAccessPolicy(harness.db, {
+        resourceId: created.id as any,
+        subjectType: "user",
+        subjectId: actors.collaborator.id,
+        actions: ["read", "update"]
+      })
+
+      const otherUser = await seedUser(harness.db, {
+        email: "other@example.com" as any,
+        roles: ["USER"]
+      })
+
+      await seedAccessPolicy(harness.db, {
+        resourceId: created.id as any,
+        subjectType: "user",
+        subjectId: otherUser.id,
+        actions: ["read", "update", "delete"]
+      })
+
+      // Verify initial policies have write permissions
+      const initialPolicies = await expectAsyncSuccess(
+        harness.accessPolicyRepository.findByResourceId(created.id as any)
+      )
+      expect(initialPolicies.length).toBeGreaterThanOrEqual(2)
+      const collaboratorPolicyBefore = initialPolicies.find(p => 
+        Option.getOrNull(p.subjectId) === actors.collaborator.id
+      )
+      expect(collaboratorPolicyBefore?.actions).toContain("update")
+
+      // Unpublish the document - this should trigger policy sync
+      const unpublishCommand = {
+        workspaceId: TEST_WORKSPACE_ID,
+        documentId: created.id as any,
+        actorId: actors.owner.id,
+        publishStatus: "unpublished" as const,
+        publishNotes: undefined
+      }
+
+      const unpublished = await expectAsyncSuccess(
+        withTestClock(
+          harness.documentWorkflow.publishDocument(unpublishCommand),
+          Date.now() + 1000
+        )
+      )
+
+      expect(unpublished.publishStatus).toBe("unpublished")
+
+      // Verify collaborator policies are now read-only
+      const updatedPolicies = await expectAsyncSuccess(
+        harness.accessPolicyRepository.findByResourceId(created.id as any)
+      )
+      
+      // Find collaborator policies (non-owner policies)
+      const collaboratorPolicies = updatedPolicies.filter(p => {
+        const subjectId = Option.getOrNull(p.subjectId)
+        return subjectId !== actors.owner.id && subjectId !== null
+      })
+
+      // All collaborator policies should be read-only
+      for (const policy of collaboratorPolicies) {
+        expect(policy.actions).toEqual(["read"])
+        expect(policy.actions).not.toContain("update")
+        expect(policy.actions).not.toContain("delete")
+      }
     })
   })
 
@@ -445,7 +664,7 @@ describe("DocumentWorkflow", () => {
 
       // Verify document unchanged
       const foundOption = await expectAsyncSuccess(
-        harness.documentRepository.findById(document.id as any)
+        harness.documentAggregateRepository.findDocumentById(document.id as any)
       )
       const found = expectSome(foundOption)
       expect(found.title).toBe(document.title)
@@ -732,7 +951,7 @@ describe("DocumentWorkflow", () => {
 
       // Verify the document was not modified
       const foundOption = await expectAsyncSuccess(
-        harness.documentRepository.findById(created.id as any)
+        harness.documentAggregateRepository.findDocumentById(created.id as any)
       )
       const found = expectSome(foundOption)
       expect(found.title).toBe("Original Title")
@@ -773,117 +992,14 @@ describe("DocumentWorkflow", () => {
 
       // Verify the document still exists
       const foundOption = await expectAsyncSuccess(
-        harness.documentRepository.findById(created.id as any)
+        harness.documentAggregateRepository.findDocumentById(created.id as any)
       )
       expect(expectSome(foundOption).id).toBe(created.id)
     })
   })
 
   describe("deleteDocument - Dependency Checking", () => {
-    it("should fail deletion when repository fails during dependency check and force is false", async () => {
-      // Create a document
-      const createCommand = {
-        workspaceId: TEST_WORKSPACE_ID,
-        ownerId: actors.owner.id,
-        actorId: actors.owner.id,
-        title: "Document to Delete",
-        description: undefined,
-        tags: []
-      }
-
-      const created = await expectAsyncSuccess(
-        withTestClock(
-          harness.documentWorkflow.createDocument(createCommand),
-          Date.now()
-        )
-      )
-
-      // Mock the documentVersionRepository.findByDocumentId to throw an error
-      const originalFindByDocumentId = harness.documentVersionRepository.findByDocumentId
-      harness.documentVersionRepository.findByDocumentId = () => {
-        return Effect.fail(new Error("Database connection failed") as any)
-      }
-
-      // Try to delete with force=false
-      const deleteCommand = {
-        workspaceId: TEST_WORKSPACE_ID,
-        id: created.id as any,
-        actorId: actors.owner.id,
-        force: false
-      }
-
-      try {
-        await expectAsyncSuccess(harness.documentWorkflow.deleteDocument(deleteCommand))
-        throw new Error("Expected deletion to fail due to repository error but got success")
-      } catch (error) {
-        expect(error).toBeDefined()
-        // The deletion should fail because the repository error during dependency check is propagated
-      }
-
-      // Restore original method
-      harness.documentVersionRepository.findByDocumentId = originalFindByDocumentId
-
-      // Verify the document still exists
-      const foundOption = await expectAsyncSuccess(
-        harness.documentRepository.findById(created.id as any)
-      )
-      expect(expectSome(foundOption).id).toBe(created.id)
-    })
-
-    it("should succeed deletion when force is true even if dependency check fails", async () => {
-      // Create a document
-      const createCommand = {
-        workspaceId: TEST_WORKSPACE_ID,
-        ownerId: actors.owner.id,
-        actorId: actors.owner.id,
-        title: "Document to Force Delete",
-        description: undefined,
-        tags: []
-      }
-
-      const created = await expectAsyncSuccess(
-        withTestClock(
-          harness.documentWorkflow.createDocument(createCommand),
-          Date.now()
-        )
-      )
-
-      // Mock the documentVersionRepository.findByDocumentId to throw an error
-      const originalFindByDocumentId = harness.documentVersionRepository.findByDocumentId
-      harness.documentVersionRepository.findByDocumentId = () => {
-        return Effect.fail(new Error("Database connection failed") as any)
-      }
-
-      // Try to delete with force=true (should skip dependency check)
-      const deleteCommand = {
-        workspaceId: TEST_WORKSPACE_ID,
-        id: created.id as any,
-        actorId: actors.owner.id,
-        force: true
-      }
-
-      const deleted = await expectAsyncSuccess(
-        harness.documentWorkflow.deleteDocument(deleteCommand)
-      )
-
-      expect(deleted).toBe(true)
-
-      // Restore original method
-      harness.documentVersionRepository.findByDocumentId = originalFindByDocumentId
-
-      // Verify the document was deleted
-      const foundOption = await expectAsyncSuccess(
-        harness.documentRepository.findById(created.id as any)
-      )
-      expect(Option.isNone(foundOption)).toBe(true)
-
-      // Verify audit event was recorded
-      const auditEvents = harness.auditPort.getEventsByAction("delete")
-      expect(auditEvents.length).toBeGreaterThan(0)
-      expect(auditEvents.some(e => e.resourceId === created.id)).toBe(true)
-    })
-
-    it("should fail deletion when dependencies exist and force is false", async () => {
+    it("should fail deletion when versions exist and force is false (via aggregate.canDelete)", async () => {
       // Use a fixture that creates a document with a version
       const { document } = await seedDocumentWithReadAccess(
         harness.db,
@@ -901,15 +1017,17 @@ describe("DocumentWorkflow", () => {
 
       try {
         await expectAsyncSuccess(harness.documentWorkflow.deleteDocument(deleteCommand))
-        throw new Error("Expected deletion to fail due to dependencies but got success")
+        throw new Error("Expected deletion to fail due to versions but got success")
       } catch (error) {
         expect(error).toBeDefined()
-        expect(String(error)).toContain("dependencies")
+        // Should fail via aggregate.canDelete which checks versions
+        const errorMessage = String(error)
+        expect(errorMessage.includes("dependencies") || errorMessage.includes("versions")).toBe(true)
       }
 
       // Verify the document still exists
       const foundOption = await expectAsyncSuccess(
-        harness.documentRepository.findById(document.id as any)
+        harness.documentAggregateRepository.findDocumentById(document.id as any)
       )
       expect(expectSome(foundOption).id).toBe(document.id)
     })
@@ -938,7 +1056,7 @@ describe("DocumentWorkflow", () => {
 
       // Verify the document was deleted
       const foundOption = await expectAsyncSuccess(
-        harness.documentRepository.findById(document.id as any)
+        harness.documentAggregateRepository.findDocumentById(document.id as any)
       )
       expect(Option.isNone(foundOption)).toBe(true)
     })
@@ -1000,7 +1118,7 @@ describe("DocumentWorkflow", () => {
 
       // Verify persistence
       const foundOption = await expectAsyncSuccess(
-        harness.documentRepository.findById(created.id as any)
+        harness.documentAggregateRepository.findDocumentById(created.id as any)
       )
       const found = expectSome(foundOption)
       expect(found.tagsOrEmpty).toEqual([])

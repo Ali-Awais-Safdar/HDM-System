@@ -7,10 +7,9 @@ import {
   seedDocumentWithOwnerAndVersion,
   SEED_TIMESTAMP,
 } from "./seed-helpers"
-import { expectAsyncSuccess } from "../../utils/test.helpers"
+import { expectAsyncSuccess, expectSome } from "../../utils/test.helpers"
 import { UserDrizzleRepository } from "@infra/repositories/user.repository"
-import { DocumentDrizzleRepository } from "@infra/repositories/document.repository"
-import { DocumentVersionDrizzleRepository } from "@infra/repositories/document-version.repository"
+import { DocumentAggregateDrizzleRepository } from "@infra/repositories/document-aggregate.repository"
 import { DownloadTokenDrizzleRepository } from "@infra/repositories/download-token.repository"
 import { AccessPolicyDrizzleRepository } from "@infra/repositories/access-policy.repository"
 import { container } from "tsyringe"
@@ -60,8 +59,9 @@ describe("Seed Helpers", () => {
       expect(document.createdAt).toEqual(SEED_TIMESTAMP)
 
       // Verify it's in the database
-      const docRepo = container.resolve(TOKENS.DOCUMENT_REPOSITORY) as DocumentDrizzleRepository
-      const foundDoc = await expectAsyncSuccess(docRepo.findById(document.id))
+      const docRepo = container.resolve(TOKENS.DOCUMENT_AGGREGATE_REPOSITORY) as DocumentAggregateDrizzleRepository
+      const foundDocOption = await expectAsyncSuccess(docRepo.findDocumentById(document.id))
+      const foundDoc = expectSome(foundDocOption)
       
       expect(foundDoc).toBeDefined()
     })
@@ -77,8 +77,13 @@ describe("Seed Helpers", () => {
       expect(version.createdAt).toEqual(SEED_TIMESTAMP)
 
       // Verify it's in the database
-      const versionRepo = container.resolve(TOKENS.DOCUMENT_VERSION_REPOSITORY) as DocumentVersionDrizzleRepository
-      const foundVersion = await expectAsyncSuccess(versionRepo.findById(version.id))
+      const aggregateRepo = container.resolve(TOKENS.DOCUMENT_AGGREGATE_REPOSITORY) as DocumentAggregateDrizzleRepository
+      const documentIdOption = await expectAsyncSuccess(aggregateRepo.findDocumentIdByVersionId(version.id))
+      const documentId = expectSome(documentIdOption)
+      const aggregateOption = await expectAsyncSuccess(aggregateRepo.loadById(documentId))
+      const aggregate = expectSome(aggregateOption)
+      const foundVersionOption = aggregate.getVersionById(version.id)
+      const foundVersion = expectSome(foundVersionOption)
       
       expect(foundVersion).toBeDefined()
     })
@@ -145,12 +150,18 @@ describe("Seed Helpers", () => {
 
       // Verify all entities are in the database
       const userRepo = container.resolve(TOKENS.USER_REPOSITORY) as UserDrizzleRepository
-      const docRepo = container.resolve(TOKENS.DOCUMENT_REPOSITORY) as DocumentDrizzleRepository
-      const versionRepo = container.resolve(TOKENS.DOCUMENT_VERSION_REPOSITORY) as DocumentVersionDrizzleRepository
+      const aggregateRepo = container.resolve(TOKENS.DOCUMENT_AGGREGATE_REPOSITORY) as DocumentAggregateDrizzleRepository
 
-      const foundOwner = await expectAsyncSuccess(userRepo.findById(owner.id))
-      const foundDoc = await expectAsyncSuccess(docRepo.findById(document.id))
-      const foundVersion = await expectAsyncSuccess(versionRepo.findById(version.id))
+      const foundOwnerOption = await expectAsyncSuccess(userRepo.findById(owner.id))
+      const foundOwner = expectSome(foundOwnerOption)
+      const foundDocOption = await expectAsyncSuccess(aggregateRepo.findDocumentById(document.id))
+      const foundDoc = expectSome(foundDocOption)
+      const documentIdOption = await expectAsyncSuccess(aggregateRepo.findDocumentIdByVersionId(version.id))
+      const documentId = expectSome(documentIdOption)
+      const aggregateOption = await expectAsyncSuccess(aggregateRepo.loadById(documentId))
+      const aggregate = expectSome(aggregateOption)
+      const foundVersionOption = aggregate.getVersionById(version.id)
+      const foundVersion = expectSome(foundVersionOption)
 
       expect(foundOwner).toBeDefined()
       expect(foundDoc).toBeDefined()

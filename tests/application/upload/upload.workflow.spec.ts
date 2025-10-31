@@ -144,16 +144,18 @@ describe("UploadWorkflow", () => {
       expect(response.createdBy).toBeDefined()
       expect(response.createdAt).toBeDefined()
 
-      // Verify version was created in repository
-      const versionOption = await expectAsyncSuccess(
-        harness.documentVersionRepository.findById(response.versionId)
+      // Verify version was created by loading aggregate
+      const aggregateOption = await expectAsyncSuccess(
+        harness.documentAggregateRepository.loadById(document.id)
       )
+      const aggregate = expectSome(aggregateOption)
+      const versionOption = aggregate.getVersionById(response.versionId)
       const version = expectSome(versionOption)
       expect(version.id).toBe(response.versionId)
 
       // Verify document's updatedAt changed
       const docOption = await expectAsyncSuccess(
-        harness.documentRepository.findById(document.id)
+        harness.documentAggregateRepository.findDocumentById(document.id)
       )
       const updatedDoc = expectSome(docOption)
       expect(updatedDoc.updatedAt).toBeDefined()
@@ -241,10 +243,12 @@ describe("UploadWorkflow", () => {
       expect(response1.versionId).toBe(response2.versionId)
       expect(response1.version).toBe(2)
 
-      // Verify only one version with this checksum exists
-      const versions = await expectAsyncSuccess(
-        harness.documentVersionRepository.findByDocumentId(document.id)
+      // Verify only one version with this checksum exists by loading aggregate
+      const aggregateOption = await expectAsyncSuccess(
+        harness.documentAggregateRepository.loadById(document.id)
       )
+      const aggregate = expectSome(aggregateOption)
+      const versions = aggregate.getVersions()
       const versionsWithChecksum = versions.filter(v => v.file.checksum === checksum)
       expect(versionsWithChecksum.length).toBe(1)
     })

@@ -5,7 +5,7 @@ import { injectable, inject } from "tsyringe"
 
 // Domain repositories
 import { DownloadTokenRepository } from "@domain/downloadToken/download-token.repository"
-import { DocumentRepository } from "@domain/document/document.repository"
+import { DocumentAggregateRepository } from "@domain/document/document-aggregate.repository"
 import { AccessPolicyRepository } from "@domain/accessPolicy/access-policy.repository"
 import { UserRepository } from "@domain/user/user.repository"
 
@@ -78,8 +78,8 @@ export class DownloadTokenWorkflow {
     @inject(TOKENS.DOWNLOAD_TOKEN_REPOSITORY)
     private readonly downloadTokenRepository: DownloadTokenRepository,
     
-    @inject(TOKENS.DOCUMENT_REPOSITORY)
-    private readonly documentRepository: DocumentRepository,
+    @inject(TOKENS.DOCUMENT_AGGREGATE_REPOSITORY)
+    private readonly documentAggregateRepository: DocumentAggregateRepository,
     
     @inject(TOKENS.USER_REPOSITORY)
     private readonly userRepository: UserRepository,
@@ -119,7 +119,7 @@ export class DownloadTokenWorkflow {
         // 2. Load actor and document in parallel (with workspace validation)
         Effect.all([
           loadActor(this.userRepository, dto.actorId),
-          loadDocument(this.documentRepository, dto.documentId, dto.workspaceId)
+          loadDocument(this.documentAggregateRepository, dto.documentId, dto.workspaceId)
         ]).pipe(
           Effect.flatMap(([actor, document]) =>
             // 3. Ensure download permission (read level)
@@ -257,7 +257,7 @@ export class DownloadTokenWorkflow {
               ),
               Effect.flatMap((token) =>
                 // 5. Load document for permission check (with workspace validation)
-                loadDocument(this.documentRepository, token.documentId, dto.workspaceId).pipe(
+                loadDocument(this.documentAggregateRepository, token.documentId, dto.workspaceId).pipe(
                   Effect.flatMap((document) =>
                     // 6. Ensure download permission (read level)
                     ensurePermission(this.accessPolicyRepository, actor, document, "read").pipe(
@@ -310,7 +310,7 @@ export class DownloadTokenWorkflow {
         // 2. Load actor and document in parallel (with workspace validation)
         Effect.all([
           loadActor(this.userRepository, dto.actorId),
-          loadDocument(this.documentRepository, dto.documentId, dto.workspaceId)
+          loadDocument(this.documentAggregateRepository, dto.documentId, dto.workspaceId)
         ]).pipe(
           Effect.flatMap(([actor, document]) =>
             // 3. Ensure download permission (read level)
@@ -381,7 +381,7 @@ export class DownloadTokenWorkflow {
               ),
               Effect.flatMap((token) =>
                 // 4. Load document and ensure permission (with workspace validation)
-                loadDocument(this.documentRepository, token.documentId, dto.workspaceId).pipe(
+                loadDocument(this.documentAggregateRepository, token.documentId, dto.workspaceId).pipe(
                   Effect.flatMap((document) =>
                     ensurePermission(this.accessPolicyRepository, actor, document, "read").pipe(
                       Effect.flatMap(() =>
@@ -464,7 +464,7 @@ export class DownloadTokenWorkflow {
               ),
               Effect.flatMap((token) =>
                 // 4. Load document and ensure permission (with workspace validation)
-                loadDocument(this.documentRepository, token.documentId, dto.workspaceId).pipe(
+                loadDocument(this.documentAggregateRepository, token.documentId, dto.workspaceId).pipe(
                   Effect.flatMap((document) =>
                     ensurePermission(this.accessPolicyRepository, actor, document, "read").pipe(
                       Effect.flatMap(() =>
