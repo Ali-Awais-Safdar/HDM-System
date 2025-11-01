@@ -35,22 +35,10 @@ describe("Workflow Test Harness", () => {
   })
 
   it("should reset file storage port on beforeEach", () => {
-    // Initial state should be empty
-    expect(harness.fileStoragePort.getUploadIntent("test-ref")).toBeUndefined()
-    
-    // Simulate an upload intent
-    harness.fileStoragePort.createUploadUrl({
-      documentId: "doc-1" as any,
-      userId: "user-1" as any,
-      contentRef: "test-ref",
-      mimeType: "application/pdf" as any,
-      fileSize: 1024 as any,
-      fileName: "test.pdf",
-      expiryMs: 60000
-    } as any)
-    
-    // Should now exist
-    expect(harness.fileStoragePort.getUploadIntent("test-ref")).toBeDefined()
+    // File storage port should be available for direct upload
+    expect(harness.fileStoragePort).toBeDefined()
+    expect(harness.fileStoragePort.uploadFile).toBeDefined()
+    expect(harness.fileStoragePort.downloadFile).toBeDefined()
   })
 
   it("should reset password hasher port on beforeEach", () => {

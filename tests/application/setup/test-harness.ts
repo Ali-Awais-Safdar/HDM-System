@@ -21,7 +21,7 @@ import { DownloadTokenWorkflow } from "@application/workflow/download-token.work
 import { DocumentVersionWorkflow } from "@application/workflow/document-version.workflow"
 
 // Port interfaces
-import { FileStoragePort, FileStorageError, InitiateUploadStorageRequest, InitiateUploadStorageResponse, CompleteUploadRequest, CompleteUploadResponse, UploadMetadata } from "@application/services/ports/file-storage.port"
+import { FileStoragePort, FileStorageError, type UploadFileRequest, type UploadFileResponse, type DownloadFileResponse, type DownloadFileMetadata } from "@application/services/ports/file-storage.port"
 import { PasswordHasherPort, PasswordHashError } from "@application/services/ports/password-hasher.port"
 import { AuthTokenPort, AuthTokenError, type TokenPayload, type GeneratedToken } from "@application/services/ports/auth-token.port"
 import { ConfigPort } from "@application/services/ports/config.port"
@@ -29,128 +29,163 @@ import { LoggerPort, type LogContext } from "@application/services/ports/logger.
 import { AuditPort, type AuditEvent } from "@application/services/ports/audit.port"
 
 // Effect and types
-import { Effect } from "effect"
+import { Effect, pipe } from "effect"
 import { Sha256 } from "@domain/refined/checksum"
 import { FileKey } from "@domain/refined/file-reference"
+import crypto from "crypto"
 
 // ===== InMemoryFileStoragePort =====
 
 export class InMemoryFileStoragePort extends FileStoragePort {
-  private uploadIntents = new Map<string, UploadMetadata>()
-  private completedUploads = new Map<string, { checksum: Sha256; completedAt: Date }>()
+  private storedFiles = new Map<FileKey, { content: Uint8Array; mimeType: string; checksum: Sha256 }>()
   
   constructor(
     private readonly responseOverrides?: {
-      createUploadUrl?: (contentRef: string) => string
-      completeUpload?: (contentRef: string) => Sha256
+      uploadFile?: (fileKey: FileKey) => Sha256
     }
   ) {
     super()
   }
 
-  createUploadUrl(
-    request: InitiateUploadStorageRequest
-  ): Effect.Effect<InitiateUploadStorageResponse, FileStorageError> {
-    // Store upload intent
-    const uploadMetadata = {
-      documentId: request.documentId,
-      userId: request.userId,
-      contentRef: request.contentRef,
-      expectedSize: request.fileSize,
-      expectedMimeType: request.mimeType,
-      initiatedAt: new Date(),
-      expiresAt: new Date(Date.now() + request.expiryMs)
-    }
-    
-    this.uploadIntents.set(request.contentRef, uploadMetadata)
-    
-    // Generate upload URL (can be overridden for testing)
-    const uploadUrl = this.responseOverrides?.createUploadUrl
-      ? this.responseOverrides.createUploadUrl(request.contentRef)
-      : `http://test-storage.local/uploads/${request.contentRef}`
-    
-    const response: InitiateUploadStorageResponse = {
-      uploadUrl,
-      fileKey: `files/${request.contentRef}` as FileKey,
-      contentRef: request.contentRef,
-      expiresAt: uploadMetadata.expiresAt,
-      uploadMetadata
-    }
-    
-    return Effect.succeed(response)
+  uploadFile(
+    request: UploadFileRequest
+  ): Effect.Effect<UploadFileResponse, FileStorageError> {
+    return pipe(
+      // Read stream to buffer
+      Effect.tryPromise({
+        try: async () => {
+          const chunks: Uint8Array[] = []
+          const reader = request.stream.getReader()
+          
+          try {
+            while (true) {
+              const { done, value } = await reader.read()
+              if (done) break
+              if (value) chunks.push(value)
+            }
+          } finally {
+            reader.releaseLock()
+          }
+          
+          // Combine chunks into single buffer
+          const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0)
+          const content = new Uint8Array(totalLength)
+          let offset = 0
+          for (const chunk of chunks) {
+            content.set(chunk, offset)
+            offset += chunk.length
+          }
+          
+          return content
+        },
+        catch: (error) => new FileStorageError(
+          `Failed to read stream: ${error instanceof Error ? error.message : String(error)}`,
+          "UPLOAD_FAILED",
+          error
+        )
+      }),
+      
+      // Calculate checksum
+      Effect.flatMap((content) =>
+        pipe(
+          Effect.tryPromise({
+            try: async () => {
+              const crypto = await import("crypto")
+              const hash = crypto.createHash("sha256")
+              hash.update(Buffer.from(content))
+              return hash.digest("hex") as Sha256
+            },
+            catch: (error) => new FileStorageError(
+              `Failed to calculate checksum: ${error instanceof Error ? error.message : String(error)}`,
+              "STORAGE_ERROR",
+              error
+            )
+          }),
+          Effect.map((checksum) => ({ content, checksum }))
+        )
+      ),
+      
+      // Generate deterministic file key
+      Effect.flatMap(({ content, checksum }) =>
+        pipe(
+          Effect.sync(() => {
+            // Generate deterministic file key from contentRef
+            const hash = crypto.createHash("sha256").update(request.metadata.contentRef).digest("hex")
+            const shortHash = hash.substring(0, 16)
+            return `files/${shortHash}` as FileKey
+          }),
+          Effect.map((fileKey) => ({ fileKey, content, checksum }))
+        )
+      ),
+      
+      // Validate size
+      Effect.flatMap(({ fileKey, content, checksum }) => {
+        const actualSize = content.length
+        if (actualSize !== request.metadata.expectedSize) {
+          return Effect.fail(new FileStorageError(
+            `File size mismatch: expected ${request.metadata.expectedSize}, got ${actualSize}`,
+            "INVALID_REQUEST"
+          ))
+        }
+        
+        // Override checksum if provided
+        const finalChecksum = this.responseOverrides?.uploadFile
+          ? this.responseOverrides.uploadFile(fileKey)
+          : checksum
+        
+        // Store file
+        this.storedFiles.set(fileKey, {
+          content,
+          mimeType: request.metadata.mimeType,
+          checksum: finalChecksum
+        })
+        
+        return Effect.succeed({
+          fileKey,
+          checksum: finalChecksum,
+          actualSize: actualSize as any,
+          actualMimeType: request.metadata.mimeType
+        })
+      })
+    )
   }
 
-  completeUpload(
-    request: CompleteUploadRequest
-  ): Effect.Effect<CompleteUploadResponse, FileStorageError> {
-    // Check if upload intent exists
-    const uploadMetadata = this.uploadIntents.get(request.contentRef)
+  downloadFile(
+    fileKey: FileKey
+  ): Effect.Effect<DownloadFileResponse, FileStorageError> {
+    const stored = this.storedFiles.get(fileKey)
     
-    if (!uploadMetadata) {
+    if (!stored) {
       return Effect.fail(new FileStorageError(
-        `Upload not found for contentRef: ${request.contentRef}`,
+        `File not found: ${fileKey}`,
         "NOT_FOUND"
       ))
     }
     
-    // Validate metadata against request
-    const contentRefMatch = uploadMetadata.contentRef === request.contentRef
-    const sizeMatch = uploadMetadata.expectedSize === request.expectedSize
-    const mimeTypeMatch = uploadMetadata.expectedMimeType === request.expectedMimeType
-    
-    // ContentRef mismatch is critical - fail immediately
-    if (!contentRefMatch) {
-      return Effect.fail(new FileStorageError(
-        `ContentRef mismatch: expected ${request.contentRef}, got ${uploadMetadata.contentRef}`,
-        "INVALID_REQUEST"
-      ))
-    }
-    
-    // Mark as completed
-    // Use a deterministic hex checksum based on contentRef for testing
-    const deterministicHash = (seed: string): Sha256 => {
-      // Convert seed to hex and pad to 64 chars
-      return Buffer.from(seed).toString('hex').padEnd(64, '0').substring(0, 64) as Sha256
-    }
-    
-    const checksum = this.responseOverrides?.completeUpload
-      ? this.responseOverrides.completeUpload(request.contentRef)
-      : deterministicHash(request.contentRef)
-    
-    this.completedUploads.set(request.contentRef, {
-      checksum,
-      completedAt: new Date()
+    // Create ReadableStream from stored content
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(stored.content)
+        controller.close()
+      }
     })
     
-    const response: CompleteUploadResponse = {
-      fileKey: request.fileKey,
-      actualSize: request.expectedSize,
-      actualMimeType: request.expectedMimeType,
-      checksum,
-      completedAt: new Date(),
-      verificationMetadata: {
-        sizeValid: sizeMatch,
-        mimeTypeValid: mimeTypeMatch,
-        contentRefValid: contentRefMatch,
-        warnings: []
-      }
+    const metadata: DownloadFileMetadata = {
+      mimeType: stored.mimeType as any,
+      size: stored.content.length as any,
+      checksum: stored.checksum as any
     }
     
-    return Effect.succeed(response)
+    return Effect.succeed({ stream, metadata })
   }
 
   // Test helpers
-  getUploadIntent(contentRef: string) {
-    return this.uploadIntents.get(contentRef)
-  }
-
-  getCompletedUpload(contentRef: string) {
-    return this.completedUploads.get(contentRef)
+  getStoredFile(fileKey: FileKey) {
+    return this.storedFiles.get(fileKey)
   }
 
   reset() {
-    this.uploadIntents.clear()
-    this.completedUploads.clear()
+    this.storedFiles.clear()
   }
 }
 
@@ -410,8 +445,7 @@ export async function createWorkflowTestHarness(): Promise<WorkflowTestHarness> 
     accessPolicyRepository,
     userRepository,
     fileStoragePort,
-    auditPort,
-    loggerPort
+    auditPort
   )
 
   // DownloadTokenWorkflow dependencies
@@ -420,6 +454,7 @@ export async function createWorkflowTestHarness(): Promise<WorkflowTestHarness> 
     documentAggregateRepository,
     userRepository,
     accessPolicyRepository,
+    fileStoragePort,
     auditPort
   )
 

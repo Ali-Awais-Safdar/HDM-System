@@ -6,13 +6,15 @@ import type { RPCContext } from "../context"
 import { executeEffect } from "../effect-adapter"
 import { withActorAndWorkspace } from "../context"
 import { toStandard } from "../standard"
+import { mimeToExt } from "./utils"
 
 import {
   CreateDownloadTokenInputSchema,
   ValidateDownloadTokenInputSchema,
   UseDownloadTokenInputSchema,
   ListDownloadTokensInputSchema,
-  RevokeDownloadTokenInputSchema
+  RevokeDownloadTokenInputSchema,
+  DownloadFileWithTokenInputSchema
 } from "@application/dto/downloadToken/commands.dto"
 import {
   DownloadTokenResponseSchema,
@@ -30,6 +32,7 @@ import {
  * - use: Mark a download token as used
  * - list: List all download tokens for a document
  * - revoke: Revoke a download token
+ * - downloadFile: Download file using a validated token (streams file directly)
  */
 
 export const create = os
@@ -136,11 +139,63 @@ export const revoke = os
     )
   })
 
+/**
+ * Download file using a validated download token.
+ * 
+ * This procedure:
+ * 1. Validates the download token
+ * 2. Marks the token as used
+ * 3. Retrieves the file from storage
+ * 4. Streams the file to the client with appropriate headers including filename and checksum
+ * 
+ * Returns a Response with file stream and metadata headers.
+ */
+export const downloadFile = os
+  .$context<RPCContext>()
+  .input(toStandard(DownloadFileWithTokenInputSchema))
+  .handler(async ({ input, context }) => {
+    const workflow = resolveWorkflow<DownloadTokenWorkflow>(TOKENS.DOWNLOAD_TOKEN_WORKFLOW)
+    
+    const command = withActorAndWorkspace({
+      token: input.token
+    }, context)
+    
+    // Execute workflow and get file stream with metadata
+    const result = await executeEffect(
+      workflow.downloadFileWithToken(command),
+      {
+        procedureName: "downloadToken.downloadFile",
+        rpcContext: context
+      }
+    )
+    
+    // Extract stream and metadata
+    const { stream, metadata } = result.stream
+    
+    // Generate filename: use originalFilename if available, otherwise create deterministic name
+    const filename =
+      metadata.originalFilename ??
+      `document-${result.documentId}-v${result.version}${mimeToExt(metadata.mimeType)}`
+    
+    // Create Response with appropriate headers including checksum for integrity verification
+    return new Response(stream, {
+      status: 200,
+      headers: {
+        "Content-Type": metadata.mimeType,
+        "Content-Length": metadata.size.toString(),
+        "Content-Disposition": `attachment; filename="${filename}"`,
+        "X-Checksum": metadata.checksum,
+        "Cache-Control": "no-cache, no-store, must-revalidate"
+      }
+    })
+  })
+
 export const downloadTokenProcedures = {
   create,
   validate,
   use,
   list,
-  revoke
+  revoke,
+  downloadFile
 }
 

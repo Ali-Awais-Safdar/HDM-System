@@ -18,7 +18,8 @@ import {
   WorkflowError,
   DownloadTokenGenerationError,
   PermissionCheckError,
-  WorkflowDependencyError 
+  WorkflowDependencyError,
+  FileNotFoundError
 } from "@application/errors/application.errors"
 
 // Application DTOs
@@ -32,7 +33,9 @@ import {
   RevokeDownloadTokenCommandEncoded,
   RevokeDownloadTokenCommandSchema,
   UseDownloadTokenCommandEncoded,
-  UseDownloadTokenCommandSchema
+  UseDownloadTokenCommandSchema,
+  DownloadFileWithTokenCommandEncoded,
+  DownloadFileWithTokenCommandSchema
 } from "@application/dto/downloadToken/commands.dto"
 
 import {
@@ -55,6 +58,9 @@ import {
   recordAudit
 } from "@application/workflow/helpers"
 
+// Application ports
+import { FileStoragePort, type DownloadFileResponse } from "@application/services/ports/file-storage.port"
+
 // DI tokens
 import { TOKENS } from "@infra/di/container"
 
@@ -62,7 +68,7 @@ import { TOKENS } from "@infra/di/container"
 import { AuditPort } from "@application/services/ports/audit.port"
 
 // Refined types
-import { DownloadTokenId } from "@domain/refined/ids"
+import { DownloadTokenId, DocumentId, WorkspaceId } from "@domain/refined/ids"
 import { DownloadTokenEntity, SerializedDownloadToken } from "@domain/downloadToken/download-token.entity"
 
 /**
@@ -71,6 +77,7 @@ import { DownloadTokenEntity, SerializedDownloadToken } from "@domain/downloadTo
  * - Validate permissions for token operations
  * - Ensure token ownership and validity
  * - Map token errors to application-level errors
+ * - Download files using validated tokens
  */
 @injectable()
 export class DownloadTokenWorkflow {
@@ -86,6 +93,9 @@ export class DownloadTokenWorkflow {
     
     @inject(TOKENS.ACCESS_POLICY_REPOSITORY)
     private readonly accessPolicyRepository: AccessPolicyRepository,
+    
+    @inject(TOKENS.FILE_STORAGE_PORT)
+    private readonly fileStoragePort: FileStoragePort,
     
     @inject(TOKENS.AUDIT_PORT)
     private readonly audit: AuditPort
@@ -103,6 +113,55 @@ export class DownloadTokenWorkflow {
           "DownloadTokenEntity",
           "serialize"
         )(error)
+      )
+    )
+  }
+
+  private loadDocumentWithVersion(
+    documentId: string,
+    workspaceId: string,
+    _actorId: string
+  ): Effect.Effect<
+    { document: ReturnType<typeof loadDocument> extends Effect.Effect<infer R, any, any> ? R : never; version: any },
+    WorkflowError,
+    Clock.Clock
+  > {
+    // documentId and workspaceId are already typed as branded strings from token entity
+    return pipe(
+      loadDocument(this.documentAggregateRepository, documentId as DocumentId, workspaceId as WorkspaceId),
+      Effect.flatMap((document) =>
+        // Load aggregate to get version with fileKey
+        this.documentAggregateRepository.loadById(documentId as any).pipe(
+          Effect.mapError((error) => new WorkflowDependencyError(
+            `Failed to load document aggregate: ${error instanceof Error ? error.message : String(error)}`,
+            "DocumentAggregateRepository",
+            "loadById",
+            { originalError: error }
+          ) as WorkflowError),
+          Effect.flatMap((aggOption) =>
+            Option.match(aggOption, {
+              onNone: () => Effect.fail(new WorkflowDependencyError(
+                `Document aggregate not found: ${documentId}`,
+                "DocumentAggregateRepository",
+                "loadById",
+                { documentId: documentId as any }
+              ) as WorkflowError),
+              onSome: (aggregate) => {
+                // Get latest version
+                const versionOption = aggregate.getLatestVersion()
+                return Option.match(versionOption, {
+                  onNone: () => Effect.fail(new WorkflowDependencyError(
+                    `No versions found for document: ${documentId}`,
+                    "DocumentAggregate",
+                    "getLatestVersion",
+                    { documentId: documentId as any }
+                  ) as WorkflowError),
+                  onSome: (version) => Effect.succeed({ document, version })
+                })
+              }
+            })
+          )
+        )
       )
     )
   }
@@ -143,7 +202,7 @@ export class DownloadTokenWorkflow {
                   token: tokenString,
                   documentId: dto.documentId,
                   issuedTo: dto.issuedTo,
-                  expiresAt: dto.expiresAt // Already an ISO string from DTO
+                  expiresAt: dto.expiresAt.toISOString() // Convert Date to ISO string for encoded format
                 }
                 
                 return DownloadTokenEntity.create(tokenData as SerializedDownloadToken).pipe(
@@ -195,7 +254,7 @@ export class DownloadTokenWorkflow {
           metadata: {
             documentId: dto.documentId,
             issuedTo: dto.issuedTo,
-            expiresAt: dto.expiresAt
+            expiresAt: dto.expiresAt.toISOString() // Convert Date to ISO string for audit metadata
           }
         }).pipe(
           Effect.map(() => savedToken)
@@ -510,6 +569,127 @@ export class DownloadTokenWorkflow {
         success,
         tokenId: input.tokenId
       }))
+    )
+  }
+
+  /**
+   * Downloads a file using a validated download token.
+   * 
+   * This method:
+   * 1. Validates and marks token as used
+   * 2. Retrieves document version and file metadata
+   * 3. Downloads file from storage
+   * 4. Records audit event
+   * 5. Returns file stream and metadata
+   */
+  downloadFileWithToken(
+    input: DownloadFileWithTokenCommandEncoded
+  ): Effect.Effect<
+    { stream: DownloadFileResponse; documentId: string; version: number },
+    WorkflowError | ParseResult.ParseError,
+    Clock.Clock
+  > {
+    return pipe(
+      // 1. Decode command DTO using schema validation
+      S.decodeUnknown(DownloadFileWithTokenCommandSchema)(input),
+      Effect.flatMap((dto) =>
+        // 2. Load actor
+        loadActor(this.userRepository, dto.actorId).pipe(
+          Effect.flatMap((actor) =>
+            // 3. Fetch and validate token
+            this.downloadTokenRepository.findByToken(dto.token).pipe(
+              Effect.mapError(mapDownloadTokenPersistenceError("findByToken")),
+              Effect.flatMap((tokenOption) =>
+                Option.match(tokenOption, {
+                  onNone: () => Effect.fail(new DownloadTokenValidationError(
+                    `Token not found: ${dto.token}`,
+                    "token",
+                    dto.token,
+                    { reason: "NOT_FOUND" }
+                  ) as WorkflowError),
+                  onSome: (token) => Effect.succeed(token)
+                })
+              ),
+              Effect.flatMap((token) =>
+                // 4. Load document aggregate and ensure permission
+                this.loadDocumentWithVersion(token.documentId, dto.workspaceId, actor.id).pipe(
+                  Effect.flatMap(({ document, version }) =>
+                    // 5. Validate token for use (ownership, expiry, usage checks)
+                    token.validateForUse(actor.id).pipe(
+                      Effect.mapError(mapDownloadTokenDomainError("validateForUse", dto.token)),
+                      Effect.flatMap(() =>
+                        // 6. Mark token as used
+                        this.downloadTokenRepository.markAsUsed(dto.token).pipe(
+                          Effect.mapError((error) => {
+                            if (error instanceof DownloadTokenAlreadyUsedError || 
+                                error instanceof BusinessRuleViolationError) {
+                              return mapDownloadTokenDomainError("markAsUsed", dto.token)(error)
+                            }
+                            return mapDownloadTokenPersistenceError("markAsUsed")(error)
+                          }),
+                          Effect.map((usedToken) => ({ usedToken, document, version, dto }))
+                        )
+                      )
+                    )
+                  )
+                )
+              ),
+              Effect.flatMap(({ usedToken, document, version, dto }) =>
+                // 7. Download file from storage using fileKey from version
+                this.fileStoragePort.downloadFile(version.fileKey).pipe(
+                  Effect.mapError((error) => {
+                    if (error.code === "NOT_FOUND") {
+                      return new FileNotFoundError(
+                        `File not found in storage: ${version.fileKey}`,
+                        version.fileKey,
+                        { originalError: error }
+                      ) as WorkflowError
+                    }
+                    return new WorkflowDependencyError(
+                      `Failed to download file: ${error.message}`,
+                      "FileStoragePort",
+                      "downloadFile",
+                      { originalError: error, storageError: error.code }
+                    ) as WorkflowError
+                  }),
+                  Effect.map((downloadResponse) => ({ 
+                    downloadResponse, 
+                    usedToken, 
+                    document, 
+                    version, 
+                    dto 
+                  }))
+                )
+              ),
+              Effect.flatMap(({ downloadResponse, usedToken, document, version, dto }) =>
+                // 8. Record audit event for file download
+                recordAudit(this.audit, {
+                  actorId: dto.actorId,
+                  workspaceId: dto.workspaceId,
+                  resourceType: "download_token",
+                  resourceId: usedToken.id,
+                  action: "download",
+                  outcome: "success" as const,
+                  metadata: {
+                    documentId: document.id,
+                    documentTitle: document.title,
+                    version: version.version,
+                    fileKey: version.fileKey,
+                    mimeType: downloadResponse.metadata.mimeType,
+                    fileSize: downloadResponse.metadata.size
+                  }
+                }).pipe(
+                  Effect.map(() => ({
+                    stream: downloadResponse,
+                    documentId: document.id,
+                    version: version.version
+                  }))
+                )
+              )
+            )
+          )
+        )
+      )
     )
   }
 }

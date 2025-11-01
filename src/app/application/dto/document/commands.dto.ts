@@ -9,6 +9,21 @@ import { VersionNumber } from "@domain/documentVersion/version-number.vo"
 
 // ===== INPUT SCHEMAS (Client-supplied, no auth/workspace fields) =====
 
+/**
+ * Upload form schema with File instance for multipart form data intake.
+ * Used by oRPC procedures that accept File objects for direct streaming upload.
+ */
+export const InitiateUploadFormSchema = S.Struct({
+  file: S.instanceOf(File),
+  documentId: DocumentVersionFields.documentId,
+  mimeType: FileMetadataFields.mimeType,
+  size: FileMetadataFields.size,
+  contentRef: FileKey,
+  checksum: S.optional(Sha256)
+})
+export type InitiateUploadForm = S.Schema.Type<typeof InitiateUploadFormSchema>
+export type InitiateUploadFormEncoded = S.Schema.Encoded<typeof InitiateUploadFormSchema>
+
 export const CreateDocumentInputSchema = S.Struct({
   title: DocumentFields.title,
   description: DocumentFields.description,
@@ -48,7 +63,7 @@ export type InitiateUploadCommandEncoded = S.Schema.Encoded<typeof InitiateUploa
 export const ConfirmUploadInputSchema = S.Struct({
   documentId: DocumentVersionFields.documentId,
   fileKey: FileKey,
-  checksum: Sha256,
+  checksum: S.optional(Sha256), // Optional: for client auditing; stored checksum is authoritative
   mimeType: FileMetadataFields.mimeType,
   size: FileMetadataFields.size,
   contentRef: FileKey,

@@ -3,6 +3,7 @@ import { DocumentId, DocumentVersionId, UserId } from "@domain/refined/ids"
 import { DocumentFields } from "@domain/document/document.schema"
 import { DateTimeFromString } from "@domain/refined/date-time"
 import { FileKey } from "@domain/refined/file-reference"
+import { Sha256 } from "@domain/refined/checksum"
 import { DocumentVersionFields } from "@domain/documentVersion/document-version.schema"
 import { PageNumber, DocumentPageSize } from "@domain/utils/pagination"
 import { Optional } from "@domain/utils/schema.utils"
@@ -41,11 +42,9 @@ export const PaginatedDocumentsResponseSchema = S.Struct({
 export type PaginatedDocumentsResponseEncoded = S.Schema.Encoded<typeof PaginatedDocumentsResponseSchema>
 
 export const InitiateUploadResponseSchema = S.Struct({
-  uploadUrl: S.String,
   fileKey: FileKey,
-  contentRef: FileKey,
-  expiresAt: S.String, // ISO date string (workflow converts Date to ISO)
-  uploadToken: S.String
+  checksum: Sha256,
+  contentRef: FileKey
 })
 export type InitiateUploadResponse = S.Schema.Type<typeof InitiateUploadResponseSchema>
 

@@ -26,6 +26,11 @@ export const RevokeDownloadTokenInputSchema = S.Struct({
   tokenId: DownloadTokenId
 })
 
+export const DownloadFileWithTokenInputSchema = S.Struct({
+  token: DownloadTokenString
+})
+export type DownloadFileWithTokenInput = S.Schema.Type<typeof DownloadFileWithTokenInputSchema>
+
 // ===== COMMAND/QUERY SCHEMAS (Internal, with injected auth/workspace fields) =====
 
 export const CreateDownloadTokenCommandSchema = CreateDownloadTokenInputSchema.pipe(
@@ -69,4 +74,13 @@ export const RevokeDownloadTokenCommandSchema = RevokeDownloadTokenInputSchema.p
 )
 export type RevokeDownloadTokenCommand = S.Schema.Type<typeof RevokeDownloadTokenCommandSchema>
 export type RevokeDownloadTokenCommandEncoded = S.Schema.Encoded<typeof RevokeDownloadTokenCommandSchema>
+
+export const DownloadFileWithTokenCommandSchema = DownloadFileWithTokenInputSchema.pipe(
+  S.extend(S.Struct({
+    workspaceId: WorkspaceId,
+    actorId: UserId
+  }))
+)
+export type DownloadFileWithTokenCommand = S.Schema.Type<typeof DownloadFileWithTokenCommandSchema>
+export type DownloadFileWithTokenCommandEncoded = S.Schema.Encoded<typeof DownloadFileWithTokenCommandSchema>
 

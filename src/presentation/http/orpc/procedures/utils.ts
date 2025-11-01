@@ -35,3 +35,15 @@ export function normalizeUploadResponse<T extends {
   }
 }
 
+export function mimeToExt(mimeType: string): string {
+  const mimeToExtension: Record<string, string> = {
+    "application/pdf": ".pdf",
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "text/plain": ".txt",
+    "application/msword": ".doc",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx"
+  }
+  return mimeToExtension[mimeType] || ""
+}
+

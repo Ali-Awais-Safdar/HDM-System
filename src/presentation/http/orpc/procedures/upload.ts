@@ -9,7 +9,7 @@ import { toStandard } from "../standard"
 import { normalizeUploadResponse } from "./utils"
 
 import {
-  InitiateUploadInputSchema,
+  InitiateUploadFormSchema,
   ConfirmUploadInputSchema
 } from "@application/dto/document/commands.dto"
 import {
@@ -21,24 +21,35 @@ import {
  * Upload Procedures
  *
  * RPC endpoints for file upload operations:
- * - initiateUpload: Generates pre-signed upload URL
+ * - initiateUpload: Direct file upload with streaming via multipart form data
  * - confirmUpload: Confirms upload and creates document version
  */
 
 export const initiateUpload = os
   .$context<RPCContext>()
-  .input(toStandard(InitiateUploadInputSchema))
+  .input(toStandard(InitiateUploadFormSchema))
   .output(toStandard(InitiateUploadResponseSchema))
   .handler(async ({ input, context }) => {
     const workflow = resolveWorkflow<UploadWorkflow>(TOKENS.UPLOAD_WORKFLOW)
 
-    const command = withActorAndWorkspace({
-      documentId: input.documentId,
-      mimeType: input.mimeType,
-      size: input.size,
-      contentRef: input.contentRef,
-      checksum: input.checksum
-    }, context)
+    // Extract File instance and metadata from multipart form data
+    const { file, documentId, mimeType, size, contentRef, checksum } = input
+
+    // Convert File to ReadableStream for workflow processing
+    const stream = file.stream() as ReadableStream<Uint8Array>
+
+    // Build command with metadata and stream
+    const command = withActorAndWorkspace(
+      {
+        documentId,
+        mimeType,
+        size,
+        contentRef,
+        checksum,
+        stream
+      },
+      context
+    )
 
     return await executeEffect(
       workflow.initiateUpload(command),

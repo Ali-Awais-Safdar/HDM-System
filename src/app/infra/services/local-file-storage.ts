@@ -1,5 +1,6 @@
 import { Effect, pipe } from "effect"
 import { promises as fs } from "fs"
+import { createReadStream, createWriteStream } from "fs"
 import * as path from "path"
 import crypto from "crypto"
 import type { ConfigPort } from "@application/services/ports/config.port"
@@ -9,14 +10,23 @@ import { TOKENS } from "@infra/di/container"
 import { 
   FileStoragePort, 
   FileStorageError, 
-  type InitiateUploadStorageRequest, 
-  type InitiateUploadStorageResponse, 
-  type CompleteUploadRequest, 
-  type CompleteUploadResponse, 
-  type UploadMetadata 
+  type UploadFileRequest,
+  type UploadFileResponse,
+  type DownloadFileResponse,
+  type DownloadFileMetadata
 } from "@application/services/ports/file-storage.port"
 import type { FileKey, MimeType, FileSize } from "@domain/refined/file-reference"
 import type { Sha256 } from "@domain/refined/checksum"
+
+/**
+ * Metadata stored alongside binary files for checksum verification and file attributes.
+ */
+type StoredMetadata = {
+  checksum: Sha256
+  mimeType: MimeType
+  size: FileSize
+  originalFilename?: string
+}
 
 /**
  * LocalFileStorage implements FileStoragePort using the local filesystem.
@@ -24,16 +34,15 @@ import type { Sha256 } from "@domain/refined/checksum"
  * This implementation:
  * - Stores files in a configurable base directory (STORAGE_PATH)
  * - Generates deterministic file keys based on contentRef
- * - Creates upload metadata files for tracking upload sessions
- * - Validates file existence and metadata during completeUpload
+ * - Streams files directly to storage with checksum calculation during write
+ * - Validates file size and MIME type during upload
  * - Uses Effect for error handling with proper error mapping
  */
 @injectable()
 export class LocalFileStorage extends FileStoragePort {
   private readonly storagePath: string
-  private readonly metadataPath: string
-  private readonly uploadsPath: string
   private readonly logger: LoggerPort
+  private readonly METADATA_EXTENSION = ".meta.json" as const
 
   constructor(
     @inject(TOKENS.CONFIG_PORT)
@@ -43,237 +52,271 @@ export class LocalFileStorage extends FileStoragePort {
   ) {
     super()
     this.storagePath = config.STORAGE_PATH
-    this.metadataPath = path.join(this.storagePath, "metadata")
-    this.uploadsPath = path.join(this.storagePath, "uploads")
     this.logger = logger.child({ service: "LocalFileStorage" })
   }
 
-  createUploadUrl(
-    request: InitiateUploadStorageRequest
-  ): Effect.Effect<InitiateUploadStorageResponse, FileStorageError> {
-    this.logger.debug("Creating upload URL", {
-      documentId: request.documentId,
-      userId: request.userId,
-      fileSize: request.fileSize,
-      mimeType: request.mimeType
+  uploadFile(
+    request: UploadFileRequest
+  ): Effect.Effect<UploadFileResponse, FileStorageError> {
+    this.logger.debug("Uploading file directly", {
+      documentId: request.metadata.documentId,
+      userId: request.metadata.userId,
+      contentRef: request.metadata.contentRef,
+      expectedSize: request.metadata.expectedSize,
+      mimeType: request.metadata.mimeType
     })
-    
+
     return pipe(
-      // 1. Ensure directories exist
-      this.ensureDirectories(),
-      
-      // 2. Generate deterministic file key from contentRef
-      Effect.flatMap(() => this.generateFileKey(request.contentRef)),
-      
-      // 3. Create upload metadata with file key
+      // 1. Generate deterministic file key from contentRef
+      this.generateFileKey(request.metadata.contentRef),
+
+      // 2. Build full file path and ensure parent directories exist
       Effect.flatMap((fileKey) => {
-        const metadata: UploadMetadata = {
-          documentId: request.documentId,
-          userId: request.userId,
-          contentRef: request.contentRef,
-          expectedSize: request.fileSize,
-          expectedMimeType: request.mimeType,
-          initiatedAt: new Date(),
-          expiresAt: new Date(Date.now() + request.expiryMs)
-        }
+        const filePath = path.join(this.storagePath, fileKey)
+        const fileDir = path.dirname(filePath)
         
         return pipe(
-          this.createUploadMetadata(metadata, request.contentRef),
-          Effect.map(() => ({ metadata, fileKey }))
+          Effect.tryPromise({
+            try: async () => {
+              await fs.mkdir(fileDir, { recursive: true })
+              return { filePath, fileKey }
+            },
+            catch: (error) => new FileStorageError(
+              `Failed to create file directory: ${error instanceof Error ? error.message : String(error)}`,
+              "STORAGE_ERROR",
+              error
+            )
+          })
         )
       }),
-      
-      // 4. Build response
-      Effect.map(({ metadata, fileKey }) => {
-        this.logger.info("Upload URL created successfully", {
-          documentId: request.documentId,
-          fileKey,
-          expiresAt: metadata.expiresAt
+
+      // 4. Stream file to storage and calculate checksum simultaneously
+      Effect.flatMap(({ filePath, fileKey }) =>
+        pipe(
+          Effect.tryPromise({
+            try: async () => {
+              // Create hash for checksum calculation
+              const hash = crypto.createHash("sha256")
+              let bytesWritten = 0
+
+              // Get reader from Web ReadableStream
+              const reader = request.stream.getReader()
+              const writeStream = createWriteStream(filePath)
+
+              try {
+                // Stream file data while calculating hash
+                while (true) {
+                  const { done, value } = await reader.read()
+
+                  if (done) {
+                    // Finalize write stream
+                    writeStream.end()
+                    break
+                  }
+
+                  // Update hash during write
+                  hash.update(value)
+
+                  // Write to file with backpressure handling
+                  if (!writeStream.write(value)) {
+                    await new Promise<void>((resolve) => {
+                      writeStream.once("drain", resolve)
+                    })
+                  }
+
+                  bytesWritten += value.length
+                }
+
+                // Wait for write stream to finish
+                await new Promise<void>((resolve, reject) => {
+                  writeStream.on("finish", resolve)
+                  writeStream.on("error", reject)
+                })
+
+                // Finalize hash
+                const checksum = hash.digest("hex") as Sha256
+                const actualSize = bytesWritten as FileSize
+
+                return { filePath, fileKey, checksum, actualSize }
+              } catch (error) {
+                // Cleanup on error
+                writeStream.destroy()
+                reader.releaseLock()
+                
+                // Try to delete partial file
+                try {
+                  await fs.unlink(filePath)
+                } catch {
+                  // Ignore cleanup errors
+                }
+
+                throw error
+              } finally {
+                reader.releaseLock()
+              }
+            },
+            catch: (error) => new FileStorageError(
+              `Failed to write file stream: ${error instanceof Error ? error.message : String(error)}`,
+              "UPLOAD_FAILED",
+              error
+            )
+          })
+        )
+      ),
+
+      // 5. Validate file size and persist metadata
+      Effect.flatMap(({ filePath, fileKey, checksum, actualSize }) =>
+        pipe(
+          this.getFileStats(filePath),
+          Effect.flatMap(() => {
+            // Validate size
+            if (actualSize !== request.metadata.expectedSize) {
+              return pipe(
+                this.cleanupFilesOnError(filePath),
+                Effect.flatMap(() =>
+                  Effect.fail(new FileStorageError(
+                    `File size mismatch: expected ${request.metadata.expectedSize}, got ${actualSize}`,
+                    "INVALID_REQUEST",
+                    { expectedSize: request.metadata.expectedSize, actualSize }
+                  ))
+                )
+              )
+            }
+
+            const mimeType = request.metadata.mimeType
+
+            // Persist metadata sidecar file after successful validation
+            const metadata: StoredMetadata = request.metadata.originalFilename !== undefined
+              ? {
+                  checksum,
+                  mimeType,
+                  size: actualSize,
+                  originalFilename: request.metadata.originalFilename
+                }
+              : {
+                  checksum,
+                  mimeType,
+                  size: actualSize
+                }
+            
+            return pipe(
+              this.writeMetadata(filePath, metadata),
+              Effect.map(() => ({
+                fileKey,
+                checksum,
+                actualSize,
+                actualMimeType: mimeType
+              }))
+            )
+          })
+        )
+      ),
+
+      // 6. Log successful upload
+      Effect.tap((response) => Effect.sync(() => {
+        this.logger.info("File uploaded successfully", {
+          fileKey: response.fileKey,
+          checksum: response.checksum,
+          actualSize: response.actualSize,
+          actualMimeType: response.actualMimeType
         })
-        
-        return {
-          uploadUrl: `/api/files/upload/${request.contentRef}`,
-          fileKey: fileKey,
-          contentRef: request.contentRef,
-          expiresAt: metadata.expiresAt,
-          uploadMetadata: metadata
-        }
-      }),
-      
+      })),
+
       // Log errors
       Effect.tapError((error) => Effect.sync(() => {
-        this.logger.error("Failed to create upload URL", {
-          documentId: request.documentId,
-          error: error.message,
-          errorCode: error.code
+        this.logger.error("Failed to upload file", {
+          documentId: request.metadata.documentId,
+          contentRef: request.metadata.contentRef,
+          error: error instanceof Error ? error.message : String(error),
+          errorCode: error instanceof FileStorageError ? error.code : undefined
         })
       }))
     )
   }
 
-  completeUpload(
-    request: CompleteUploadRequest
-  ): Effect.Effect<CompleteUploadResponse, FileStorageError> {
-    this.logger.debug("Completing upload", {
-      fileKey: request.fileKey,
-      expectedSize: request.expectedSize,
-      expectedMimeType: request.expectedMimeType
-    })
-    
+  downloadFile(
+    fileKey: FileKey
+  ): Effect.Effect<DownloadFileResponse, FileStorageError> {
+    this.logger.debug("Downloading file", { fileKey })
+
     return pipe(
-      // 1. Load upload metadata
-      this.loadUploadMetadata(request.contentRef),
-      
-      // 2. Validate metadata against request
-      Effect.flatMap((metadata) => {
-        // Compare stored metadata with request
-        const contentRefMatch = metadata.contentRef === request.contentRef
-        const sizeMatch = metadata.expectedSize === request.expectedSize
-        const mimeTypeMatch = metadata.expectedMimeType === request.expectedMimeType
-        
-        // ContentRef mismatch is critical - fail immediately
-        if (!contentRefMatch) {
-          return Effect.fail(new FileStorageError(
-            `ContentRef mismatch: expected ${request.contentRef}, got ${metadata.contentRef}`,
-            "INVALID_REQUEST"
-          ))
-        }
-        
-        // Return metadata for later use
-        return Effect.succeed({ metadata, sizeMatch, mimeTypeMatch })
-      }),
-      
-      // 3. Get the file path based on fileKey
-      Effect.flatMap((validation) => {
-        const filePath = path.join(this.storagePath, request.fileKey)
-        return Effect.succeed({ ...validation, filePath })
-      }),
-      
-      // 4. Verify file exists and get stats
-      Effect.flatMap(({ metadata, sizeMatch, mimeTypeMatch, filePath }) =>
+      // 1. Build file path
+      Effect.sync(() => path.join(this.storagePath, fileKey)),
+
+      // 2. Check if file exists and get metadata
+      Effect.flatMap((filePath) =>
         pipe(
           Effect.tryPromise({
             try: async () => {
               await fs.access(filePath, fs.constants.F_OK)
               return filePath
             },
-            catch: (error) => {
-              // Sanitize file path in error message
-              return new FileStorageError(
-                `File not found: ${request.fileKey}`,
-                "NOT_FOUND",
-                error
-              )
-            }
+            catch: (error) => new FileStorageError(
+              `File not found: ${fileKey}`,
+              "NOT_FOUND",
+              error
+            )
           }),
           Effect.flatMap((existingPath) =>
             Effect.zip(
               Effect.succeed(existingPath),
               this.getFileStats(existingPath)
             )
-          ),
-          Effect.map(([filePath, stats]) => ({ metadata, sizeMatch, mimeTypeMatch, filePath, stats }))
+          )
         )
       ),
-      
-      // 5. Calculate file checksum
-      Effect.flatMap(({ metadata, sizeMatch, mimeTypeMatch, filePath, stats }) =>
+
+      // 3. Read metadata sidecar and create stream
+      Effect.flatMap(([filePath, _stats]) =>
         pipe(
-          Effect.tryPromise({
-            try: async () => {
-              const fileBuffer = await fs.readFile(filePath)
-              const hash = crypto.createHash("sha256").update(fileBuffer).digest("hex")
-              return hash
-            },
-            catch: (error) => new FileStorageError(
-              `Failed to calculate file checksum: ${error instanceof Error ? error.message : String(error)}`,
-              "STORAGE_ERROR",
-              error
-            )
-          }),
-          Effect.map((checksum) => ({ metadata, sizeMatch, mimeTypeMatch, filePath, stats, checksum }))
+          this.readMetadata(filePath),
+          Effect.map((storedMetadata) => {
+            // Create Node.js read stream
+            const nodeStream = createReadStream(filePath)
+
+            // Convert Node.js stream to Web ReadableStream
+            const webStream = this.nodeStreamToWebStream(nodeStream)
+
+            // Build metadata from stored sidecar
+            const metadata: DownloadFileMetadata = storedMetadata.originalFilename !== undefined
+              ? {
+                  mimeType: storedMetadata.mimeType,
+                  size: storedMetadata.size,
+                  checksum: storedMetadata.checksum,
+                  originalFilename: storedMetadata.originalFilename
+                }
+              : {
+                  mimeType: storedMetadata.mimeType,
+                  size: storedMetadata.size,
+                  checksum: storedMetadata.checksum
+                }
+
+            return { stream: webStream, metadata }
+          })
         )
       ),
-      
-      // 6. Build verification metadata
-      Effect.map(({ metadata, sizeMatch, mimeTypeMatch, filePath, stats, checksum }) => {
-        const actualSize = stats.size
-        const actualMimeType = this.detectMimeType(filePath)
-        
-        // Validate contentRef
-        const contentRefValid = metadata.contentRef === request.contentRef
-        
-        const verificationMetadata = {
-          sizeValid: actualSize === request.expectedSize && sizeMatch,
-          mimeTypeValid: actualMimeType === request.expectedMimeType && mimeTypeMatch,
-          contentRefValid: contentRefValid,
-          warnings: [] as string[]
-        }
-        
-        if (!verificationMetadata.sizeValid) {
-          verificationMetadata.warnings.push(
-            `File size mismatch: expected ${request.expectedSize}, got ${actualSize}`
-          )
-        }
-        if (!verificationMetadata.mimeTypeValid) {
-          verificationMetadata.warnings.push(
-            `MIME type mismatch: expected ${request.expectedMimeType}, got ${actualMimeType}`
-          )
-        }
-        
-        return {
-          fileKey: request.fileKey,
-          actualSize: actualSize as FileSize,
-          actualMimeType: actualMimeType as MimeType,
-          checksum: checksum as Sha256,
-          completedAt: new Date(),
-          verificationMetadata
-        }
-      }),
-      
-      // 7. Log successful completion
+
+      // 4. Log successful download
       Effect.tap((response) => Effect.sync(() => {
-        this.logger.info("Upload completed successfully", {
-          fileKey: response.fileKey,
-          actualSize: response.actualSize,
-          checksum: response.checksum,
-          warnings: response.verificationMetadata.warnings.length > 0 
-            ? response.verificationMetadata.warnings 
-            : undefined
+        this.logger.info("File download initiated", {
+          fileKey,
+          size: response.metadata.size,
+          mimeType: response.metadata.mimeType
         })
       })),
-      
-      // 8. Cleanup metadata file
-      Effect.tap(() => this.cleanupMetadata(request.contentRef)),
-      
+
       // Log errors
       Effect.tapError((error) => Effect.sync(() => {
-        this.logger.error("Failed to complete upload", {
-          fileKey: request.fileKey,
-          error: error.message,
-          errorCode: error.code
+        this.logger.error("Failed to download file", {
+          fileKey,
+          error: error instanceof Error ? error.message : String(error),
+          errorCode: error instanceof FileStorageError ? error.code : undefined
         })
       }))
     )
   }
 
   // ===== PRIVATE HELPERS =====
-
-  private ensureDirectories(): Effect.Effect<void, FileStorageError> {
-    return pipe(
-      Effect.tryPromise({
-        try: async () => {
-          await fs.mkdir(this.metadataPath, { recursive: true })
-          await fs.mkdir(this.uploadsPath, { recursive: true })
-        },
-        catch: (error) => new FileStorageError(
-          `Failed to create storage directories: ${error instanceof Error ? error.message : String(error)}`,
-          "STORAGE_ERROR",
-          error
-        )
-      })
-    )
-  }
 
   private generateFileKey(contentRef: string): Effect.Effect<FileKey, FileStorageError> {
     return pipe(
@@ -286,54 +329,6 @@ export class LocalFileStorage extends FileStoragePort {
       })
     )
   }
-
-  private createUploadMetadata(
-    metadata: UploadMetadata,
-    contentRef: string
-  ): Effect.Effect<void, FileStorageError> {
-    return pipe(
-      Effect.tryPromise({
-        try: async () => {
-          const metadataFile = path.join(this.metadataPath, `${contentRef}.json`)
-          await fs.writeFile(metadataFile, JSON.stringify(metadata, null, 2))
-        },
-        catch: (error) => new FileStorageError(
-          `Failed to create upload metadata: ${error instanceof Error ? error.message : String(error)}`,
-          "STORAGE_ERROR",
-          error
-        )
-      })
-    )
-  }
-
-  private loadUploadMetadata(contentRef: string): Effect.Effect<UploadMetadata, FileStorageError> {
-    return pipe(
-      Effect.tryPromise({
-        try: async () => {
-          const metadataFile = path.join(this.metadataPath, `${contentRef}.json`)
-          const content = await fs.readFile(metadataFile, "utf-8")
-          return JSON.parse(content) as UploadMetadata
-        },
-        catch: (error) => {
-          if (error instanceof Error && error.message.includes("ENOENT")) {
-            // Don't expose internal contentRef details in client-facing error
-            return new FileStorageError(
-              "Upload session not found or expired",
-              "NOT_FOUND",
-              error
-            )
-          }
-          // Sanitized error message - no internal paths
-          return new FileStorageError(
-            "Failed to load upload metadata",
-            "STORAGE_ERROR",
-            error
-          )
-        }
-      })
-    )
-  }
-
 
   private getFileStats(filePath: string): Effect.Effect<{ size: number; mimeType: string }, FileStorageError> {
     return pipe(
@@ -366,24 +361,93 @@ export class LocalFileStorage extends FileStoragePort {
     return mimeTypes[ext] || "application/octet-stream"
   }
 
-  private cleanupMetadata(contentRef: string): Effect.Effect<void, FileStorageError> {
-    return pipe(
-      Effect.tryPromise({
-        try: async () => {
-          const metadataFile = path.join(this.metadataPath, `${contentRef}.json`)
-          await fs.unlink(metadataFile)
-        },
-        catch: (error) => {
-          // Ignore cleanup errors (file might not exist)
-          return new FileStorageError(
-            `Failed to cleanup metadata: ${error instanceof Error ? error.message : String(error)}`,
-            "STORAGE_ERROR",
-            error
-          )
-        }
-      }),
-      Effect.ignore
-    )
+  private nodeStreamToWebStream(nodeStream: ReturnType<typeof createReadStream>): ReadableStream<Uint8Array> {
+    return new ReadableStream<Uint8Array>({
+      start(controller) {
+        nodeStream.on("data", (chunk: string | Buffer) => {
+          const buffer = typeof chunk === "string" ? Buffer.from(chunk) : chunk
+          controller.enqueue(new Uint8Array(buffer))
+        })
+
+        nodeStream.on("end", () => {
+          controller.close()
+        })
+
+        nodeStream.on("error", (error) => {
+          controller.error(error)
+        })
+      },
+      cancel() {
+        nodeStream.destroy()
+      }
+    })
   }
+
+  private metadataPath(filePath: string): string {
+    return `${filePath}${this.METADATA_EXTENSION}`
+  }
+
+  private writeMetadata(
+    filePath: string,
+    metadata: StoredMetadata
+  ): Effect.Effect<void, FileStorageError> {
+    return Effect.tryPromise({
+      try: async () => {
+        await fs.writeFile(
+          this.metadataPath(filePath),
+          JSON.stringify(metadata, null, 2),
+          "utf8"
+        )
+      },
+      catch: (error) => new FileStorageError(
+        `Failed to persist metadata for ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
+        "STORAGE_ERROR",
+        error
+      )
+    })
+  }
+
+  private readMetadata(
+    filePath: string
+  ): Effect.Effect<StoredMetadata, FileStorageError> {
+    return Effect.tryPromise({
+      try: async () => {
+        const raw = await fs.readFile(this.metadataPath(filePath), "utf8")
+        const parsed = JSON.parse(raw) as StoredMetadata
+        
+        // Validate required fields
+        if (!parsed.checksum || !parsed.mimeType || typeof parsed.size !== "number") {
+          throw new Error("Missing or invalid metadata fields")
+        }
+        
+        return parsed
+      },
+      catch: (error) => new FileStorageError(
+        `Failed to read metadata for ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
+        "STORAGE_ERROR",
+        error
+      )
+    })
+  }
+
+  private cleanupFilesOnError(filePath: string): Effect.Effect<void, FileStorageError> {
+    return Effect.tryPromise({
+      try: async () => {
+        try {
+          await fs.unlink(filePath)
+        } catch {
+          // Ignore cleanup errors for binary file
+        }
+        
+        try {
+          await fs.unlink(this.metadataPath(filePath))
+        } catch {
+          // Ignore cleanup errors for metadata file
+        }
+      },
+      catch: () => new FileStorageError("Cleanup failed", "STORAGE_ERROR")
+    })
+  }
+
 }
 

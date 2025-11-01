@@ -52,7 +52,6 @@ import {
   recordAudit,
   createEntityId
 } from "@application/workflow/helpers"
-import { LoggerPort } from "@application/services/ports/logger.port"
 
 // Refined types
 import { DocumentId, DocumentVersionId } from "@domain/refined/ids"
@@ -67,7 +66,7 @@ import { AuditPort } from "@application/services/ports/audit.port"
 
 /**
  * Responsibilities:
- * - Coordinate upload initiation with pre-signed URL generation
+ * - Coordinate direct file upload with streaming
  * - Validate permissions for upload operations
  * - Confirm uploads and create document versions
  * - Enforce idempotency through checksum/contentRef validation
@@ -89,14 +88,199 @@ export class UploadWorkflow {
     private readonly fileStoragePort: FileStoragePort,
 
     @inject(TOKENS.AUDIT_PORT)
-    private readonly audit: AuditPort,
-
-    @inject(TOKENS.LOGGER_PORT)
-    private readonly logger: LoggerPort
+    private readonly audit: AuditPort
   ) {}
 
+  // ===== PRIVATE HELPER METHODS =====
+
+  private uploadFileDirectly(
+    dto: S.Schema.Type<typeof InitiateUploadCommandSchema>,
+    stream: ReadableStream<Uint8Array>,
+    document: DocumentEntity,
+    _actor: UserEntity
+  ): Effect.Effect<InitiateUploadResponse, UploadInitiationError, Clock.Clock> {
+    return pipe(
+      // Upload file to storage
+      this.fileStoragePort.uploadFile({
+        stream,
+        metadata: {
+          documentId: dto.documentId,
+          userId: dto.actorId,
+          contentRef: dto.contentRef,
+          mimeType: dto.mimeType,
+          expectedSize: dto.size
+        }
+      }),
+      Effect.map((uploadResponse): InitiateUploadResponse => ({
+        fileKey: uploadResponse.fileKey,
+        checksum: uploadResponse.checksum,
+        contentRef: dto.contentRef
+      })),
+      Effect.tap(() =>
+        // Record audit event for direct upload
+        recordAudit(this.audit, {
+          actorId: dto.actorId,
+          workspaceId: dto.workspaceId,
+          resourceType: "document",
+          resourceId: dto.documentId,
+          action: "upload_direct",
+          outcome: "success" as const,
+          metadata: {
+            documentId: dto.documentId,
+            documentTitle: document.title,
+            mimeType: dto.mimeType,
+            size: dto.size,
+            contentRef: dto.contentRef
+          }
+        })
+      ),
+      Effect.mapError((error) => new UploadInitiationError(
+        `Failed to upload file directly: ${error instanceof Error ? error.message : String(error)}`,
+        dto.documentId,
+        document.title,
+        { originalError: error, storageError: error instanceof FileStorageError ? error.code : undefined }
+      ))
+    )
+  }
+
+  private verifyFileMetadata(
+    dto: S.Schema.Type<typeof ConfirmUploadCommandSchema>
+  ): Effect.Effect<
+    { checksum: Sha256; fileKey: FileKey; actualSize: number; actualMimeType: string; contentRefValid: boolean },
+    ChecksumValidationError | FileNotFoundError | UploadConfirmationError,
+    never
+  > {
+    return pipe(
+      // Verify file exists and get metadata
+      this.fileStoragePort.downloadFile(dto.fileKey),
+      Effect.mapError((error): ChecksumValidationError | FileNotFoundError | UploadConfirmationError => {
+        if (error.code === "NOT_FOUND") {
+          return new FileNotFoundError(
+            `File not found in storage: ${dto.fileKey}`,
+            dto.fileKey,
+            { originalError: error }
+          )
+        }
+        // Map storage errors to appropriate confirmation error
+        return new UploadConfirmationError(
+          `Failed to verify file: ${error.message}`,
+          dto.documentId,
+          "",
+          "CHECKSUM_MISMATCH", // Use as generic failure reason
+          { originalError: error, storageErrorCode: error.code }
+        )
+      }),
+      Effect.flatMap((fileResponse): Effect.Effect<
+        { checksum: Sha256; fileKey: FileKey; actualSize: number; actualMimeType: string; contentRefValid: boolean },
+        ChecksumValidationError | FileNotFoundError | UploadConfirmationError,
+        never
+      > => {
+        // Use stored checksum from metadata sidecar as authoritative source
+        const storedChecksum = fileResponse.metadata.checksum
+        
+        // Verify size matches
+        if (fileResponse.metadata.size !== dto.size) {
+          return Effect.fail(new UploadConfirmationError(
+            `File size mismatch: expected ${dto.size}, got ${fileResponse.metadata.size}`,
+            dto.documentId,
+            "",
+            "SIZE_MISMATCH",
+            { expectedSize: dto.size, actualSize: fileResponse.metadata.size }
+          ))
+        }
+
+        // Verify MIME type matches
+        if (fileResponse.metadata.mimeType !== dto.mimeType) {
+          return Effect.fail(new UploadConfirmationError(
+            `MIME type mismatch: expected ${dto.mimeType}, got ${fileResponse.metadata.mimeType}`,
+            dto.documentId,
+            "",
+            "MIME_TYPE_MISMATCH",
+            { expectedMimeType: dto.mimeType, actualMimeType: fileResponse.metadata.mimeType }
+          ))
+        }
+
+        // Validate client-supplied checksum if provided (for informational purposes only)
+        // The stored checksum is always the authoritative value used for FileMetadata
+        if (dto.checksum !== undefined && dto.checksum !== storedChecksum) {
+          return Effect.fail(new ChecksumValidationError(
+            `Client-supplied checksum mismatch: provided ${dto.checksum}, stored checksum is ${storedChecksum}`,
+            dto.fileKey,
+            dto.checksum,
+            storedChecksum,
+            { clientChecksum: dto.checksum, storedChecksum }
+          ))
+        }
+
+        return Effect.succeed({
+          checksum: storedChecksum, // Use stored checksum as canonical value
+          fileKey: dto.fileKey,
+          actualSize: fileResponse.metadata.size as unknown as number,
+          actualMimeType: fileResponse.metadata.mimeType as unknown as string,
+          contentRefValid: true // Always true for direct upload
+        })
+      })
+    )
+  }
+
+  private checkExistingVersionByChecksum(
+    documentId: DocumentId,
+    checksum: Sha256
+  ): Effect.Effect<Option.Option<DocumentVersionEntity>, WorkflowDependencyError, Clock.Clock> {
+    return pipe(
+      // Load aggregate to check for existing version by checksum
+      this.documentAggregateRepository.loadById(documentId).pipe(
+        Effect.mapError((error) => {
+          if (error instanceof DatabaseError) {
+            return new WorkflowDependencyError(
+              `Database error loading aggregate: ${documentId}`,
+              "DocumentAggregateRepository",
+              "loadById",
+              { originalError: error }
+            )
+          }
+          return new WorkflowDependencyError(
+            `Failed to load aggregate: ${documentId}`,
+            "DocumentAggregateRepository",
+            "loadById",
+            { originalError: error }
+          )
+        }),
+        Effect.flatMap(
+          Option.match({
+            onNone: () => Effect.succeed(Option.none<DocumentVersionEntity>()),
+            onSome: (aggregate) => {
+              // Use aggregate helper to check for existing version by checksum
+              const versionOption = aggregate.getVersionByChecksum(checksum)
+              return Effect.succeed(versionOption)
+            }
+          })
+        )
+      )
+    )
+  }
+
+
+  private buildConfirmUploadResponse(
+    version: DocumentVersionEntity
+  ): Effect.Effect<ConfirmUploadResponse, WorkflowDependencyError, Clock.Clock> {
+    // Build response directly from entity properties, converting Date to ISO string
+    return Effect.succeed({
+      versionId: version.id,
+      documentId: version.documentId,
+      version: version.version,
+      file: version.file,
+      createdBy: version.createdBy,
+      createdAt: version.createdAt.toISOString(), // Convert Date to ISO string
+      updatedAt: Option.match(version.updatedAt, {
+        onNone: () => undefined,
+        onSome: (date) => date.toISOString()
+      })
+    } as ConfirmUploadResponse)
+  }
+
   initiateUpload(
-    input: InitiateUploadCommandEncoded
+    input: InitiateUploadCommandEncoded & { stream: ReadableStream<Uint8Array> }
   ): Effect.Effect<InitiateUploadResponse, WorkflowError | ParseResult.ParseError, Clock.Clock> {
     return pipe(
       // 1. Decode DTO using schema validation
@@ -112,8 +296,8 @@ export class UploadWorkflow {
               // 3. Check write permission
             ensurePermission(this.accessPolicyRepository, actor, document, "write").pipe(
               Effect.flatMap(() =>
-                // 4. Generate pre-signed upload URL (version resolved at confirm)
-                this.createUploadUrl(dto, document, actor)
+                // 4. Upload file directly with stream
+                this.uploadFileDirectly(dto, input.stream, document, actor)
               )
             )
             )
@@ -124,6 +308,9 @@ export class UploadWorkflow {
     ) as Effect.Effect<InitiateUploadResponse, WorkflowError | ParseResult.ParseError, Clock.Clock>
   }
 
+  /**
+   * This method verifies the file exists and creates the document version.
+   */
   confirmUpload(
     input: ConfirmUploadCommandEncoded
   ): Effect.Effect<ConfirmUploadResponse, WorkflowError | ParseResult.ParseError, Clock.Clock> {
@@ -141,48 +328,8 @@ export class UploadWorkflow {
               // 3. Recheck write permission
               ensurePermission(this.accessPolicyRepository, actor, document, "write").pipe(
                 Effect.flatMap(() =>
-                  // 4. Complete upload and verify file metadata
-                  this.completeUploadVerification(dto).pipe(
-                    // Log and fail on verification issues
-                    Effect.flatMap((verifiedMetadata) => {
-                      // Log verification details for traceability
-                      return Effect.sync(() => {
-                        this.logger.info("Upload verification completed", {
-                          documentId: dto.documentId,
-                          fileKey: dto.fileKey,
-                          contentRefValid: verifiedMetadata.contentRefValid,
-                          checksum: verifiedMetadata.checksum,
-                          actualSize: verifiedMetadata.actualSize,
-                          actualMimeType: verifiedMetadata.actualMimeType,
-                          expectedSize: dto.size,
-                          expectedMimeType: dto.mimeType
-                        })
-                      }).pipe(
-                        Effect.flatMap(() => {
-                          // Check for critical mismatches
-                          if (!verifiedMetadata.contentRefValid) {
-                            // Fail upload if contentRef doesn't match (security issue)
-                            const error = new UploadConfirmationError(
-                              `Content reference mismatch: file uploaded with mismatched contentRef`,
-                              dto.documentId,
-                              "",
-                              "CONTENT_REF_MISMATCH",
-                              {
-                                expectedContentRef: dto.contentRef,
-                                fileKey: dto.fileKey
-                              }
-                            )
-                            this.logger.error("Upload verification failed: content reference mismatch", {
-                              documentId: dto.documentId,
-                              fileKey: dto.fileKey,
-                              error: error.message
-                            })
-                            return Effect.fail(error)
-                          }
-                          return Effect.succeed(verifiedMetadata)
-                        })
-                      )
-                    }),
+                  // 4. Verify file exists and get metadata
+                  this.verifyFileMetadata(dto).pipe(
                     Effect.flatMap((verifiedMetadata) =>
                       // 5. Check for existing version with same checksum (idempotency)
                       // Combines checksum + contentRef validation: identical content with different metadata won't duplicate
@@ -267,12 +414,11 @@ export class UploadWorkflow {
                                       documentId: document.id,
                                       version: newVersion.version,
                                       mimeType: dto.mimeType,
-                                      expectedMimeType: dto.mimeType,
                                       actualMimeType: verifiedMetadata.actualMimeType,
                                       size: verifiedMetadata.actualSize,
                                       expectedSize: dto.size,
-                                      contentRefValid: verifiedMetadata.contentRefValid,
-                                      checksum: verifiedMetadata.checksum
+                                      checksum: verifiedMetadata.checksum,
+                                      fileKey: verifiedMetadata.fileKey
                                     }
                                   }).pipe(
                                     Effect.flatMap(() =>
@@ -295,194 +441,6 @@ export class UploadWorkflow {
         )
       )
     ) as Effect.Effect<ConfirmUploadResponse, WorkflowError | ParseResult.ParseError, Clock.Clock>
-  }
-
-  // ===== PRIVATE HELPER METHODS =====
-
-  private createUploadUrl(
-    dto: S.Schema.Type<typeof InitiateUploadCommandSchema>,
-    document: DocumentEntity,
-    _actor: UserEntity,
-    nextVersion?: number
-  ): Effect.Effect<InitiateUploadResponse, UploadInitiationError, Clock.Clock> {
-    // Default expiry: 15 minutes
-    const expiryMs = 15 * 60 * 1000
-
-    return pipe(
-      this.fileStoragePort.createUploadUrl({
-        documentId: dto.documentId,
-        userId: dto.actorId,
-        contentRef: dto.contentRef,
-        mimeType: dto.mimeType,
-        fileSize: dto.size,
-        fileName: `${document.title}`,
-        expiryMs
-      }),
-      Effect.map((storageResponse): InitiateUploadResponse => ({
-        uploadUrl: storageResponse.uploadUrl,
-        fileKey: storageResponse.fileKey,
-        contentRef: dto.contentRef, // Keep contentRef matching DTO-supplied value
-        expiresAt: storageResponse.expiresAt.toISOString(), // Convert Date to ISO string
-        uploadToken: storageResponse.contentRef // Expose storage-generated token separately
-      })),
-      Effect.mapError((error) => new UploadInitiationError(
-        `Failed to create upload URL: ${error.message}`,
-        dto.documentId,
-        `${document.title}-v${nextVersion}`,
-        { originalError: error, storageError: error.code }
-      ))
-    )
-  }
-
-  private completeUploadVerification(
-    dto: S.Schema.Type<typeof ConfirmUploadCommandSchema>
-  ): Effect.Effect<
-    { checksum: Sha256; fileKey: FileKey; actualSize: number; actualMimeType: string; contentRefValid: boolean },
-    ChecksumValidationError | FileNotFoundError | UploadConfirmationError,
-    never
-  > {
-    return pipe(
-      this.fileStoragePort.completeUpload({
-        fileKey: dto.fileKey,
-        contentRef: dto.contentRef,
-        expectedSize: dto.size,
-        expectedMimeType: dto.mimeType
-      }),
-      Effect.flatMap((uploadResult): Effect.Effect<
-        { checksum: Sha256; fileKey: FileKey; actualSize: number; actualMimeType: string; contentRefValid: boolean },
-        ChecksumValidationError | UploadConfirmationError,
-        never
-      > => {
-        // Verify checksum matches - fail fast if wrong
-        if (uploadResult.checksum !== dto.checksum) {
-          return Effect.fail(new ChecksumValidationError(
-            `Checksum mismatch: expected ${dto.checksum}, got ${uploadResult.checksum}`,
-            dto.checksum,
-            uploadResult.checksum,
-            dto.fileKey,
-            { contentRef: dto.contentRef }
-          ))
-        }
-
-        // Verify size is valid - fail fast if wrong
-        if (!uploadResult.verificationMetadata.sizeValid) {
-          return Effect.fail(new UploadConfirmationError(
-            `File size mismatch: expected ${dto.size}, got ${uploadResult.actualSize}`,
-            dto.documentId,
-            "", // versionId not yet created
-            "SIZE_MISMATCH",
-            { expectedSize: dto.size, actualSize: uploadResult.actualSize }
-          ))
-        }
-
-        // Verify MIME type is valid - fail fast if wrong
-        if (!uploadResult.verificationMetadata.mimeTypeValid) {
-          return Effect.fail(new UploadConfirmationError(
-            `MIME type mismatch: expected ${dto.mimeType}, got ${uploadResult.actualMimeType}`,
-            dto.documentId,
-            "", // versionId not yet created
-            "MIME_TYPE_MISMATCH",
-            { expectedMimeType: dto.mimeType, actualMimeType: uploadResult.actualMimeType }
-          ))
-        }
-
-        // Return verification result including contentRefValid status
-        // Let caller decide how to handle contentRef mismatches
-        return Effect.succeed({
-          checksum: uploadResult.checksum,
-          fileKey: uploadResult.fileKey,
-          actualSize: uploadResult.actualSize as unknown as number,
-          actualMimeType: uploadResult.actualMimeType as unknown as string,
-          contentRefValid: uploadResult.verificationMetadata.contentRefValid
-        })
-      }),
-      Effect.mapError((error: unknown): ChecksumValidationError | FileNotFoundError | UploadConfirmationError => {
-        if (error instanceof ChecksumValidationError || error instanceof UploadConfirmationError) {
-          return error
-        }
-        if (error instanceof FileStorageError) {
-          if (error.code === "NOT_FOUND") {
-            return new FileNotFoundError(
-              `File not found in storage: ${dto.fileKey}`,
-              dto.fileKey,
-              { originalError: error }
-            )
-          }
-          // Map other FileStorageError codes to CHECKSUM_MISMATCH as generic validation failure
-          return new UploadConfirmationError(
-            `Upload verification failed: ${error.message}`,
-            dto.documentId,
-            "",
-            "CHECKSUM_MISMATCH",
-            { originalError: error, storageErrorCode: error.code }
-          )
-        }
-        const errorMessage = error instanceof Error ? error.message : String(error)
-        return new UploadConfirmationError(
-          `Upload verification failed: ${errorMessage}`,
-          dto.documentId,
-          "",
-          "CHECKSUM_MISMATCH",
-          { originalError: error }
-        )
-      })
-    )
-  }
-
-  private checkExistingVersionByChecksum(
-    documentId: DocumentId,
-    checksum: Sha256
-  ): Effect.Effect<Option.Option<DocumentVersionEntity>, WorkflowDependencyError, Clock.Clock> {
-    return pipe(
-      // Load aggregate to check for existing version by checksum
-      this.documentAggregateRepository.loadById(documentId).pipe(
-        Effect.mapError((error) => {
-          if (error instanceof DatabaseError) {
-            return new WorkflowDependencyError(
-              `Database error loading aggregate: ${documentId}`,
-              "DocumentAggregateRepository",
-              "loadById",
-              { originalError: error }
-            )
-          }
-          return new WorkflowDependencyError(
-            `Failed to load aggregate: ${documentId}`,
-            "DocumentAggregateRepository",
-            "loadById",
-            { originalError: error }
-          )
-        }),
-        Effect.flatMap(
-          Option.match({
-            onNone: () => Effect.succeed(Option.none<DocumentVersionEntity>()),
-            onSome: (aggregate) => {
-              // Use aggregate helper to check for existing version by checksum
-              const versionOption = aggregate.getVersionByChecksum(checksum)
-              return Effect.succeed(versionOption)
-            }
-          })
-        )
-      )
-    )
-  }
-
-
-  private buildConfirmUploadResponse(
-    version: DocumentVersionEntity
-  ): Effect.Effect<ConfirmUploadResponse, WorkflowDependencyError, Clock.Clock> {
-    // Build response directly from entity properties, converting Date to ISO string
-    return Effect.succeed({
-      versionId: version.id,
-      documentId: version.documentId,
-      version: version.version,
-      file: version.file,
-      createdBy: version.createdBy,
-      createdAt: version.createdAt.toISOString(), // Convert Date to ISO string
-      updatedAt: Option.match(version.updatedAt, {
-        onNone: () => undefined,
-        onSome: (date) => date.toISOString()
-      })
-    } as ConfirmUploadResponse)
   }
 }
 

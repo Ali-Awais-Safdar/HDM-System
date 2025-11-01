@@ -566,6 +566,45 @@ export const mapUploadConfirmationError = (
   }
 }
 
+// ===== FILE STORAGE ERROR MAPPERS =====
+
+export const mapFileStorageError = (
+  context: { operation: string; fileKey?: string }
+) => {
+  return (error: unknown): FileNotFoundError | WorkflowDependencyError => {
+    if (error instanceof FileStorageError) {
+      if (error.code === "NOT_FOUND") {
+        return new FileNotFoundError(
+          `File not found in storage: ${error.message}`,
+          context.fileKey || "unknown",
+          { originalError: error }
+        )
+      }
+      return new WorkflowDependencyError(
+        `File storage ${context.operation} failed: ${error.message}`,
+        "FileStoragePort",
+        context.operation,
+        { originalError: error, storageError: error.code }
+      )
+    }
+    
+    if (error instanceof FileNotFoundError) {
+      return error
+    }
+    
+    if (error instanceof WorkflowDependencyError) {
+      return error
+    }
+    
+    return new WorkflowDependencyError(
+      `File storage ${context.operation} failed: ${error instanceof Error ? error.message : String(error)}`,
+      "FileStoragePort",
+      context.operation,
+      { originalError: error }
+    )
+  }
+}
+
 // ===== USER ERROR MAPPERS =====
 
 export const mapUserPersistenceError = (

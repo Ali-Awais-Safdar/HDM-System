@@ -5,6 +5,7 @@ import type {
 import type { DocumentId, UserId, WorkspaceId } from "@domain/refined/ids"
 import type { FileKey, MimeType, FileSize } from "@domain/refined/file-reference"
 import type { Sha256 } from "@domain/refined/checksum"
+import { faker } from "../../domain/factories/common"
 
 /**
  * Create an InitiateUpload request with deterministic contentRef
@@ -38,8 +39,8 @@ export function makeConfirmUploadRequest(
   contentRef: FileKey,
   overrides: Partial<ConfirmUploadCommandEncoded> & { workspaceId?: WorkspaceId } = {}
 ): ConfirmUploadCommandEncoded {
-  // Default checksum based on contentRef for deterministic testing
-  const defaultChecksum = `sha256:${contentRef}` as Sha256
+  // Generate a valid SHA-256 checksum (64 hex characters)
+  const defaultChecksum = faker.string.hexadecimal({ length: 64, prefix: "", casing: "lower" }) as Sha256
   
   return {
     documentId,
