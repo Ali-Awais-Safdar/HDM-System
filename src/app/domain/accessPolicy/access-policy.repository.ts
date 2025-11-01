@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Clock } from "effect"
 import { AccessPolicyEntity, Role, SubjectType } from "./access-policy.entity"
 import {
   AccessPolicyConflictError,
@@ -20,18 +20,18 @@ export abstract class AccessPolicyRepository extends BaseRepository<AccessPolicy
 
   abstract findByResourceId(
     resourceId: DocumentId
-  ): Effect.Effect<readonly AccessPolicyEntity[], AccessPolicyNotFoundError | AccessPolicyValidationError | DatabaseError>
+  ): Effect.Effect<readonly AccessPolicyEntity[], AccessPolicyNotFoundError | AccessPolicyValidationError | DatabaseError, Clock.Clock>
 
   abstract findBySubject(
     subjectType: SubjectType,
     subjectId?: UserId,
     role?: Role
-  ): Effect.Effect<readonly AccessPolicyEntity[], AccessPolicyNotFoundError | AccessPolicyValidationError | DatabaseError>
+  ): Effect.Effect<readonly AccessPolicyEntity[], AccessPolicyNotFoundError | AccessPolicyValidationError | DatabaseError, Clock.Clock>
 
   abstract findByUserAndResource(
     userId: UserId,
     resourceId: DocumentId
-  ): Effect.Effect<readonly AccessPolicyEntity[], AccessPolicyNotFoundError | AccessPolicyValidationError | DatabaseError>
+  ): Effect.Effect<readonly AccessPolicyEntity[], AccessPolicyNotFoundError | AccessPolicyValidationError | DatabaseError, Clock.Clock>
 
   abstract deleteByResourceId(
     resourceId: DocumentId

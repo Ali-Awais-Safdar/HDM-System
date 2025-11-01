@@ -1,4 +1,4 @@
-import { Effect, Option } from "effect"
+import { Effect, Option, Clock } from "effect"
 import { DocumentAggregate } from "@domain/document/document.aggregate"
 import { DocumentEntity } from "@domain/document/document.entity"
 import { DocumentNotFoundError, DocumentValidationError } from "@domain/document/document.error"
@@ -34,7 +34,7 @@ export abstract class DocumentAggregateRepository {
   ): Effect.Effect<
     Option.Option<DocumentAggregate>,
     DocumentNotFoundError | ValidationError | DatabaseError,
-    never
+    Clock.Clock
   >
 
   /**
@@ -66,7 +66,7 @@ export abstract class DocumentAggregateRepository {
   ): Effect.Effect<
     boolean,
     DocumentNotFoundError | BusinessRuleViolationError | DatabaseError,
-    never
+    Clock.Clock
   >
 
   // ===== Document Query Operations (Read Path - Projections) =====
@@ -76,7 +76,7 @@ export abstract class DocumentAggregateRepository {
   ): Effect.Effect<
     Option.Option<DocumentEntity>,
     DocumentNotFoundError | ValidationError | DatabaseError,
-    never
+    Clock.Clock
   >
 
   abstract searchDocuments(
@@ -84,7 +84,7 @@ export abstract class DocumentAggregateRepository {
   ): Effect.Effect<
     Paginated<DocumentEntity>,
     DocumentNotFoundError | ValidationError | DatabaseError,
-    never
+    Clock.Clock
   >
 
   abstract findDocumentsByOwner(
@@ -93,7 +93,7 @@ export abstract class DocumentAggregateRepository {
   ): Effect.Effect<
     readonly DocumentEntity[],
     DocumentNotFoundError | ValidationError | DatabaseError,
-    never
+    Clock.Clock
   >
 
   abstract findDocumentIdByVersionId(

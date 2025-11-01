@@ -89,7 +89,7 @@ export class AccessPolicyWorkflow {
   private ensureAdmin(
     actor: UserEntity,
     document: DocumentEntity
-  ): Effect.Effect<void, PermissionCheckError | WorkflowDependencyError> {
+  ): Effect.Effect<void, PermissionCheckError | WorkflowDependencyError, Clock.Clock> {
     return ensurePermission(
       this.accessPolicyRepository,
       actor,
@@ -100,7 +100,7 @@ export class AccessPolicyWorkflow {
 
   private loadPolicy(
     policyId: AccessPolicyId
-  ): Effect.Effect<AccessPolicyEntity, AccessPolicyNotFoundError | WorkflowDependencyError> {
+  ): Effect.Effect<AccessPolicyEntity, AccessPolicyNotFoundError | WorkflowDependencyError, Clock.Clock> {
     return pipe(
       this.accessPolicyRepository.findById(policyId),
       Effect.mapError((error) => {
@@ -475,7 +475,7 @@ export class AccessPolicyWorkflow {
 
   getPoliciesForDocument(
     documentId: DocumentId
-  ): Effect.Effect<readonly AccessPolicyEntity[], WorkflowDependencyError> {
+  ): Effect.Effect<readonly AccessPolicyEntity[], WorkflowDependencyError, Clock.Clock> {
     return pipe(
       this.accessPolicyRepository.findByResourceId(documentId),
       Effect.mapError((error) => {
@@ -500,7 +500,7 @@ export class AccessPolicyWorkflow {
   getPoliciesForActor(
     documentId: DocumentId,
     actor: UserEntity
-  ): Effect.Effect<readonly AccessPolicyEntity[], WorkflowDependencyError> {
+  ): Effect.Effect<readonly AccessPolicyEntity[], WorkflowDependencyError, Clock.Clock> {
     return pipe(
       this.getPoliciesForDocument(documentId),
       Effect.map((allPolicies) => filterPoliciesByActor(allPolicies, actor))

@@ -192,7 +192,7 @@ export class UserWorkflow {
 
   login(
     input: LoginInputEncoded
-  ): Effect.Effect<LoginResponseEncoded, WorkflowError | ParseResult.ParseError, never> {
+  ): Effect.Effect<LoginResponseEncoded, WorkflowError | ParseResult.ParseError, Clock.Clock> {
     return pipe(
       // 1. Decode DTO using schema validation
       S.decodeUnknown(LoginInputSchema)(input),
@@ -415,7 +415,7 @@ export class UserWorkflow {
 
   getProfile(
     input: GetProfileQueryEncoded
-  ): Effect.Effect<UserSummaryEncoded, WorkflowError | ParseResult.ParseError, never> {
+  ): Effect.Effect<UserSummaryEncoded, WorkflowError | ParseResult.ParseError, Clock.Clock> {
     return pipe(
       // 1. Decode DTO using schema validation
       S.decodeUnknown(GetProfileQuerySchema)(input),

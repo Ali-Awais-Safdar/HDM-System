@@ -18,7 +18,7 @@ import type { DatabaseInterface } from "@infra/db/interfaces"
 import { translateQueryError } from "@infra/db/errors"
 import { withTransaction } from "@infra/db/unit-of-work"
 import { TOKENS } from "@infra/di/container"
-import { eq, and, or, sql, count, type SQL } from "drizzle-orm"
+import { eq, and, or, sql, count, type SQL, inArray } from "drizzle-orm"
 import { fetchSingle, fetchMultiple } from "./helpers"
 
 @injectable()
@@ -29,7 +29,7 @@ export class DocumentAggregateDrizzleRepository extends DocumentAggregateReposit
 
   loadById(
     documentId: DocumentId
-  ): E.Effect<O.Option<DocumentAggregate>, DocumentNotFoundError | ValidationError | DatabaseError, never> {
+  ): E.Effect<O.Option<DocumentAggregate>, DocumentNotFoundError | ValidationError | DatabaseError, Clock.Clock> {
     return E.tryPromise({
       try: async () => {
         const docRows = await this.db.select().from(documents).where(eq(documents.id, documentId)).limit(1)
@@ -58,8 +58,7 @@ export class DocumentAggregateDrizzleRepository extends DocumentAggregateReposit
                   : error instanceof BusinessRuleViolationError
                   ? new ValidationError(error.message)
                   : error
-              ),
-              E.provideService(Clock.Clock, Clock.make())
+              )
             )
       )
     )
@@ -76,48 +75,86 @@ export class DocumentAggregateDrizzleRepository extends DocumentAggregateReposit
     | DatabaseError,
     never
   > {
-    // Validate invariants before persistence
-    return withTransaction(this.db, async (tx) => {
-      const txDb = tx as unknown as DatabaseInterface
-      // Upsert document
-      const docRow = await E.runPromise(DocumentMapper.toDb(aggregate.document))
+    // Map aggregate to DB rows outside transaction to preserve typed errors
+    return pipe(
+      // Map document to DB row (Effect that may fail with DocumentValidationError)
+      DocumentMapper.toDb(aggregate.document),
+      E.flatMap((docRow) =>
+        // Map all versions to DB rows (Effect that may fail with DocumentVersionValidationError)
+        pipe(
+          E.forEach(aggregate.getVersions(), (version) => DocumentVersionMapper.toDb(version)),
+          E.map((versionRows) => ({ docRow, versionRows }))
+        )
+      ),
+      // Once mapping succeeds, execute transaction
+      E.flatMap(({ docRow, versionRows }) =>
+        withTransaction<
+          DocumentAggregate,
+          DocumentValidationError | DocumentVersionValidationError | BusinessRuleViolationError
+        >(this.db, async (tx) => {
+          const txDb = tx as unknown as DatabaseInterface
 
-      const existingDoc = await txDb
-        .select({ id: documents.id })
-        .from(documents)
-        .where(eq(documents.id, docRow.id))
-        .limit(1)
+          // Upsert document
+          const existingDoc = await txDb
+            .select({ id: documents.id })
+            .from(documents)
+            .where(eq(documents.id, docRow.id))
+            .limit(1)
 
-      if (existingDoc.length === 0) {
-        await txDb.insert(documents).values(docRow)
-      } else {
-        await txDb.update(documents).set(docRow).where(eq(documents.id, docRow.id))
-      }
+          if (existingDoc.length === 0) {
+            await txDb.insert(documents).values(docRow)
+          } else {
+            await txDb.update(documents).set(docRow).where(eq(documents.id, docRow.id))
+          }
 
-      // Upsert versions (naive per-version upsert)
-      const versions = aggregate.getVersions()
-      for (const v of versions) {
-        const vRow = await E.runPromise(DocumentVersionMapper.toDb(v))
-        const exists = await txDb
-          .select({ id: documentVersions.id })
-          .from(documentVersions)
-          .where(eq(documentVersions.id, vRow.id))
-          .limit(1)
-        if (exists.length === 0) {
-          await txDb.insert(documentVersions).values(vRow)
-        } else {
-          await txDb.update(documentVersions).set(vRow).where(eq(documentVersions.id, vRow.id))
-        }
-      }
+          // Aggregate lifecycle persistence: diff version IDs to maintain consistency
+          // Query existing version IDs for this document
+          const existingVersionIds = await txDb
+            .select({ id: documentVersions.id })
+            .from(documentVersions)
+            .where(eq(documentVersions.documentId, docRow.id))
 
-      return aggregate
-    })
+          // Extract version IDs from aggregate
+          const aggregateVersionIds = new Set(versionRows.map((vRow) => vRow.id as DocumentVersionId))
+          const existingVersionIdSet = new Set(existingVersionIds.map((row) => row.id as DocumentVersionId))
+
+          // Identify orphaned versions (exist in DB but not in aggregate)
+          const orphanedVersionIds = Array.from(existingVersionIdSet).filter(
+            (id) => !aggregateVersionIds.has(id)
+          )
+
+          // Delete orphaned versions inside transaction (before upserts)
+          if (orphanedVersionIds.length > 0) {
+            await txDb
+              .delete(documentVersions)
+              .where(
+                and(
+                  eq(documentVersions.documentId, docRow.id),
+                  inArray(documentVersions.id, orphanedVersionIds)
+                )
+              )
+          }
+
+          // Upsert versions (idempotent: insert if missing, update if exists)
+          for (const vRow of versionRows) {
+            const exists = existingVersionIdSet.has(vRow.id as DocumentVersionId)
+            if (!exists) {
+              await txDb.insert(documentVersions).values(vRow)
+            } else {
+              await txDb.update(documentVersions).set(vRow).where(eq(documentVersions.id, vRow.id))
+            }
+          }
+
+          return aggregate
+        })
+      )
+    )
   }
 
   delete(
     documentId: DocumentId,
     options?: { readonly force?: boolean }
-  ): E.Effect<boolean, DocumentNotFoundError | BusinessRuleViolationError | DatabaseError, never> {
+  ): E.Effect<boolean, DocumentNotFoundError | BusinessRuleViolationError | DatabaseError, Clock.Clock> {
     return this.loadById(documentId).pipe(
       E.mapError((e): DocumentNotFoundError | DatabaseError =>
         e instanceof ValidationError ? new DatabaseError(e.message) : e
@@ -147,7 +184,7 @@ export class DocumentAggregateDrizzleRepository extends DocumentAggregateReposit
 
   findDocumentById(
     documentId: DocumentId
-  ): E.Effect<O.Option<DocumentEntity>, DocumentNotFoundError | ValidationError | DatabaseError, never> {
+  ): E.Effect<O.Option<DocumentEntity>, DocumentNotFoundError | ValidationError | DatabaseError, Clock.Clock> {
     return pipe(
       fetchSingle(
         () => this.db.select().from(documents).where(eq(documents.id, documentId)).limit(1),
@@ -165,7 +202,7 @@ export class DocumentAggregateDrizzleRepository extends DocumentAggregateReposit
 
   searchDocuments(
     filters: DocumentSearchFilters
-  ): E.Effect<Paginated<DocumentEntity>, DocumentNotFoundError | ValidationError | DatabaseError, never> {
+  ): E.Effect<Paginated<DocumentEntity>, DocumentNotFoundError | ValidationError | DatabaseError, Clock.Clock> {
     const paginationOptions = filters.paginationOptions ?? defaultPaginationOptions()
     const offset = (paginationOptions.pageNum - 1) * paginationOptions.pageSize
 
@@ -224,7 +261,6 @@ export class DocumentAggregateDrizzleRepository extends DocumentAggregateReposit
               E.forEach(data, (row) =>
                 pipe(
                   DocumentMapper.fromDb(row),
-                  E.provideService(Clock.Clock, Clock.make()),
                   E.mapError((error): DocumentNotFoundError | ValidationError =>
                     error instanceof DocumentValidationError
                       ? new ValidationError(error.message, error.field, error.value)
@@ -247,7 +283,7 @@ export class DocumentAggregateDrizzleRepository extends DocumentAggregateReposit
   findDocumentsByOwner(
     workspaceId: WorkspaceId,
     ownerId: UserId
-  ): E.Effect<readonly DocumentEntity[], DocumentNotFoundError | ValidationError | DatabaseError, never> {
+  ): E.Effect<readonly DocumentEntity[], DocumentNotFoundError | ValidationError | DatabaseError, Clock.Clock> {
     return pipe(
       fetchMultiple(
         () => this.db.select().from(documents).where(

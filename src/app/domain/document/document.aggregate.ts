@@ -11,49 +11,49 @@ import { VersionNumber } from "@domain/documentVersion/version-number.vo"
 
 export class DocumentAggregate {
   readonly document!: DocumentEntity
-  private readonly _versions!: readonly DocumentVersionEntity[]
+  private readonly versions!: readonly DocumentVersionEntity[]
 
   private constructor(doc: DocumentEntity, versions: readonly DocumentVersionEntity[]) {
     this.document = doc
-    this._versions = versions
+    this.versions = versions
   }
 
   // Read helpers for versions
   getVersions(): readonly DocumentVersionEntity[] {
-    return this._versions
+    return this.versions
   }
 
   getVersionCount(): number {
-    return this._versions.length
+    return this.versions.length
   }
 
   getLatestVersion(): Option.Option<DocumentVersionEntity> {
-    return this._versions.length === 0 
+    return this.versions.length === 0 
       ? Option.none<DocumentVersionEntity>()
-      : Option.some(this._versions[this._versions.length - 1]!)
+      : Option.some(this.versions[this.versions.length - 1]!)
   }
 
   getVersionByNumber(versionNumber: number): Option.Option<DocumentVersionEntity> {
-    const version = this._versions.find(v => v.version === versionNumber)
+    const version = this.versions.find(v => v.version === versionNumber)
     return version ? Option.some(version) : Option.none<DocumentVersionEntity>()
   }
 
   getVersionByChecksum(checksum: Sha256): Option.Option<DocumentVersionEntity> {
-    const version = this._versions.find(v => v.checksum === checksum)
+    const version = this.versions.find(v => v.checksum === checksum)
     return version ? Option.some(version) : Option.none<DocumentVersionEntity>()
   }
 
   getVersionById(versionId: DocumentVersionId): Option.Option<DocumentVersionEntity> {
-    const version = this._versions.find(v => v.id === versionId)
+    const version = this.versions.find(v => v.id === versionId)
     return version ? Option.some(version) : Option.none<DocumentVersionEntity>()
   }
 
   hasVersionWithChecksum(checksum: Sha256): boolean {
-    return this._versions.some((v) => v.checksum === checksum)
+    return this.versions.some((v) => v.checksum === checksum)
   }
 
   forEachVersion<A>(f: (version: DocumentVersionEntity) => A): Effect.Effect<readonly A[], never, never> {
-    return Effect.succeed(this._versions.map(f))
+    return Effect.succeed(this.versions.map(f))
   }
 
   static initialize(
@@ -82,7 +82,7 @@ export class DocumentAggregate {
   }
 
   get highestVersion(): number {
-    return this._versions.length === 0 ? 0 : this._versions[this._versions.length - 1]!.version
+    return this.versions.length === 0 ? 0 : this.versions[this.versions.length - 1]!.version
   }
 
   nextVersionNumber(versionHint?: number): Effect.Effect<number, BusinessRuleViolationError, never> {
@@ -116,37 +116,37 @@ export class DocumentAggregate {
 
   rename(newTitle: string): Effect.Effect<DocumentAggregate, DocumentValidationError, Clock.Clock> {
     return this.document.rename(newTitle).pipe(
-      Effect.map((updated) => new DocumentAggregate(updated, this._versions))
+      Effect.map((updated) => new DocumentAggregate(updated, this.versions))
     )
   }
 
   updateDescription(newDescription: Option.Option<string>): Effect.Effect<DocumentAggregate, DocumentValidationError, Clock.Clock> {
     return this.document.updateDescription(newDescription).pipe(
-      Effect.map((updated) => new DocumentAggregate(updated, this._versions))
+      Effect.map((updated) => new DocumentAggregate(updated, this.versions))
     )
   }
 
   addTags(tags: string[]): Effect.Effect<DocumentAggregate, DocumentValidationError | BusinessRuleViolationError, Clock.Clock> {
     return this.document.addTags(tags).pipe(
-      Effect.map((updated) => new DocumentAggregate(updated, this._versions))
+      Effect.map((updated) => new DocumentAggregate(updated, this.versions))
     )
   }
 
   removeTags(tags: string[]): Effect.Effect<DocumentAggregate, DocumentValidationError, Clock.Clock> {
     return this.document.removeTags(tags).pipe(
-      Effect.map((updated) => new DocumentAggregate(updated, this._versions))
+      Effect.map((updated) => new DocumentAggregate(updated, this.versions))
     )
   }
 
   updatePublishStatus(newStatus: DocumentEntity["publishStatus"]): Effect.Effect<DocumentAggregate, DocumentValidationError, Clock.Clock> {
     return this.document.updatePublishStatus(newStatus).pipe(
-      Effect.map((updated) => new DocumentAggregate(updated, this._versions))
+      Effect.map((updated) => new DocumentAggregate(updated, this.versions))
     )
   }
 
   updatePublishNotes(newNotes: Option.Option<string>): Effect.Effect<DocumentAggregate, DocumentValidationError, Clock.Clock> {
     return this.document.updatePublishNotes(newNotes).pipe(
-      Effect.map((updated) => new DocumentAggregate(updated, this._versions))
+      Effect.map((updated) => new DocumentAggregate(updated, this.versions))
     )
   }
 
@@ -175,7 +175,7 @@ export class DocumentAggregate {
           updatedAt: undefined
         } as unknown as SerializedDocumentVersion)
       ),
-      Effect.map((newVersion) => new DocumentAggregate(this.document, [...this._versions, newVersion]))
+      Effect.map((newVersion) => new DocumentAggregate(this.document, [...this.versions, newVersion]))
     )
   }
 

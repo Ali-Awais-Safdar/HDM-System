@@ -1,4 +1,4 @@
-import { Effect, Option } from "effect"
+import { Effect, Option, Clock } from "effect"
 import { UserEntity } from "./user.entity"
 import {
   UserAlreadyExistsError,
@@ -23,5 +23,5 @@ export abstract class UserRepository extends BaseRepository<
   // Domain-specific read operations
   abstract findByEmail(
     email: EmailAddress
-  ): Effect.Effect<Option.Option<UserEntity>, UserNotFoundError | ValidationError | DatabaseError>
+  ): Effect.Effect<Option.Option<UserEntity>, UserNotFoundError | ValidationError | DatabaseError, Clock.Clock>
 }

@@ -32,7 +32,7 @@ export class DownloadTokenDrizzleRepository extends DownloadTokenRepository {
 
   findById(
     id: DownloadTokenId
-  ): E.Effect<O.Option<DownloadTokenEntity>, DownloadTokenNotFoundError | ValidationError | DatabaseError, never> {
+  ): E.Effect<O.Option<DownloadTokenEntity>, DownloadTokenNotFoundError | ValidationError | DatabaseError, Clock.Clock> {
     return pipe(
       fetchSingle(
         () => this.db.select().from(downloadTokens).where(eq(downloadTokens.id, id)).limit(1),
@@ -50,7 +50,7 @@ export class DownloadTokenDrizzleRepository extends DownloadTokenRepository {
 
   findByToken(
     token: string
-  ): E.Effect<O.Option<DownloadTokenEntity>, DownloadTokenNotFoundError | ValidationError | DatabaseError, never> {
+  ): E.Effect<O.Option<DownloadTokenEntity>, DownloadTokenNotFoundError | ValidationError | DatabaseError, Clock.Clock> {
     return pipe(
       fetchSingle(
         () => this.db.select().from(downloadTokens).where(eq(downloadTokens.token, token)).limit(1),
@@ -68,7 +68,7 @@ export class DownloadTokenDrizzleRepository extends DownloadTokenRepository {
 
   findByUserId(
     userId: UserId
-  ): E.Effect<readonly DownloadTokenEntity[], DownloadTokenNotFoundError | ValidationError | DatabaseError, never> {
+  ): E.Effect<readonly DownloadTokenEntity[], DownloadTokenNotFoundError | ValidationError | DatabaseError, Clock.Clock> {
     return pipe(
       fetchMultiple(
         () => this.db.select().from(downloadTokens).where(eq(downloadTokens.issuedTo, userId)),
@@ -86,7 +86,7 @@ export class DownloadTokenDrizzleRepository extends DownloadTokenRepository {
 
   findByDocumentId(
     documentId: DocumentId
-  ): E.Effect<readonly DownloadTokenEntity[], DownloadTokenNotFoundError | ValidationError | DatabaseError, never> {
+  ): E.Effect<readonly DownloadTokenEntity[], DownloadTokenNotFoundError | ValidationError | DatabaseError, Clock.Clock> {
     return pipe(
       fetchMultiple(
         () => this.db.select().from(downloadTokens).where(eq(downloadTokens.documentId, documentId)),
@@ -105,7 +105,7 @@ export class DownloadTokenDrizzleRepository extends DownloadTokenRepository {
   findValidTokens(
     documentId: DocumentId,
     userId: UserId
-  ): E.Effect<readonly DownloadTokenEntity[], DownloadTokenNotFoundError | ValidationError | DatabaseError, never> {
+  ): E.Effect<readonly DownloadTokenEntity[], DownloadTokenNotFoundError | ValidationError | DatabaseError, Clock.Clock> {
     return pipe(
       fetchMultiple(
         () => {
@@ -182,7 +182,7 @@ export class DownloadTokenDrizzleRepository extends DownloadTokenRepository {
 
   save(
     token: DownloadTokenEntity
-  ): E.Effect<DownloadTokenEntity, ValidationError | BusinessRuleViolationError | DatabaseError, never> {
+  ): E.Effect<DownloadTokenEntity, ValidationError | BusinessRuleViolationError | DatabaseError, Clock.Clock> {
     return pipe(
       this.findById(token.id),
       E.flatMap((existingToken) =>
@@ -277,7 +277,7 @@ export class DownloadTokenDrizzleRepository extends DownloadTokenRepository {
 
   markAsUsed(
     token: string
-  ): E.Effect<DownloadTokenEntity, DownloadTokenNotFoundError | DownloadTokenAlreadyUsedError | BusinessRuleViolationError | ValidationError | DatabaseError, never> {
+  ): E.Effect<DownloadTokenEntity, DownloadTokenNotFoundError | DownloadTokenAlreadyUsedError | BusinessRuleViolationError | ValidationError | DatabaseError, Clock.Clock> {
     return pipe(
       this.findByToken(token),
       E.flatMap((tokenOption) =>
@@ -286,8 +286,7 @@ export class DownloadTokenDrizzleRepository extends DownloadTokenRepository {
           onSome: (tokenEntity) => pipe(
             tokenEntity.markAsUsed(),
             E.flatMap((updatedToken) => this.update(updatedToken)),
-            E.mapError((error) => this.mapMarkAsUsedError(error, token)),
-            E.provideService(Clock.Clock, Clock.make())
+            E.mapError((error) => this.mapMarkAsUsedError(error, token))
           )
         })
       )
@@ -370,7 +369,7 @@ export class DownloadTokenDrizzleRepository extends DownloadTokenRepository {
     )
   }
 
-  list(options?: PaginationOptions): E.Effect<Paginated<DownloadTokenEntity>, DownloadTokenNotFoundError | ValidationError | DatabaseError, never> {
+  list(options?: PaginationOptions): E.Effect<Paginated<DownloadTokenEntity>, DownloadTokenNotFoundError | ValidationError | DatabaseError, Clock.Clock> {
     const paginationOptions = options ?? defaultPaginationOptions()
     const offset = (paginationOptions.pageNum - 1) * paginationOptions.pageSize
 
@@ -417,8 +416,7 @@ export class DownloadTokenDrizzleRepository extends DownloadTokenRepository {
                     error instanceof DownloadTokenValidationError
                       ? new ValidationError(error.message, error.field, error.value)
                       : error
-                  ),
-                  E.provideService(Clock.Clock, Clock.make())
+                  )
                 )
               ),
               E.map((entities): Paginated<DownloadTokenEntity> => ({

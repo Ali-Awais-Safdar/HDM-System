@@ -32,7 +32,7 @@ export class AccessPolicyDrizzleRepository extends AccessPolicyRepository {
 
   findById(
     id: AccessPolicyId
-  ): E.Effect<O.Option<AccessPolicyEntity>, AccessPolicyNotFoundError | ValidationError | DatabaseError, never> {
+  ): E.Effect<O.Option<AccessPolicyEntity>, AccessPolicyNotFoundError | ValidationError | DatabaseError, Clock.Clock> {
     return pipe(
       fetchSingle(
         () => this.db.select().from(accessPolicies).where(eq(accessPolicies.id, id)).limit(1),
@@ -50,7 +50,7 @@ export class AccessPolicyDrizzleRepository extends AccessPolicyRepository {
 
   findByResourceId(
     resourceId: DocumentId
-  ): E.Effect<readonly AccessPolicyEntity[], AccessPolicyNotFoundError | AccessPolicyValidationError | DatabaseError, never> {
+  ): E.Effect<readonly AccessPolicyEntity[], AccessPolicyNotFoundError | AccessPolicyValidationError | DatabaseError, Clock.Clock> {
     return fetchMultiple(
       () => this.db.select().from(accessPolicies).where(eq(accessPolicies.resourceId, resourceId)),
       AccessPolicyMapper.fromDb,
@@ -77,7 +77,7 @@ export class AccessPolicyDrizzleRepository extends AccessPolicyRepository {
     subjectType: SubjectType,
     subjectId?: UserId,
     role?: Role
-  ): E.Effect<readonly AccessPolicyEntity[], AccessPolicyNotFoundError | AccessPolicyValidationError | DatabaseError, never> {
+  ): E.Effect<readonly AccessPolicyEntity[], AccessPolicyNotFoundError | AccessPolicyValidationError | DatabaseError, Clock.Clock> {
     return fetchMultiple(
       () => {
         const conditions = this.buildSubjectConditions(subjectType, subjectId, role)
@@ -95,7 +95,7 @@ export class AccessPolicyDrizzleRepository extends AccessPolicyRepository {
   findByUserAndResource(
     userId: UserId,
     resourceId: DocumentId
-  ): E.Effect<readonly AccessPolicyEntity[], AccessPolicyNotFoundError | AccessPolicyValidationError | DatabaseError, never> {
+  ): E.Effect<readonly AccessPolicyEntity[], AccessPolicyNotFoundError | AccessPolicyValidationError | DatabaseError, Clock.Clock> {
     return fetchMultiple(
       () => this.db
         .select()
@@ -157,7 +157,7 @@ export class AccessPolicyDrizzleRepository extends AccessPolicyRepository {
 
   save(
     policy: AccessPolicyEntity
-  ): E.Effect<AccessPolicyEntity, AccessPolicyConflictError | AccessPolicyValidationError | DatabaseError, never> {
+  ): E.Effect<AccessPolicyEntity, AccessPolicyConflictError | AccessPolicyValidationError | DatabaseError, Clock.Clock> {
     return pipe(
       this.findById(policy.id),
       E.flatMap((existingPolicy) =>
@@ -304,7 +304,7 @@ export class AccessPolicyDrizzleRepository extends AccessPolicyRepository {
     )
   }
 
-  list(options?: PaginationOptions): E.Effect<Paginated<AccessPolicyEntity>, AccessPolicyNotFoundError | ValidationError | DatabaseError, never> {
+  list(options?: PaginationOptions): E.Effect<Paginated<AccessPolicyEntity>, AccessPolicyNotFoundError | ValidationError | DatabaseError, Clock.Clock> {
     const paginationOptions = options ?? defaultPaginationOptions()
     const offset = (paginationOptions.pageNum - 1) * paginationOptions.pageSize
 
@@ -351,8 +351,7 @@ export class AccessPolicyDrizzleRepository extends AccessPolicyRepository {
                     error instanceof AccessPolicyValidationError
                       ? new ValidationError(error.message, error.field, error.value)
                       : error
-                  ),
-                  E.provideService(Clock.Clock, Clock.make())
+                  )
                 )
               ),
               E.map((entities): Paginated<AccessPolicyEntity> => ({

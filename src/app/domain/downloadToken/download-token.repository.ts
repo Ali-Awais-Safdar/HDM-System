@@ -1,4 +1,4 @@
-import { Effect, Option } from "effect"
+import { Effect, Option, Clock } from "effect"
 import { DownloadTokenEntity } from "./download-token.entity"
 import { 
   DownloadTokenNotFoundError,
@@ -17,24 +17,24 @@ export abstract class DownloadTokenRepository extends BaseRepository<DownloadTok
 
   abstract findByToken(
     token: string
-  ): Effect.Effect<Option.Option<DownloadTokenEntity>, DownloadTokenNotFoundError | ValidationError | DatabaseError>
+  ): Effect.Effect<Option.Option<DownloadTokenEntity>, DownloadTokenNotFoundError | ValidationError | DatabaseError, Clock.Clock>
 
   abstract findByUserId(
     userId: UserId
-  ): Effect.Effect<readonly DownloadTokenEntity[], DownloadTokenNotFoundError | ValidationError | DatabaseError>
+  ): Effect.Effect<readonly DownloadTokenEntity[], DownloadTokenNotFoundError | ValidationError | DatabaseError, Clock.Clock>
 
   abstract findByDocumentId(
     documentId: DocumentId
-  ): Effect.Effect<readonly DownloadTokenEntity[], DownloadTokenNotFoundError | ValidationError | DatabaseError>
+  ): Effect.Effect<readonly DownloadTokenEntity[], DownloadTokenNotFoundError | ValidationError | DatabaseError, Clock.Clock>
 
   abstract findValidTokens(
     documentId: DocumentId,
     userId: UserId
-  ): Effect.Effect<readonly DownloadTokenEntity[], DownloadTokenNotFoundError | ValidationError | DatabaseError>
+  ): Effect.Effect<readonly DownloadTokenEntity[], DownloadTokenNotFoundError | ValidationError | DatabaseError, Clock.Clock>
 
   abstract markAsUsed(
     token: string
-  ): Effect.Effect<DownloadTokenEntity, DownloadTokenNotFoundError | DownloadTokenAlreadyUsedError | BusinessRuleViolationError | ValidationError | DatabaseError>
+  ): Effect.Effect<DownloadTokenEntity, DownloadTokenNotFoundError | DownloadTokenAlreadyUsedError | BusinessRuleViolationError | ValidationError | DatabaseError, Clock.Clock>
 
   abstract deleteExpiredTokens(): Effect.Effect<number, DatabaseError>
 

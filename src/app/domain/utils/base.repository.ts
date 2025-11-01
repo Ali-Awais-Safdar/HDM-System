@@ -1,4 +1,4 @@
-import { Effect, Option } from "effect"
+import { Effect, Option, Clock } from "effect"
 import { DomainError, ValidationError, DatabaseError } from "@domain/utils/base.errors"
 import { Paginated, PaginationOptions } from "@domain/utils/pagination"
 
@@ -15,7 +15,7 @@ export abstract class BaseRepository<
 > {
   protected abstract readonly entityName: string
 
-  abstract save(entity: TEntity): Effect.Effect<TEntity, TSaveError | DatabaseError, never>
+  abstract save(entity: TEntity): Effect.Effect<TEntity, TSaveError | DatabaseError, Clock.Clock>
 
   /**
    * Delete an entity by id.
@@ -25,9 +25,9 @@ export abstract class BaseRepository<
 
   abstract findById(
     id: TEntity["id"]
-  ): Effect.Effect<Option.Option<TEntity>, TNotFoundError | ValidationError | DatabaseError>
+  ): Effect.Effect<Option.Option<TEntity>, TNotFoundError | ValidationError | DatabaseError, Clock.Clock>
 
   abstract exists(id: TEntity["id"]): Effect.Effect<boolean, DatabaseError, never>
 
-  abstract list(options?: PaginationOptions): RepositoryEffect<Paginated<TEntity>, TNotFoundError | DatabaseError>
+  abstract list(options?: PaginationOptions): Effect.Effect<Paginated<TEntity>, TNotFoundError | ValidationError | DatabaseError, Clock.Clock>
 }

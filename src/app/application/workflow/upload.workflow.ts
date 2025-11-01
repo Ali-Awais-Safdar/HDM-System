@@ -432,7 +432,7 @@ export class UploadWorkflow {
   private checkExistingVersionByChecksum(
     documentId: DocumentId,
     checksum: Sha256
-  ): Effect.Effect<Option.Option<DocumentVersionEntity>, WorkflowDependencyError> {
+  ): Effect.Effect<Option.Option<DocumentVersionEntity>, WorkflowDependencyError, Clock.Clock> {
     return pipe(
       // Load aggregate to check for existing version by checksum
       this.documentAggregateRepository.loadById(documentId).pipe(

@@ -488,7 +488,7 @@ export class DocumentWorkflow {
 
   private checkDocumentDependencies(
     documentId: DocumentId
-  ): Effect.Effect<void, WorkflowDependencyError | DatabaseError> {
+  ): Effect.Effect<void, WorkflowDependencyError | DatabaseError, Clock.Clock> {
     // Check non-aggregate dependencies (tokens and policies)
     // Version checks are handled by aggregate.canDelete(force)
     return pipe(
@@ -532,7 +532,7 @@ export class DocumentWorkflow {
     )
   }
 
-  deleteDocument(input: DeleteDocumentCommandEncoded): Effect.Effect<boolean, WorkflowError | ParseResult.ParseError, never> {
+  deleteDocument(input: DeleteDocumentCommandEncoded): Effect.Effect<boolean, WorkflowError | ParseResult.ParseError, Clock.Clock> {
     return pipe(
       // 1. Decode DTO using schema validation
       S.decodeUnknown(DeleteDocumentCommandSchema)(input),
@@ -639,7 +639,7 @@ export class DocumentWorkflow {
 
   getDocumentAccess(
     input: GetDocumentAccessQueryEncoded
-  ): Effect.Effect<DocumentAccessResponseEncoded, WorkflowError | ParseResult.ParseError, never> {
+  ): Effect.Effect<DocumentAccessResponseEncoded, WorkflowError | ParseResult.ParseError, Clock.Clock> {
     return pipe(
       // 1. Decode query DTO using schema validation
       S.decodeUnknown(GetDocumentAccessQuerySchema)(input),

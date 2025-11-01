@@ -49,7 +49,7 @@ export function fetchSingle<
   mapper: FromDbMapper<TModel, TEntity, TValidationError>,
   entityType: string,
   NotFoundErrorCtor: NotFoundErrorConstructor<TNotFoundError>
-): E.Effect<O.Option<TEntity>, TNotFoundError | TValidationError | DatabaseError, never> {
+): E.Effect<O.Option<TEntity>, TNotFoundError | TValidationError | DatabaseError, Clock.Clock> {
   return pipe(
     executeQuery(query, entityType, NotFoundErrorCtor),
     E.map(O.fromIterable),
@@ -58,8 +58,7 @@ export function fetchSingle<
         onNone: () => E.succeed(O.none()),
         onSome: (row) => pipe(
           mapper(row),
-          E.map(O.some),
-          E.provideService(Clock.Clock, Clock.make())
+          E.map(O.some)
         )
       })
     )
@@ -77,16 +76,11 @@ export function fetchMultiple<
   mapper: FromDbMapper<TModel, TEntity, TValidationError>,
   entityType: string,
   NotFoundErrorCtor: NotFoundErrorConstructor<TNotFoundError>
-): E.Effect<readonly TEntity[], TNotFoundError | TValidationError | DatabaseError, never> {
+): E.Effect<readonly TEntity[], TNotFoundError | TValidationError | DatabaseError, Clock.Clock> {
   return pipe(
     executeQuery(query, entityType, NotFoundErrorCtor),
     E.flatMap((results) => 
-      E.forEach(results, (row) =>
-        pipe(
-          mapper(row),
-          E.provideService(Clock.Clock, Clock.make())
-        )
-      )
+      E.forEach(results, (row) => mapper(row))
     )
   )
 }

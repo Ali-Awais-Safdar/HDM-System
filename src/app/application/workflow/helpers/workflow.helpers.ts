@@ -1,4 +1,4 @@
-import { Effect, Option, pipe, Schema as S } from "effect"
+import { Effect, Option, pipe, Schema as S, Clock } from "effect"
 import type { AuditPort, AuditEvent } from "@application/services/ports/audit.port"
 import type { LoggerPort } from "@application/services/ports/logger.port"
 import { DocumentEntity, SerializedDocument } from "@domain/document/document.entity"
@@ -67,7 +67,7 @@ export const filterUndefined = <T>(option: Option.Option<T | undefined>): Option
 export const loadActor = (
   userRepository: UserRepository,
   userId: UserId
-): Effect.Effect<UserEntity, PermissionCheckError> => {
+): Effect.Effect<UserEntity, PermissionCheckError, Clock.Clock> => {
   return pipe(
     userRepository.findById(userId),
     Effect.mapError((error) => new PermissionCheckError(
@@ -97,7 +97,7 @@ export const loadDocument = (
   aggregateRepository: DocumentAggregateRepository,
   documentId: DocumentId,
   workspaceId: WorkspaceId
-): Effect.Effect<DocumentEntity, DocumentNotFoundError | WorkflowDependencyError> => {
+): Effect.Effect<DocumentEntity, DocumentNotFoundError | WorkflowDependencyError, Clock.Clock> => {
   return pipe(
     aggregateRepository.findDocumentById(documentId),
     Effect.mapError((error) => {
@@ -149,7 +149,7 @@ export const loadDocument = (
 export const loadDocumentVersion = (
   aggregateRepository: DocumentAggregateRepository,
   versionId: DocumentVersionId
-): Effect.Effect<DocumentVersionEntity, DocumentVersionNotFoundError | WorkflowDependencyError> => {
+): Effect.Effect<DocumentVersionEntity, DocumentVersionNotFoundError | WorkflowDependencyError, Clock.Clock> => {
   return pipe(
     // 1. Find document ID by version ID (lightweight lookup)
     aggregateRepository.findDocumentIdByVersionId(versionId).pipe(
@@ -367,7 +367,7 @@ export const loadActorAccessContext = (
   accessPolicyRepository: AccessPolicyRepository,
   actor: UserEntity,
   document: DocumentEntity
-): Effect.Effect<ReadonlyArray<AccessPolicyEntity>, WorkflowDependencyError> => {
+): Effect.Effect<ReadonlyArray<AccessPolicyEntity>, WorkflowDependencyError, Clock.Clock> => {
   return pipe(
     accessPolicyRepository.findByResourceId(document.id),
     Effect.mapError((error) => {
@@ -397,7 +397,7 @@ export const ensurePermission = (
   actor: UserEntity,
   document: DocumentEntity,
   level: "read" | "write" | "admin"
-): Effect.Effect<void, PermissionCheckError | WorkflowDependencyError> => {
+): Effect.Effect<void, PermissionCheckError | WorkflowDependencyError, Clock.Clock> => {
   return pipe(
     // Load all relevant policies (user-specific and role-based)
     loadActorAccessContext(accessPolicyRepository, actor, document),
@@ -445,7 +445,7 @@ export const ensureRead = (
   accessPolicyRepository: AccessPolicyRepository,
   actor: UserEntity,
   document: DocumentEntity
-): Effect.Effect<void, PermissionCheckError | WorkflowDependencyError> => {
+): Effect.Effect<void, PermissionCheckError | WorkflowDependencyError, Clock.Clock> => {
   return ensurePermission(accessPolicyRepository, actor, document, "read")
 }
 

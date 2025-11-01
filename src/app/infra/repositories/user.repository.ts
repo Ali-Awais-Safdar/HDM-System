@@ -33,7 +33,7 @@ export class UserDrizzleRepository extends UserRepository {
 
   findById(
     id: UserId
-  ): E.Effect<O.Option<UserEntity>, UserNotFoundError | ValidationError | DatabaseError, never> {
+  ): E.Effect<O.Option<UserEntity>, UserNotFoundError | ValidationError | DatabaseError, Clock.Clock> {
     return pipe(
       fetchSingle(
         () => this.db.select().from(users).where(eq(users.id, id)).limit(1),
@@ -51,7 +51,7 @@ export class UserDrizzleRepository extends UserRepository {
 
   findByEmail(
     email: EmailAddress
-  ): E.Effect<O.Option<UserEntity>, UserNotFoundError | ValidationError | DatabaseError, never> {
+  ): E.Effect<O.Option<UserEntity>, UserNotFoundError | ValidationError | DatabaseError, Clock.Clock> {
     return pipe(
       fetchSingle(
         () => this.db.select().from(users).where(eq(users.email, email)).limit(1),
@@ -126,7 +126,7 @@ export class UserDrizzleRepository extends UserRepository {
 
   save(
     user: UserEntity
-  ): E.Effect<UserEntity, UserAlreadyExistsError | UserValidationError | ValidationError | DatabaseError, never> {
+  ): E.Effect<UserEntity, UserAlreadyExistsError | UserValidationError | ValidationError | DatabaseError, Clock.Clock> {
     return pipe(
       this.findByEmail(user.email),
       E.flatMap((existingUser) =>
@@ -218,7 +218,7 @@ export class UserDrizzleRepository extends UserRepository {
     )
   }
 
-  list(options?: PaginationOptions): E.Effect<Paginated<UserEntity>, UserNotFoundError | ValidationError | DatabaseError, never> {
+  list(options?: PaginationOptions): E.Effect<Paginated<UserEntity>, UserNotFoundError | ValidationError | DatabaseError, Clock.Clock> {
     const paginationOptions = options ?? defaultPaginationOptions()
     const offset = (paginationOptions.pageNum - 1) * paginationOptions.pageSize
 
@@ -265,8 +265,7 @@ export class UserDrizzleRepository extends UserRepository {
                     error instanceof UserValidationError
                       ? new ValidationError(error.message, error.field, error.value)
                       : error
-                  ),
-                  E.provideService(Clock.Clock, Clock.make())
+                  )
                 )
               ),
               E.map((entities): Paginated<UserEntity> => ({
