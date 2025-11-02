@@ -7,6 +7,7 @@ import type { RPCContext } from "../context"
 import { executeEffect } from "../effect-adapter"
 import { withActorAndWorkspace } from "../context"
 import { toStandard } from "../standard"
+import { withWorkspaceHeader } from "./utils"
 
 import {
   AddPolicyInputSchema,
@@ -30,6 +31,16 @@ import {
 
 export const addPolicy = os
   .$context<RPCContext>()
+  .meta(withWorkspaceHeader({
+    summary: "Add access policy",
+    description: "Create a new access policy",
+    tags: ["Access Policies"]
+  }))
+  .route({
+    method: "POST",
+    path: "/documents/{resourceId}/access-policies",
+    operationId: "accessPolicy.addPolicy"
+  })
   .input(toStandard(AddPolicyInputSchema))
   .output(toStandard(AccessPolicyResponseSchema))
   .handler(async ({ input, context }) => {
@@ -50,6 +61,16 @@ export const addPolicy = os
 
 export const removePolicy = os
   .$context<RPCContext>()
+  .meta(withWorkspaceHeader({
+    summary: "Remove access policy",
+    description: "Remove an access policy",
+    tags: ["Access Policies"]
+  }))
+  .route({
+    method: "DELETE",
+    path: "/access-policies/{policyId}",
+    operationId: "accessPolicy.removePolicy"
+  })
   .input(toStandard(RemovePolicyInputSchema))
   .output(toStandard(S.Struct({ success: S.Boolean, policyId: S.String })))
   .handler(async ({ input, context }) => {
@@ -76,6 +97,16 @@ export const removePolicy = os
 
 export const updatePolicy = os
   .$context<RPCContext>()
+  .meta(withWorkspaceHeader({
+    summary: "Update access policy",
+    description: "Update policy actions",
+    tags: ["Access Policies"]
+  }))
+  .route({
+    method: "PATCH",
+    path: "/access-policies/{policyId}",
+    operationId: "accessPolicy.updatePolicy"
+  })
   .input(toStandard(UpdatePolicyActionsInputSchema))
   .output(toStandard(AccessPolicyResponseSchema))
   .handler(async ({ input, context }) => {
@@ -96,6 +127,16 @@ export const updatePolicy = os
 
 export const getDocumentPolicies = os
   .$context<RPCContext>()
+  .meta(withWorkspaceHeader({
+    summary: "Get document policies",
+    description: "List all access policies for a document",
+    tags: ["Access Policies"]
+  }))
+  .route({
+    method: "GET",
+    path: "/documents/{documentId}/access-policies",
+    operationId: "accessPolicy.getDocumentPolicies"
+  })
   .input(toStandard(GetDocumentPoliciesInputSchema))
   .output(toStandard(S.Array(AccessPolicyResponseSchema)))
   .handler(async ({ input, context }) => {
@@ -116,6 +157,16 @@ export const getDocumentPolicies = os
 
 export const getActorPolicies = os
   .$context<RPCContext>()
+  .meta(withWorkspaceHeader({
+    summary: "Get actor policies",
+    description: "List policies filtered by actor for a document",
+    tags: ["Access Policies"]
+  }))
+  .route({
+    method: "GET",
+    path: "/documents/{documentId}/access-policies/actors",
+    operationId: "accessPolicy.getActorPolicies"
+  })
   .input(toStandard(GetActorPoliciesInputSchema))
   .output(toStandard(S.Array(AccessPolicyResponseSchema)))
   .handler(async ({ input, context }) => {

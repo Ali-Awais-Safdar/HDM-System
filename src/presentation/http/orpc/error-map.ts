@@ -1,4 +1,4 @@
-import { ORPCError } from "@orpc/server"
+import { ORPCError } from "@orpc/client"
 import { ParseResult } from "effect"
 
 // Application errors
@@ -577,10 +577,18 @@ export function mapToORPCError(error: unknown, options?: ErrorMappingOptions): O
 }
 
 function isNotFoundDependency(error: WorkflowDependencyError): boolean {
-  // Check if the dependency name contains "Repository" and operation is "findById"
+  // Set of operations that typically indicate not-found scenarios
+  const NOT_FOUND_OPS = new Set([
+    "findById",
+    "findDocumentById",
+    "loadById",
+    "getLatestVersion"
+  ])
+  
+  // Check if the dependency name contains "Repository" and operation is a not-found operation
   const isRepositoryNotFound = 
     error.dependency.includes("Repository") && 
-    error.operation === "findById"
+    NOT_FOUND_OPS.has(error.operation)
   
   // Check if details contain a not-found indicator
   const hasNotFoundDetails = 

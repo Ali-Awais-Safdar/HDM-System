@@ -10,7 +10,8 @@ import {
   type RPCContextLike 
 } from "./orpc/context"
 import { mapToORPCError } from "./orpc/error-map"
-import { procedures } from "./orpc/procedures"
+import { router } from "./orpc/procedures"
+import { buildOpenAPISpec } from "./orpc/openapi"
 import type { MiddlewareHandler } from "hono"
 import { resolveService } from "@infra/di/setup"
 import { TOKENS } from "@infra/di/container"
@@ -91,11 +92,13 @@ export function buildServer(): Hono<{ Variables: Variables }> {
       JWT_CONFIG.HEADER_NAME,
       "Accept",
       "Origin",
-      "X-Requested-With"
+      "X-Requested-With",
+      "x-workspace-id"
     ],
     exposeHeaders: [
       "X-Request-Id",
-      "Content-Type"
+      "Content-Type",
+      "X-Checksum"
     ]
   }))
 
@@ -110,7 +113,17 @@ export function buildServer(): Hono<{ Variables: Variables }> {
 
   app.use(`${HTTP_CONFIG.RPC_PREFIX}/*`, contextMiddleware)
 
-  const rpcHandler = new RPCHandler<RPCContextLike>(procedures as any)
+  /**
+   * oRPC Handler
+   * 
+   * Uses oRPC's RPCHandler which works seamlessly with Hono's Request/Response API.
+   * The handler automatically:
+   * - Routes requests to the correct procedure based on path
+   * - Validates input/output schemas using Standard Schema
+   * - Handles errors according to oRPC conventions
+   * - Provides context to procedures
+   */
+  const rpcHandler = new RPCHandler<RPCContextLike>(router as any)
 
   app.use(`${HTTP_CONFIG.RPC_PREFIX}/*`, async (c) => {
     const rpcContext = c.get("rpcContext")
@@ -135,6 +148,18 @@ export function buildServer(): Hono<{ Variables: Variables }> {
       },
       404
     )
+  })
+
+  /**
+   * OpenAPI Specification Endpoint
+   * 
+   * Generates OpenAPI 3.0 specification from oRPC router procedures.
+   * The spec includes all procedures with their routes, metadata, and schemas.
+   * Cached in production for performance, regenerated on demand in development.
+   */
+  app.get("/openapi.json", async (c) => {
+    const spec = await buildOpenAPISpec()
+    return c.json(spec)
   })
 
   app.notFound((c) => {

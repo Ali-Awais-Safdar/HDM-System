@@ -7,7 +7,7 @@ import type { RPCContext } from "../context"
 import { executeEffect } from "../effect-adapter"
 import { withActorAndWorkspace, withActorWorkspaceAndOwner } from "../context"
 import { toStandard } from "../standard"
-import { normalizeUpdatedAt } from "./utils"
+import { normalizeUpdatedAt, withWorkspaceHeader } from "./utils"
 
 import {
   CreateDocumentInputSchema,
@@ -40,6 +40,16 @@ import {
 
 export const create = os
   .$context<RPCContext>()
+  .meta(withWorkspaceHeader({
+    summary: "Create document",
+    description: "Create a new document in the current workspace",
+    tags: ["Documents"]
+  }))
+  .route({
+    method: "POST",
+    path: "/documents",
+    operationId: "document.create"
+  })
   .input(toStandard(CreateDocumentInputSchema))
   .output(toStandard(DocumentResponseSchema))
   .handler(async ({ input, context }) => {
@@ -64,6 +74,16 @@ export const create = os
 
 export const get = os
   .$context<RPCContext>()
+  .meta(withWorkspaceHeader({
+    summary: "Get document",
+    description: "Retrieve a document by ID",
+    tags: ["Documents"]
+  }))
+  .route({
+    method: "GET",
+    path: "/documents/{documentId}",
+    operationId: "document.get"
+  })
   .input(toStandard(GetDocumentInputSchema))
   .output(toStandard(DocumentResponseSchema))
   .handler(async ({ input, context }) => {
@@ -86,6 +106,16 @@ export const get = os
 
 export const list = os
   .$context<RPCContext>()
+  .meta(withWorkspaceHeader({
+    summary: "List documents",
+    description: "List documents with optional filters and pagination",
+    tags: ["Documents"]
+  }))
+  .route({
+    method: "GET",
+    path: "/documents",
+    operationId: "document.list"
+  })
   .input(toStandard(ListDocumentsInputSchema))
   .output(toStandard(PaginatedDocumentsResponseSchema))
   .handler(async ({ input, context }) => {
@@ -110,6 +140,16 @@ export const list = os
 
 export const update = os
   .$context<RPCContext>()
+  .meta(withWorkspaceHeader({
+    summary: "Update document",
+    description: "Update document metadata",
+    tags: ["Documents"]
+  }))
+  .route({
+    method: "PATCH",
+    path: "/documents/{id}",
+    operationId: "document.update"
+  })
   .input(toStandard(UpdateDocumentInputSchema))
   .output(toStandard(DocumentResponseSchema))
   .handler(async ({ input, context }) => {
@@ -135,6 +175,16 @@ export const update = os
 
 export const publish = os
   .$context<RPCContext>()
+  .meta(withWorkspaceHeader({
+    summary: "Publish document",
+    description: "Change document publish status",
+    tags: ["Documents"]
+  }))
+  .route({
+    method: "POST",
+    path: "/documents/{documentId}/publish",
+    operationId: "document.publish"
+  })
   .input(toStandard(PublishDocumentInputSchema))
   .output(toStandard(DocumentResponseSchema))
   .handler(async ({ input, context }) => {
@@ -159,6 +209,16 @@ export const publish = os
 
 export const deleteDoc = os
   .$context<RPCContext>()
+  .meta(withWorkspaceHeader({
+    summary: "Delete document",
+    description: "Delete a document",
+    tags: ["Documents"]
+  }))
+  .route({
+    method: "DELETE",
+    path: "/documents/{id}",
+    operationId: "document.delete"
+  })
   .input(toStandard(DeleteDocumentInputSchema))
   .output(toStandard(S.Struct({ success: S.Boolean, id: S.String })))
   .handler(async ({ input, context }) => {
@@ -185,6 +245,16 @@ export const deleteDoc = os
 
 export const getAccess = os
   .$context<RPCContext>()
+  .meta(withWorkspaceHeader({
+    summary: "Get document access",
+    description: "Check document access permissions",
+    tags: ["Documents"]
+  }))
+  .route({
+    method: "GET",
+    path: "/documents/{documentId}/access",
+    operationId: "document.getAccess"
+  })
   .input(toStandard(GetDocumentAccessInputSchema))
   .output(toStandard(DocumentAccessResponseSchema))
   .handler(async ({ input, context }) => {

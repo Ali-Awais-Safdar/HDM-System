@@ -14,7 +14,9 @@ import { VersionNumber } from "@domain/documentVersion/version-number.vo"
  * Used by oRPC procedures that accept File objects for direct streaming upload.
  */
 export const InitiateUploadFormSchema = S.Struct({
-  file: S.instanceOf(File),
+  file: S.instanceOf(File).annotations({
+    jsonSchema: { type: "string", contentMediaType: "application/octet-stream" }
+  }),
   documentId: DocumentVersionFields.documentId,
   mimeType: FileMetadataFields.mimeType,
   size: FileMetadataFields.size,
@@ -96,9 +98,8 @@ export const PublishDocumentCommandSchema = PublishDocumentInputSchema.pipe(
 export type PublishDocumentCommand = S.Schema.Type<typeof PublishDocumentCommandSchema>
 export type PublishDocumentCommandEncoded = S.Schema.Encoded<typeof PublishDocumentCommandSchema>
 
-export const UpdateDocumentInputSchema = DocumentStruct.pick("title", "description", "tags")
-  .pipe(S.partialWith({ exact: true }))
-  .pipe(S.extend(S.Struct({ id: DocumentId })))
+export const UpdateDocumentInputSchema = S.Struct({ id: DocumentId })
+  .pipe(S.extend(DocumentStruct.pick("title", "description", "tags").pipe(S.partialWith({ exact: true }))))
 export type UpdateDocumentInput = S.Schema.Type<typeof UpdateDocumentInputSchema>
 
 export const UpdateDocumentCommandSchema = UpdateDocumentInputSchema.pipe(

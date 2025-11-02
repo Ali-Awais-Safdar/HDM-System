@@ -6,7 +6,7 @@ import type { RPCContext } from "../context"
 import { executeEffect } from "../effect-adapter"
 import { withActorAndWorkspace } from "../context"
 import { toStandard } from "../standard"
-import { mimeToExt } from "./utils"
+import { mimeToExt, withWorkspaceHeader } from "./utils"
 
 import {
   CreateDownloadTokenInputSchema,
@@ -20,7 +20,8 @@ import {
   DownloadTokenResponseSchema,
   PaginatedDownloadTokensResponseSchema,
   ValidateDownloadTokenResponseSchema,
-  RevokeDownloadTokenResponseSchema
+  RevokeDownloadTokenResponseSchema,
+  DownloadFileDetailedOutputSchema
 } from "@application/dto/downloadToken/responses.dto"
 
 /**
@@ -37,6 +38,16 @@ import {
 
 export const create = os
   .$context<RPCContext>()
+  .meta(withWorkspaceHeader({
+    summary: "Create download token",
+    description: "Issue a new download token",
+    tags: ["Download Tokens"]
+  }))
+  .route({
+    method: "POST",
+    path: "/documents/{documentId}/download-tokens",
+    operationId: "downloadToken.create"
+  })
   .input(toStandard(CreateDownloadTokenInputSchema))
   .output(toStandard(DownloadTokenResponseSchema))
   .handler(async ({ input, context }) => {
@@ -59,6 +70,16 @@ export const create = os
 
 export const validate = os
   .$context<RPCContext>()
+  .meta(withWorkspaceHeader({
+    summary: "Validate download token",
+    description: "Validate a download token",
+    tags: ["Download Tokens"]
+  }))
+  .route({
+    method: "GET",
+    path: "/download-tokens/{token}",
+    operationId: "downloadToken.validate"
+  })
   .input(toStandard(ValidateDownloadTokenInputSchema))
   .output(toStandard(ValidateDownloadTokenResponseSchema))
   .handler(async ({ input, context }) => {
@@ -79,6 +100,16 @@ export const validate = os
 
 export const use = os
   .$context<RPCContext>()
+  .meta(withWorkspaceHeader({
+    summary: "Use download token",
+    description: "Mark a download token as used",
+    tags: ["Download Tokens"]
+  }))
+  .route({
+    method: "POST",
+    path: "/download-tokens/{token}/use",
+    operationId: "downloadToken.use"
+  })
   .input(toStandard(UseDownloadTokenInputSchema))
   .output(toStandard(DownloadTokenResponseSchema))
   .handler(async ({ input, context }) => {
@@ -99,6 +130,16 @@ export const use = os
 
 export const list = os
   .$context<RPCContext>()
+  .meta(withWorkspaceHeader({
+    summary: "List download tokens",
+    description: "List all download tokens for a document",
+    tags: ["Download Tokens"]
+  }))
+  .route({
+    method: "GET",
+    path: "/documents/{documentId}/download-tokens",
+    operationId: "downloadToken.list"
+  })
   .input(toStandard(ListDownloadTokensInputSchema))
   .output(toStandard(PaginatedDownloadTokensResponseSchema))
   .handler(async ({ input, context }) => {
@@ -121,6 +162,16 @@ export const list = os
 
 export const revoke = os
   .$context<RPCContext>()
+  .meta(withWorkspaceHeader({
+    summary: "Revoke download token",
+    description: "Revoke a download token",
+    tags: ["Download Tokens"]
+  }))
+  .route({
+    method: "DELETE",
+    path: "/download-tokens/{tokenId}",
+    operationId: "downloadToken.revoke"
+  })
   .input(toStandard(RevokeDownloadTokenInputSchema))
   .output(toStandard(RevokeDownloadTokenResponseSchema))
   .handler(async ({ input, context }) => {
@@ -152,7 +203,19 @@ export const revoke = os
  */
 export const downloadFile = os
   .$context<RPCContext>()
+  .meta(withWorkspaceHeader({
+    summary: "Download file",
+    description: "Download file using a validated token",
+    tags: ["Download Tokens"]
+  }))
+  .route({
+    method: "GET",
+    path: "/download-tokens/{token}/file",
+    operationId: "downloadToken.downloadFile",
+    outputStructure: "detailed"
+  })
   .input(toStandard(DownloadFileWithTokenInputSchema))
+  .output(toStandard(DownloadFileDetailedOutputSchema))
   .handler(async ({ input, context }) => {
     const workflow = resolveWorkflow<DownloadTokenWorkflow>(TOKENS.DOWNLOAD_TOKEN_WORKFLOW)
     
@@ -177,17 +240,17 @@ export const downloadFile = os
       metadata.originalFilename ??
       `document-${result.documentId}-v${result.version}${mimeToExt(metadata.mimeType)}`
     
-    // Create Response with appropriate headers including checksum for integrity verification
-    return new Response(stream, {
-      status: 200,
+    const blob = await new Response(stream).blob()
+    
+    return {
       headers: {
         "Content-Type": metadata.mimeType,
-        "Content-Length": metadata.size.toString(),
         "Content-Disposition": `attachment; filename="${filename}"`,
         "X-Checksum": metadata.checksum,
         "Cache-Control": "no-cache, no-store, must-revalidate"
-      }
-    })
+      },
+      body: blob
+    }
   })
 
 export const downloadTokenProcedures = {
@@ -198,4 +261,3 @@ export const downloadTokenProcedures = {
   revoke,
   downloadFile
 }
-

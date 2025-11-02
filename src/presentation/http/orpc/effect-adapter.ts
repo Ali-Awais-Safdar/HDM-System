@@ -3,6 +3,7 @@ import { mapToORPCError, type ErrorMappingOptions } from "./error-map"
 import { resolveService } from "@infra/di/setup"
 import { TOKENS } from "@infra/di/container"
 import { AuditPort } from "@application/services/ports/audit.port"
+import { SYSTEM_UUID } from "@application/services/audit.constants"
 import type { RPCContext, AnonymousRPCContext } from "./context"
 
 /**
@@ -91,14 +92,14 @@ export const executeEffect = async <A>(
         actorId: actorId,
         workspaceId: workspaceIdString,
         resourceType: "rpc_operation",
-        resourceId: procedureName,
+        resourceId: SYSTEM_UUID,
         action: procedureName,
         outcome: "failure" as const,
         reason: errorMessage,
         metadata: {
+          procedure: procedureName,
           errorCode,
           errorMessage,
-          procedure: procedureName,
           duration
         }
       }

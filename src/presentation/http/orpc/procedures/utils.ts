@@ -47,3 +47,33 @@ export function mimeToExt(mimeType: string): string {
   return mimeToExtension[mimeType] || ""
 }
 
+/**
+ * OpenAPI meta helper for workspace header parameter
+ */
+const WORKSPACE_HEADER_PARAMETER = {
+  name: "x-workspace-id",
+  in: "header" as const,
+  schema: { type: "string" as const, format: "uuid" as const },
+  required: false,
+  description: "If present, must match JWT's workspace. Otherwise JWT workspace applies."
+}
+
+/**
+ * Adds workspace header parameter to OpenAPI meta
+ * 
+ * Use this helper when procedures require workspace context via
+ * withActorAndWorkspace or withActorWorkspaceAndOwner.
+ */
+export function withWorkspaceHeader(meta: {
+  summary: string
+  description: string
+  tags: string[]
+  parameters?: unknown[]
+  security?: unknown[]
+}) {
+  return {
+    ...meta,
+    parameters: [...(meta.parameters || []), WORKSPACE_HEADER_PARAMETER]
+  }
+}
+

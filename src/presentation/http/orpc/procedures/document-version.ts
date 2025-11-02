@@ -6,7 +6,7 @@ import type { RPCContext } from "../context"
 import { executeEffect } from "../effect-adapter"
 import { withActorAndWorkspace } from "../context"
 import { toStandard } from "../standard"
-import { normalizeUpdatedAt } from "./utils"
+import { normalizeUpdatedAt, withWorkspaceHeader } from "./utils"
 
 import {
   GetDocumentVersionInputSchema,
@@ -30,6 +30,16 @@ import {
 
 export const getById = os
   .$context<RPCContext>()
+  .meta(withWorkspaceHeader({
+    summary: "Get document version by ID",
+    description: "Retrieve a specific version by ID",
+    tags: ["Document Versions"]
+  }))
+  .route({
+    method: "GET",
+    path: "/versions/{versionId}",
+    operationId: "documentVersion.getById"
+  })
   .input(toStandard(GetDocumentVersionInputSchema))
   .output(toStandard(DocumentVersionResponseSchema))
   .handler(async ({ input, context }) => {
@@ -52,6 +62,16 @@ export const getById = os
 
 export const getLatest = os
   .$context<RPCContext>()
+  .meta(withWorkspaceHeader({
+    summary: "Get latest document version",
+    description: "Retrieve the latest version of a document",
+    tags: ["Document Versions"]
+  }))
+  .route({
+    method: "GET",
+    path: "/documents/{documentId}/versions/latest",
+    operationId: "documentVersion.getLatest"
+  })
   .input(toStandard(GetLatestDocumentVersionInputSchema))
   .output(toStandard(LatestDocumentVersionResponseSchema))
   .handler(async ({ input, context }) => {
@@ -74,6 +94,16 @@ export const getLatest = os
 
 export const list = os
   .$context<RPCContext>()
+  .meta(withWorkspaceHeader({
+    summary: "List document versions",
+    description: "List all versions of a document with pagination",
+    tags: ["Document Versions"]
+  }))
+  .route({
+    method: "GET",
+    path: "/documents/{documentId}/versions",
+    operationId: "documentVersion.list"
+  })
   .input(toStandard(ListDocumentVersionsInputSchema))
   .output(toStandard(PaginatedDocumentVersionsResponseSchema))
   .handler(async ({ input, context }) => {

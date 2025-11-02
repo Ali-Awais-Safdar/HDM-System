@@ -6,7 +6,7 @@ import type { RPCContext } from "../context"
 import { executeEffect } from "../effect-adapter"
 import { withActorAndWorkspace } from "../context"
 import { toStandard } from "../standard"
-import { normalizeUploadResponse } from "./utils"
+import { normalizeUploadResponse, withWorkspaceHeader } from "./utils"
 
 import {
   InitiateUploadFormSchema,
@@ -27,6 +27,16 @@ import {
 
 export const initiateUpload = os
   .$context<RPCContext>()
+  .meta(withWorkspaceHeader({
+    summary: "Initiate upload",
+    description: "Initiate a file upload with multipart/form-data",
+    tags: ["Uploads"]
+  }))
+  .route({
+    method: "POST",
+    path: "/documents/{documentId}/uploads",
+    operationId: "upload.initiateUpload"
+  })
   .input(toStandard(InitiateUploadFormSchema))
   .output(toStandard(InitiateUploadResponseSchema))
   .handler(async ({ input, context }) => {
@@ -62,6 +72,16 @@ export const initiateUpload = os
 
 export const confirmUpload = os
   .$context<RPCContext>()
+  .meta(withWorkspaceHeader({
+    summary: "Confirm upload",
+    description: "Confirm upload and create document version",
+    tags: ["Uploads"]
+  }))
+  .route({
+    method: "POST",
+    path: "/documents/{documentId}/uploads/confirm",
+    operationId: "upload.confirmUpload"
+  })
   .input(toStandard(ConfirmUploadInputSchema))
   .output(toStandard(ConfirmUploadResponseSchema))
   .handler(async ({ input, context }) => {

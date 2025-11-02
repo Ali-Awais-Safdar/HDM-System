@@ -1,0 +1,1816 @@
+info:
+  title: DMS Headless API
+  version: 1.0.0
+  description: 'Document Management System API - A headless DMS with workspace support, access policies, and document versioning'
+servers:
+  - url: /rpc
+    description: RPC endpoint
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+security:
+  - bearerAuth: []
+openapi: 3.1.1
+paths:
+  /documents:
+    post:
+      operationId: document.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+                - tags
+              properties:
+                title:
+                  type: string
+                description:
+                  anyOf:
+                    - type: string
+                    - type: 'null'
+                tags:
+                  type: array
+                  items:
+                    type: string
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - id
+                  - ownerId
+                  - title
+                  - tags
+                  - publishStatus
+                  - createdAt
+                properties:
+                  id:
+                    type: string
+                  ownerId:
+                    type: string
+                  title:
+                    type: string
+                  description:
+                    anyOf:
+                      - type: string
+                      - type: 'null'
+                  tags:
+                    type: array
+                    items:
+                      type: string
+                  publishStatus:
+                    type: string
+                    enum:
+                      - draft
+                      - published
+                      - unpublished
+                  publishNotes:
+                    anyOf:
+                      - type: string
+                      - type: 'null'
+                  createdAt:
+                    type: string
+                  updatedAt:
+                    type: string
+                additionalProperties: false
+    get:
+      operationId: document.list
+      parameters:
+        - name: ownerId
+          in: query
+          required: false
+          schema:
+            type: string
+          allowEmptyValue: true
+          allowReserved: true
+        - name: tags
+          in: query
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+          style: deepObject
+          explode: true
+          allowEmptyValue: true
+          allowReserved: true
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+          allowEmptyValue: true
+          allowReserved: true
+        - name: pageNum
+          in: query
+          required: false
+          schema:
+            type: number
+          allowEmptyValue: true
+          allowReserved: true
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: number
+          allowEmptyValue: true
+          allowReserved: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                  - total
+                  - pageNum
+                  - pageSize
+                  - totalPages
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - id
+                        - ownerId
+                        - title
+                        - tags
+                        - publishStatus
+                        - createdAt
+                      properties:
+                        id:
+                          type: string
+                        ownerId:
+                          type: string
+                        title:
+                          type: string
+                        description:
+                          anyOf:
+                            - type: string
+                            - type: 'null'
+                        tags:
+                          type: array
+                          items:
+                            type: string
+                        publishStatus:
+                          type: string
+                          enum:
+                            - draft
+                            - published
+                            - unpublished
+                        createdAt:
+                          type: string
+                      additionalProperties: false
+                  total:
+                    type: number
+                  pageNum:
+                    type: number
+                  pageSize:
+                    type: number
+                  totalPages:
+                    type: number
+                additionalProperties: false
+  '/documents/{documentId}':
+    get:
+      operationId: document.get
+      parameters:
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - id
+                  - ownerId
+                  - title
+                  - tags
+                  - publishStatus
+                  - createdAt
+                properties:
+                  id:
+                    type: string
+                  ownerId:
+                    type: string
+                  title:
+                    type: string
+                  description:
+                    anyOf:
+                      - type: string
+                      - type: 'null'
+                  tags:
+                    type: array
+                    items:
+                      type: string
+                  publishStatus:
+                    type: string
+                    enum:
+                      - draft
+                      - published
+                      - unpublished
+                  publishNotes:
+                    anyOf:
+                      - type: string
+                      - type: 'null'
+                  createdAt:
+                    type: string
+                  updatedAt:
+                    type: string
+                additionalProperties: false
+  '/documents/{id}':
+    patch:
+      operationId: document.update
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              required: []
+              properties:
+                title:
+                  type: string
+                description:
+                  anyOf:
+                    - type: string
+                    - type: 'null'
+                tags:
+                  type: array
+                  items:
+                    type: string
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - id
+                  - ownerId
+                  - title
+                  - tags
+                  - publishStatus
+                  - createdAt
+                properties:
+                  id:
+                    type: string
+                  ownerId:
+                    type: string
+                  title:
+                    type: string
+                  description:
+                    anyOf:
+                      - type: string
+                      - type: 'null'
+                  tags:
+                    type: array
+                    items:
+                      type: string
+                  publishStatus:
+                    type: string
+                    enum:
+                      - draft
+                      - published
+                      - unpublished
+                  publishNotes:
+                    anyOf:
+                      - type: string
+                      - type: 'null'
+                  createdAt:
+                    type: string
+                  updatedAt:
+                    type: string
+                additionalProperties: false
+    delete:
+      operationId: document.delete
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              required: []
+              properties:
+                force:
+                  type: boolean
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - id
+                properties:
+                  success:
+                    type: boolean
+                  id:
+                    type: string
+                additionalProperties: false
+  '/documents/{documentId}/publish':
+    post:
+      operationId: document.publish
+      parameters:
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - publishStatus
+              properties:
+                publishStatus:
+                  type: string
+                  enum:
+                    - draft
+                    - published
+                    - unpublished
+                publishNotes:
+                  anyOf:
+                    - type: string
+                    - type: 'null'
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - id
+                  - ownerId
+                  - title
+                  - tags
+                  - publishStatus
+                  - createdAt
+                properties:
+                  id:
+                    type: string
+                  ownerId:
+                    type: string
+                  title:
+                    type: string
+                  description:
+                    anyOf:
+                      - type: string
+                      - type: 'null'
+                  tags:
+                    type: array
+                    items:
+                      type: string
+                  publishStatus:
+                    type: string
+                    enum:
+                      - draft
+                      - published
+                      - unpublished
+                  publishNotes:
+                    anyOf:
+                      - type: string
+                      - type: 'null'
+                  createdAt:
+                    type: string
+                  updatedAt:
+                    type: string
+                additionalProperties: false
+  '/documents/{documentId}/access':
+    get:
+      operationId: document.getAccess
+      parameters:
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: requiredPermission
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - read
+              - write
+              - admin
+          allowEmptyValue: true
+          allowReserved: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - hasAccess
+                  - permissionLevel
+                  - policies
+                properties:
+                  hasAccess:
+                    type: boolean
+                  permissionLevel:
+                    type: string
+                    enum:
+                      - read
+                      - write
+                      - admin
+                  policies:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - id
+                        - resourceId
+                        - subjectType
+                        - actions
+                        - effect
+                      properties:
+                        id:
+                          type: string
+                        resourceId:
+                          type: string
+                        subjectType:
+                          type: string
+                          enum:
+                            - user
+                            - role
+                        subjectId:
+                          anyOf:
+                            - type: string
+                            - type: 'null'
+                        role:
+                          anyOf:
+                            - type: string
+                              enum:
+                                - ADMIN
+                                - USER
+                            - type: 'null'
+                        actions:
+                          type: array
+                          items:
+                            type: string
+                            enum:
+                              - read
+                              - update
+                              - delete
+                              - download
+                              - share
+                        effect:
+                          type: string
+                          enum:
+                            - allow
+                      additionalProperties: false
+                additionalProperties: false
+  '/documents/{documentId}/uploads':
+    post:
+      operationId: upload.initiateUpload
+      parameters:
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - file
+                - mimeType
+                - size
+                - contentRef
+              properties:
+                file:
+                  type: string
+                  contentMediaType: application/octet-stream
+                mimeType:
+                  type: string
+                size:
+                  type: number
+                contentRef:
+                  type: string
+                checksum:
+                  type: string
+              additionalProperties: false
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+                - mimeType
+                - size
+                - contentRef
+              properties:
+                file:
+                  type: string
+                  contentMediaType: application/octet-stream
+                mimeType:
+                  type: string
+                size:
+                  type: number
+                contentRef:
+                  type: string
+                checksum:
+                  type: string
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - fileKey
+                  - checksum
+                  - contentRef
+                properties:
+                  fileKey:
+                    type: string
+                  checksum:
+                    type: string
+                  contentRef:
+                    type: string
+                additionalProperties: false
+  '/documents/{documentId}/uploads/confirm':
+    post:
+      operationId: upload.confirmUpload
+      parameters:
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - fileKey
+                - mimeType
+                - size
+                - contentRef
+              properties:
+                fileKey:
+                  type: string
+                checksum:
+                  type: string
+                mimeType:
+                  type: string
+                size:
+                  type: number
+                contentRef:
+                  type: string
+                versionHint:
+                  type: number
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - versionId
+                  - documentId
+                  - version
+                  - file
+                  - createdAt
+                properties:
+                  versionId:
+                    type: string
+                  documentId:
+                    type: string
+                  version:
+                    type: number
+                  file:
+                    type: string
+                    contentMediaType: application/octet-stream
+                  createdBy:
+                    anyOf:
+                      - type: string
+                      - type: 'null'
+                  createdAt:
+                    type: string
+                  updatedAt:
+                    type: string
+                additionalProperties: false
+            multipart/form-data:
+              schema:
+                type: object
+                required:
+                  - versionId
+                  - documentId
+                  - version
+                  - file
+                  - createdAt
+                properties:
+                  versionId:
+                    type: string
+                  documentId:
+                    type: string
+                  version:
+                    type: number
+                  file:
+                    type: string
+                    contentMediaType: application/octet-stream
+                  createdBy:
+                    anyOf:
+                      - type: string
+                      - type: 'null'
+                  createdAt:
+                    type: string
+                  updatedAt:
+                    type: string
+                additionalProperties: false
+  '/versions/{versionId}':
+    get:
+      operationId: documentVersion.getById
+      parameters:
+        - name: versionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - id
+                  - documentId
+                  - version
+                  - file
+                  - createdAt
+                properties:
+                  id:
+                    type: string
+                  documentId:
+                    type: string
+                  version:
+                    type: number
+                  file:
+                    type: string
+                    contentMediaType: application/octet-stream
+                  createdBy:
+                    anyOf:
+                      - type: string
+                      - type: 'null'
+                  createdAt:
+                    type: string
+                  updatedAt:
+                    type: string
+                additionalProperties: false
+            multipart/form-data:
+              schema:
+                type: object
+                required:
+                  - id
+                  - documentId
+                  - version
+                  - file
+                  - createdAt
+                properties:
+                  id:
+                    type: string
+                  documentId:
+                    type: string
+                  version:
+                    type: number
+                  file:
+                    type: string
+                    contentMediaType: application/octet-stream
+                  createdBy:
+                    anyOf:
+                      - type: string
+                      - type: 'null'
+                  createdAt:
+                    type: string
+                  updatedAt:
+                    type: string
+                additionalProperties: false
+  '/documents/{documentId}/versions/latest':
+    get:
+      operationId: documentVersion.getLatest
+      parameters:
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - id
+                  - documentId
+                  - version
+                  - file
+                  - createdAt
+                properties:
+                  id:
+                    type: string
+                  documentId:
+                    type: string
+                  version:
+                    type: number
+                  file:
+                    type: string
+                    contentMediaType: application/octet-stream
+                  createdBy:
+                    anyOf:
+                      - type: string
+                      - type: 'null'
+                  createdAt:
+                    type: string
+                  updatedAt:
+                    type: string
+                additionalProperties: false
+            multipart/form-data:
+              schema:
+                type: object
+                required:
+                  - id
+                  - documentId
+                  - version
+                  - file
+                  - createdAt
+                properties:
+                  id:
+                    type: string
+                  documentId:
+                    type: string
+                  version:
+                    type: number
+                  file:
+                    type: string
+                    contentMediaType: application/octet-stream
+                  createdBy:
+                    anyOf:
+                      - type: string
+                      - type: 'null'
+                  createdAt:
+                    type: string
+                  updatedAt:
+                    type: string
+                additionalProperties: false
+  '/documents/{documentId}/versions':
+    get:
+      operationId: documentVersion.list
+      parameters:
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: pageNum
+          in: query
+          required: false
+          schema:
+            type: number
+          allowEmptyValue: true
+          allowReserved: true
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: number
+          allowEmptyValue: true
+          allowReserved: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                  - total
+                  - pageNum
+                  - pageSize
+                  - totalPages
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - id
+                        - documentId
+                        - version
+                        - file
+                        - createdAt
+                      properties:
+                        id:
+                          type: string
+                        documentId:
+                          type: string
+                        version:
+                          type: number
+                        file:
+                          type: object
+                          required:
+                            - fileKey
+                            - mimeType
+                            - size
+                            - checksum
+                          properties:
+                            fileKey:
+                              type: string
+                            mimeType:
+                              type: string
+                            size:
+                              type: number
+                            checksum:
+                              type: string
+                          additionalProperties: false
+                        createdBy:
+                          anyOf:
+                            - type: string
+                            - type: 'null'
+                        createdAt:
+                          type: string
+                      additionalProperties: false
+                  total:
+                    type: number
+                  pageNum:
+                    type: number
+                  pageSize:
+                    type: number
+                  totalPages:
+                    type: number
+                additionalProperties: false
+  '/documents/{documentId}/download-tokens':
+    post:
+      operationId: downloadToken.create
+      parameters:
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - issuedTo
+                - expiresAt
+              properties:
+                issuedTo:
+                  type: string
+                expiresAt:
+                  type: string
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - id
+                  - token
+                  - documentId
+                  - issuedTo
+                  - expiresAt
+                  - createdAt
+                properties:
+                  id:
+                    type: string
+                  token:
+                    type: string
+                  documentId:
+                    type: string
+                  issuedTo:
+                    type: string
+                  expiresAt:
+                    type: string
+                  usedAt:
+                    anyOf:
+                      - type: string
+                      - type: 'null'
+                  createdAt:
+                    type: string
+                  updatedAt:
+                    anyOf:
+                      - type: string
+                      - type: 'null'
+                additionalProperties: false
+    get:
+      operationId: downloadToken.list
+      parameters:
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: pageNum
+          in: query
+          required: false
+          schema:
+            type: number
+          allowEmptyValue: true
+          allowReserved: true
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: number
+          allowEmptyValue: true
+          allowReserved: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                  - total
+                  - pageNum
+                  - pageSize
+                  - totalPages
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - id
+                        - token
+                        - documentId
+                        - issuedTo
+                        - expiresAt
+                        - createdAt
+                      properties:
+                        id:
+                          type: string
+                        token:
+                          type: string
+                        documentId:
+                          type: string
+                        issuedTo:
+                          type: string
+                        expiresAt:
+                          type: string
+                        usedAt:
+                          anyOf:
+                            - type: string
+                            - type: 'null'
+                        createdAt:
+                          type: string
+                        updatedAt:
+                          anyOf:
+                            - type: string
+                            - type: 'null'
+                      additionalProperties: false
+                  total:
+                    type: number
+                  pageNum:
+                    type: number
+                  pageSize:
+                    type: number
+                  totalPages:
+                    type: number
+                additionalProperties: false
+  '/download-tokens/{token}':
+    get:
+      operationId: downloadToken.validate
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - valid
+                properties:
+                  valid:
+                    type: boolean
+                  token:
+                    type: object
+                    required:
+                      - id
+                      - token
+                      - documentId
+                      - issuedTo
+                      - expiresAt
+                      - createdAt
+                    properties:
+                      id:
+                        type: string
+                      token:
+                        type: string
+                      documentId:
+                        type: string
+                      issuedTo:
+                        type: string
+                      expiresAt:
+                        type: string
+                      usedAt:
+                        anyOf:
+                          - type: string
+                          - type: 'null'
+                      createdAt:
+                        type: string
+                      updatedAt:
+                        anyOf:
+                          - type: string
+                          - type: 'null'
+                    additionalProperties: false
+                  reason:
+                    type: string
+                    enum:
+                      - NOT_FOUND
+                      - EXPIRED
+                      - ALREADY_USED
+                      - INVALID
+                additionalProperties: false
+  '/download-tokens/{token}/use':
+    post:
+      operationId: downloadToken.use
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              required: []
+              properties: {}
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - id
+                  - token
+                  - documentId
+                  - issuedTo
+                  - expiresAt
+                  - createdAt
+                properties:
+                  id:
+                    type: string
+                  token:
+                    type: string
+                  documentId:
+                    type: string
+                  issuedTo:
+                    type: string
+                  expiresAt:
+                    type: string
+                  usedAt:
+                    anyOf:
+                      - type: string
+                      - type: 'null'
+                  createdAt:
+                    type: string
+                  updatedAt:
+                    anyOf:
+                      - type: string
+                      - type: 'null'
+                additionalProperties: false
+  '/download-tokens/{tokenId}':
+    delete:
+      operationId: downloadToken.revoke
+      parameters:
+        - name: tokenId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              required: []
+              properties: {}
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - tokenId
+                properties:
+                  success:
+                    type: boolean
+                  tokenId:
+                    type: string
+                additionalProperties: false
+  '/download-tokens/{token}/file':
+    get:
+      operationId: downloadToken.downloadFile
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          headers:
+            Content-Type:
+              schema:
+                type: string
+              required: false
+            Content-Disposition:
+              schema:
+                type: string
+              required: false
+            X-Checksum:
+              schema:
+                type: string
+              required: false
+            Cache-Control:
+              schema:
+                type: string
+              required: false
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                contentMediaType: application/octet-stream
+                format: binary
+                description: an instance of Blob
+                title: Blob
+  '/documents/{resourceId}/access-policies':
+    post:
+      operationId: accessPolicy.addPolicy
+      parameters:
+        - name: resourceId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - resourceType
+                - subjectType
+                - actions
+                - effect
+              properties:
+                resourceType:
+                  type: string
+                  enum:
+                    - document
+                subjectType:
+                  type: string
+                  enum:
+                    - user
+                    - role
+                subjectId:
+                  anyOf:
+                    - type: string
+                    - type: 'null'
+                role:
+                  anyOf:
+                    - type: string
+                      enum:
+                        - ADMIN
+                        - USER
+                    - type: 'null'
+                actions:
+                  type: array
+                  items:
+                    type: string
+                    enum:
+                      - read
+                      - update
+                      - delete
+                      - download
+                      - share
+                effect:
+                  type: string
+                  enum:
+                    - allow
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - id
+                  - resourceType
+                  - resourceId
+                  - subjectType
+                  - actions
+                  - effect
+                  - createdAt
+                properties:
+                  id:
+                    type: string
+                  resourceType:
+                    type: string
+                    enum:
+                      - document
+                  resourceId:
+                    type: string
+                  subjectType:
+                    type: string
+                    enum:
+                      - user
+                      - role
+                  subjectId:
+                    anyOf:
+                      - type: string
+                      - type: 'null'
+                  role:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - ADMIN
+                          - USER
+                      - type: 'null'
+                  actions:
+                    type: array
+                    items:
+                      type: string
+                      enum:
+                        - read
+                        - update
+                        - delete
+                        - download
+                        - share
+                  effect:
+                    type: string
+                    enum:
+                      - allow
+                  createdAt:
+                    type: string
+                  updatedAt:
+                    type: string
+                additionalProperties: false
+  '/access-policies/{policyId}':
+    delete:
+      operationId: accessPolicy.removePolicy
+      parameters:
+        - name: policyId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              required: []
+              properties:
+                documentId:
+                  type: string
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - policyId
+                properties:
+                  success:
+                    type: boolean
+                  policyId:
+                    type: string
+                additionalProperties: false
+    patch:
+      operationId: accessPolicy.updatePolicy
+      parameters:
+        - name: policyId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - actions
+              properties:
+                actions:
+                  type: array
+                  items:
+                    type: string
+                    enum:
+                      - read
+                      - update
+                      - delete
+                      - download
+                      - share
+                documentId:
+                  type: string
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - id
+                  - resourceType
+                  - resourceId
+                  - subjectType
+                  - actions
+                  - effect
+                  - createdAt
+                properties:
+                  id:
+                    type: string
+                  resourceType:
+                    type: string
+                    enum:
+                      - document
+                  resourceId:
+                    type: string
+                  subjectType:
+                    type: string
+                    enum:
+                      - user
+                      - role
+                  subjectId:
+                    anyOf:
+                      - type: string
+                      - type: 'null'
+                  role:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - ADMIN
+                          - USER
+                      - type: 'null'
+                  actions:
+                    type: array
+                    items:
+                      type: string
+                      enum:
+                        - read
+                        - update
+                        - delete
+                        - download
+                        - share
+                  effect:
+                    type: string
+                    enum:
+                      - allow
+                  createdAt:
+                    type: string
+                  updatedAt:
+                    type: string
+                additionalProperties: false
+  '/documents/{documentId}/access-policies':
+    get:
+      operationId: accessPolicy.getDocumentPolicies
+      parameters:
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - id
+                    - resourceType
+                    - resourceId
+                    - subjectType
+                    - actions
+                    - effect
+                    - createdAt
+                  properties:
+                    id:
+                      type: string
+                    resourceType:
+                      type: string
+                      enum:
+                        - document
+                    resourceId:
+                      type: string
+                    subjectType:
+                      type: string
+                      enum:
+                        - user
+                        - role
+                    subjectId:
+                      anyOf:
+                        - type: string
+                        - type: 'null'
+                    role:
+                      anyOf:
+                        - type: string
+                          enum:
+                            - ADMIN
+                            - USER
+                        - type: 'null'
+                    actions:
+                      type: array
+                      items:
+                        type: string
+                        enum:
+                          - read
+                          - update
+                          - delete
+                          - download
+                          - share
+                    effect:
+                      type: string
+                      enum:
+                        - allow
+                    createdAt:
+                      type: string
+                    updatedAt:
+                      type: string
+                  additionalProperties: false
+  '/documents/{documentId}/access-policies/actors':
+    get:
+      operationId: accessPolicy.getActorPolicies
+      parameters:
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - id
+                    - resourceType
+                    - resourceId
+                    - subjectType
+                    - actions
+                    - effect
+                    - createdAt
+                  properties:
+                    id:
+                      type: string
+                    resourceType:
+                      type: string
+                      enum:
+                        - document
+                    resourceId:
+                      type: string
+                    subjectType:
+                      type: string
+                      enum:
+                        - user
+                        - role
+                    subjectId:
+                      anyOf:
+                        - type: string
+                        - type: 'null'
+                    role:
+                      anyOf:
+                        - type: string
+                          enum:
+                            - ADMIN
+                            - USER
+                        - type: 'null'
+                    actions:
+                      type: array
+                      items:
+                        type: string
+                        enum:
+                          - read
+                          - update
+                          - delete
+                          - download
+                          - share
+                    effect:
+                      type: string
+                      enum:
+                        - allow
+                    createdAt:
+                      type: string
+                    updatedAt:
+                      type: string
+                  additionalProperties: false
+  /user/signUp:
+    post:
+      operationId: user.signUp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                password:
+                  type: string
+                roles:
+                  type: array
+                  items:
+                    type: string
+                    enum:
+                      - ADMIN
+                      - USER
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - user
+                properties:
+                  user:
+                    type: object
+                    required:
+                      - id
+                      - email
+                      - roles
+                      - createdAt
+                    properties:
+                      id:
+                        type: string
+                      email:
+                        type: string
+                      roles:
+                        type: array
+                        items:
+                          type: string
+                          enum:
+                            - ADMIN
+                            - USER
+                      workspaceId:
+                        anyOf:
+                          - type: string
+                          - type: 'null'
+                      createdAt:
+                        type: string
+                      updatedAt:
+                        type: string
+                    additionalProperties: false
+                  session:
+                    type: object
+                    required:
+                      - token
+                      - expiresAt
+                    properties:
+                      token:
+                        type: string
+                      expiresAt:
+                        type: string
+                    additionalProperties: false
+                additionalProperties: false
+      security: []
+  /user/login:
+    post:
+      operationId: user.login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                password:
+                  type: string
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - user
+                  - session
+                properties:
+                  user:
+                    type: object
+                    required:
+                      - id
+                      - email
+                      - roles
+                      - createdAt
+                    properties:
+                      id:
+                        type: string
+                      email:
+                        type: string
+                      roles:
+                        type: array
+                        items:
+                          type: string
+                          enum:
+                            - ADMIN
+                            - USER
+                      workspaceId:
+                        anyOf:
+                          - type: string
+                          - type: 'null'
+                      createdAt:
+                        type: string
+                      updatedAt:
+                        type: string
+                    additionalProperties: false
+                  session:
+                    type: object
+                    required:
+                      - token
+                      - expiresAt
+                    properties:
+                      token:
+                        type: string
+                      expiresAt:
+                        type: string
+                    additionalProperties: false
+                additionalProperties: false
+      security: []
+  /users/me/change-password:
+    post:
+      operationId: user.changePassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - oldPassword
+                - newPassword
+              properties:
+                oldPassword:
+                  type: string
+                newPassword:
+                  type: string
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                additionalProperties: false
+  /users/me:
+    get:
+      operationId: user.getProfile
+      parameters: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - id
+                  - email
+                  - roles
+                  - createdAt
+                properties:
+                  id:
+                    type: string
+                  email:
+                    type: string
+                  roles:
+                    type: array
+                    items:
+                      type: string
+                      enum:
+                        - ADMIN
+                        - USER
+                  workspaceId:
+                    anyOf:
+                      - type: string
+                      - type: 'null'
+                  createdAt:
+                    type: string
+                  updatedAt:
+                    type: string
+                additionalProperties: false

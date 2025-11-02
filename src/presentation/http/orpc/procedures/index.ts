@@ -5,7 +5,7 @@ import { downloadTokenProcedures } from "./download-token"
 import { accessPolicyProcedures } from "./access-policy"
 import { userProcedures } from "./user"
 
-export const procedures = {
+export const router = {
   document: documentProcedures,
   upload: uploadProcedures,
   "document-version": documentVersionProcedures,
@@ -14,4 +14,4 @@ export const procedures = {
   user: userProcedures
 }
 
-export type Procedures = typeof procedures
+export type Router = typeof router

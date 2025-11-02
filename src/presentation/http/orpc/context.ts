@@ -1,7 +1,7 @@
 import { Effect, Option } from "effect"
 import type { Context as HonoContext } from "hono"
 import { verify } from "hono/jwt"
-import { ORPCError } from "@orpc/server"
+import { ORPCError } from "@orpc/client"
 import { 
   JWT_CONFIG,
   type JWTPayload as AppJWTPayload,
@@ -460,8 +460,8 @@ export function withAnonymousContext<T extends Record<string, unknown>>(
 }
 
 const ANONYMOUS_PROCEDURES = new Set<string>([
-  "user.signUp",
-  "user.login"
+  "user/signUp",
+  "user/login"
 ])
 
 export function isAnonymousProcedure(procedurePath: string): boolean {

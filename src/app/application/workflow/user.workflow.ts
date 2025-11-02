@@ -9,8 +9,14 @@ import { UserEntity, SerializedUser } from "@domain/user/user.entity"
 // Domain repositories
 import { UserRepository } from "@domain/user/user.repository"
 
+// Domain errors
+import { UserAlreadyExistsError } from "@domain/user/user.error"
+
 // Application errors
 import { PermissionCheckError, WorkflowError, WorkflowDependencyError } from "@application/errors/application.errors"
+
+// Application services
+import { SYSTEM_UUID, workspaceToAuditId } from "@application/services/audit.constants"
 
 // Application DTOs
 import {
@@ -94,11 +100,10 @@ export class UserWorkflow {
           Effect.mapError(mapUserPersistenceError("findByEmail")),
           Effect.flatMap((existingUser) =>
             Option.match(existingUser, {
-              onSome: () => Effect.fail(new WorkflowDependencyError(
+              onSome: () => Effect.fail(new UserAlreadyExistsError(
                 `User with email ${dto.email} already exists`,
-                "UserRepository",
-                "findByEmail",
-                { email: dto.email }
+                "email",
+                dto.email
               )),
               onNone: () => Effect.void
             })
@@ -165,10 +170,7 @@ export class UserWorkflow {
         // 10. Record audit event
         recordAudit(this.audit, {
           actorId: savedUser.id,
-          workspaceId: Option.match(savedUser.workspaceId, {
-            onSome: (wid) => wid as string,
-            onNone: () => "system"
-          }),
+          workspaceId: workspaceToAuditId(savedUser.workspaceId),
           resourceType: "user",
           resourceId: savedUser.id,
           action: "signup",
@@ -237,10 +239,7 @@ export class UserWorkflow {
             // 4. Record successful audit
             recordAudit(this.audit, {
               actorId: authenticatedUser.id,
-              workspaceId: Option.match(authenticatedUser.workspaceId, {
-                onSome: (wid) => wid as string,
-                onNone: () => "system"
-              }),
+              workspaceId: workspaceToAuditId(authenticatedUser.workspaceId),
               resourceType: "user",
               resourceId: authenticatedUser.id,
               action: "login",
@@ -294,10 +293,10 @@ export class UserWorkflow {
         // Record failed login attempt (best effort, don't fail workflow)
         return pipe(
           recordAudit(this.audit, {
-            actorId: "system" as UserId,
-            workspaceId: "system",
+            actorId: SYSTEM_UUID,
+            workspaceId: SYSTEM_UUID,
             resourceType: "user",
-            resourceId: emailForAudit,
+            resourceId: SYSTEM_UUID,
             action: "login",
             outcome: "failure" as const,
             metadata: { 
@@ -397,10 +396,7 @@ export class UserWorkflow {
         // 9. Record audit event
         recordAudit(this.audit, {
           actorId: actor.id,
-          workspaceId: Option.match(actor.workspaceId, {
-            onSome: (wid) => wid as string,
-            onNone: () => "system"
-          }),
+          workspaceId: workspaceToAuditId(actor.workspaceId),
           resourceType: "user",
           resourceId: updatedUser.id,
           action: "change_password",

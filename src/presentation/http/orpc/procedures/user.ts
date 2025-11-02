@@ -33,6 +33,18 @@ import {
 
 export const signUp = os
   .$context<AnonymousRPCContext>()
+  .meta({
+    summary: "Sign up",
+    description: "Register a new user",
+    tags: ["Auth"],
+    security: []
+  })
+  .route({
+    method: "POST",
+    path: "/user/signUp",
+    operationId: "user.signUp",
+    spec: (op) => ({ ...op, security: [] })
+  })
   .input(toStandard(SignUpInputSchema))
   .output(toStandard(SignUpResponseSchema))
   .handler(async ({ input, context }) => {
@@ -65,6 +77,18 @@ export const signUp = os
 
 export const login = os
   .$context<AnonymousRPCContext>()
+  .meta({
+    summary: "Login",
+    description: "Authenticate and generate session",
+    tags: ["Auth"],
+    security: []
+  })
+  .route({
+    method: "POST",
+    path: "/user/login",
+    operationId: "user.login",
+    spec: (op) => ({ ...op, security: [] })
+  })
   .input(toStandard(LoginInputSchema))
   .output(toStandard(LoginResponseSchema))
   .handler(async ({ input, context }) => {
@@ -96,6 +120,16 @@ export const login = os
 
 export const changePassword = os
   .$context<RPCContext>()
+  .meta({
+    summary: "Change password",
+    description: "Change user password",
+    tags: ["Users"]
+  })
+  .route({
+    method: "POST",
+    path: "/users/me/change-password",
+    operationId: "user.changePassword"
+  })
   .input(toStandard(ChangePasswordInputSchema))
   .output(toStandard(ChangePasswordResponseSchema))
   .handler(async ({ input, context }) => {
@@ -118,7 +152,17 @@ export const changePassword = os
 
 export const getProfile = os
   .$context<RPCContext>()
-  .input(toStandard(S.Struct({})))
+  .meta({
+    summary: "Get profile",
+    description: "Get user profile",
+    tags: ["Users"]
+  })
+  .route({
+    method: "GET",
+    path: "/users/me",
+    operationId: "user.getProfile"
+  })
+  .input(toStandard(S.Struct({}).annotations({ jsonSchema: { type: "object" } })))
   .output(toStandard(UserSummarySchema))
   .handler(async ({ input, context }) => {
     const workflow = resolveWorkflow<UserWorkflow>(TOKENS.USER_WORKFLOW)

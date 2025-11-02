@@ -40,3 +40,27 @@ export const RevokeDownloadTokenResponseSchema = S.Struct({
 })
 export type RevokeDownloadTokenResponseEncoded = S.Schema.Encoded<typeof RevokeDownloadTokenResponseSchema>
 
+
+/**
+ * File body schema for detailed output structure.
+ * Uses Blob for runtime compatibility and OpenAPI documentation.
+ */
+const FileBodySchema = S.instanceOf(Blob).annotations({
+  jsonSchema: {
+    type: "string",
+    contentMediaType: "application/octet-stream",
+    format: "binary",
+    description: "an instance of Blob/File"
+  }
+})
+
+export const DownloadFileDetailedOutputSchema = S.Struct({
+  headers: S.Struct({
+    "Content-Type": S.optional(S.String),
+    "Content-Disposition": S.optional(S.String),
+    "X-Checksum": S.optional(S.String),
+    "Cache-Control": S.optional(S.String)
+  }),
+  body: FileBodySchema
+})
+export type DownloadFileDetailedOutputEncoded = S.Schema.Encoded<typeof DownloadFileDetailedOutputSchema>
