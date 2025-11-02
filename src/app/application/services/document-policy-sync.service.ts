@@ -2,7 +2,7 @@ import { Effect, Option, Clock } from "effect"
 import { DocumentAggregate } from "@domain/document/document.aggregate"
 import { AccessPolicyRepository } from "@domain/accessPolicy/access-policy.repository"
 import { AccessPolicyEntity, type PermissionAction } from "@domain/accessPolicy/access-policy.entity"
-import { DatabaseError, ValidationError, BusinessRuleViolationError } from "@domain/utils/base.errors"
+import { ValidationError, BusinessRuleViolationError } from "@domain/utils/base.errors"
 import { injectable, inject } from "tsyringe"
 import { TOKENS } from "@infra/di/container"
 
@@ -22,7 +22,7 @@ export class DocumentPolicySyncService {
 
   syncCollaboratorPolicies(
     aggregate: DocumentAggregate
-  ): Effect.Effect<void, ValidationError | DatabaseError, Clock.Clock> {
+  ): Effect.Effect<void, ValidationError | BusinessRuleViolationError, Clock.Clock> {
     // Only sync policies for unpublished documents
     if (aggregate.document.publishStatus !== "unpublished") {
       return Effect.void
@@ -80,7 +80,7 @@ export class DocumentPolicySyncService {
           { concurrency: "unbounded", discard: true }
         )
       }),
-      Effect.mapError((e) => e as ValidationError | DatabaseError)
+      Effect.mapError((e) => e as ValidationError | BusinessRuleViolationError)
     )
   }
 }

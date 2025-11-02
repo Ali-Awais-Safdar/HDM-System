@@ -10,16 +10,14 @@ import { AccessPolicyRepository } from "@domain/accessPolicy/access-policy.repos
 import { UserRepository } from "@domain/user/user.repository"
 
 // Domain errors
-import { DownloadTokenNotFoundError, DownloadTokenValidationError, DownloadTokenAlreadyUsedError } from "@domain/downloadToken/download-token.error"
-import { BusinessRuleViolationError } from "@domain/utils/base.errors"
+import { DownloadTokenValidationError } from "@domain/downloadToken/download-token.error"
 
 // Application errors
 import { 
   WorkflowError,
   DownloadTokenGenerationError,
   PermissionCheckError,
-  WorkflowDependencyError,
-  FileNotFoundError
+  WorkflowDependencyError
 } from "@application/errors/application.errors"
 
 // Application DTOs
@@ -52,11 +50,14 @@ import {
   loadDocument,
   ensurePermission,
   mapToWorkflowDependencyError,
-  mapDownloadTokenPersistenceError,
-  mapDownloadTokenDomainError,
   applyPagination,
   recordAudit
 } from "@application/workflow/helpers"
+import {
+  mapDownloadTokenPersistenceError,
+  mapDownloadTokenDomainError,
+  mapDownloadTokenFileStorageError
+} from "@application/workflow/helpers/errors/download-token-errors"
 
 // Application ports
 import { FileStoragePort, type DownloadFileResponse } from "@application/services/ports/file-storage.port"
@@ -301,7 +302,7 @@ export class DownloadTokenWorkflow {
           Effect.flatMap((actor) =>
             // 3. Find token by token string
             this.downloadTokenRepository.findByToken(dto.token).pipe(
-              Effect.mapError(mapDownloadTokenPersistenceError("findByToken")),
+              Effect.catchAll(mapDownloadTokenPersistenceError("findByToken")),
               Effect.flatMap((tokenOption) =>
                 // 4. Handle Option.none case with DownloadTokenValidationError
                 Option.match(tokenOption, {
@@ -323,7 +324,7 @@ export class DownloadTokenWorkflow {
                       Effect.flatMap(() =>
                         // 7. Validate token ownership, expiry, and usage status
                         token.validateForUse(actor.id).pipe(
-                          Effect.mapError(mapDownloadTokenDomainError("validateForUse", dto.token))
+                          Effect.catchAll(mapDownloadTokenDomainError("validateForUse", dto.token))
                         )
                       )
                     )
@@ -377,7 +378,7 @@ export class DownloadTokenWorkflow {
               Effect.flatMap(() =>
                 // 4. Fetch all tokens for the document
                 this.downloadTokenRepository.findByDocumentId(dto.documentId).pipe(
-                  Effect.mapError(mapDownloadTokenPersistenceError("findByDocumentId"))
+                  Effect.catchAll(mapDownloadTokenPersistenceError("findByDocumentId"))
                 )
               )
             )
@@ -426,7 +427,7 @@ export class DownloadTokenWorkflow {
           Effect.flatMap((actor) =>
             // 3. Fetch token by token string
             this.downloadTokenRepository.findByToken(dto.token).pipe(
-              Effect.mapError(mapDownloadTokenPersistenceError("findByToken")),
+              Effect.catchAll(mapDownloadTokenPersistenceError("findByToken")),
               Effect.flatMap((tokenOption) =>
                 Option.match(tokenOption, {
                   onNone: () => Effect.fail(new DownloadTokenValidationError(
@@ -446,7 +447,7 @@ export class DownloadTokenWorkflow {
                       Effect.flatMap(() =>
                         // 5. Validate token for use (ownership, expiry, usage checks)
                         token.validateForUse(actor.id).pipe(
-                          Effect.mapError(mapDownloadTokenDomainError("validateForUse", dto.token))
+                          Effect.catchAll(mapDownloadTokenDomainError("validateForUse", dto.token))
                         )
                       ),
                       Effect.map(() => ({ token, document, dto }))
@@ -457,15 +458,8 @@ export class DownloadTokenWorkflow {
               Effect.flatMap(({ document, dto }) =>
                 // 6. Mark token as used and persist via repository (which calls markAsUsed internally)
                 this.downloadTokenRepository.markAsUsed(dto.token).pipe(
-                  Effect.mapError((error) => {
-                    // Try domain error mapping first (handles already used, expired, etc.)
-                    if (error instanceof DownloadTokenAlreadyUsedError || 
-                        error instanceof BusinessRuleViolationError) {
-                      return mapDownloadTokenDomainError("markAsUsed", dto.token)(error)
-                    }
-                    // Otherwise use persistence error mapping
-                    return mapDownloadTokenPersistenceError("markAsUsed")(error)
-                  }),
+                  Effect.catchAll(mapDownloadTokenDomainError("markAsUsed", dto.token)),
+                  Effect.catchAll(mapDownloadTokenPersistenceError("markAsUsed")),
                   Effect.map((usedToken) => ({ usedToken, document, dto }))
                 )
               ),
@@ -509,7 +503,7 @@ export class DownloadTokenWorkflow {
           Effect.flatMap((actor) =>
             // 3. Load token by ID
             this.downloadTokenRepository.findById(dto.tokenId).pipe(
-              Effect.mapError(mapDownloadTokenPersistenceError("findById")),
+              Effect.catchAll(mapDownloadTokenPersistenceError("findById")),
               Effect.flatMap((tokenOption) =>
                 Option.match(tokenOption, {
                   onNone: () => Effect.fail(new DownloadTokenValidationError(
@@ -529,14 +523,8 @@ export class DownloadTokenWorkflow {
                       Effect.flatMap(() =>
                         // 5. Delete token via repository
                         this.downloadTokenRepository.delete(dto.tokenId).pipe(
-                          Effect.mapError((error) => {
-                            // Try domain error mapping first for NOT_FOUND
-                            if (error instanceof DownloadTokenNotFoundError) {
-                              return mapDownloadTokenDomainError("delete", dto.tokenId)(error)
-                            }
-                            // Otherwise use persistence error mapping
-                            return mapDownloadTokenPersistenceError("delete")(error)
-                          }),
+                          Effect.catchAll(mapDownloadTokenDomainError("delete", dto.tokenId)),
+                          Effect.catchAll(mapDownloadTokenPersistenceError("delete")),
                           Effect.map((deleted) => ({ deleted, token, document, dto }))
                         )
                       )
@@ -598,7 +586,7 @@ export class DownloadTokenWorkflow {
           Effect.flatMap((actor) =>
             // 3. Fetch and validate token
             this.downloadTokenRepository.findByToken(dto.token).pipe(
-              Effect.mapError(mapDownloadTokenPersistenceError("findByToken")),
+              Effect.catchAll(mapDownloadTokenPersistenceError("findByToken")),
               Effect.flatMap((tokenOption) =>
                 Option.match(tokenOption, {
                   onNone: () => Effect.fail(new DownloadTokenValidationError(
@@ -616,17 +604,12 @@ export class DownloadTokenWorkflow {
                   Effect.flatMap(({ document, version }) =>
                     // 5. Validate token for use (ownership, expiry, usage checks)
                     token.validateForUse(actor.id).pipe(
-                      Effect.mapError(mapDownloadTokenDomainError("validateForUse", dto.token)),
+                      Effect.catchAll(mapDownloadTokenDomainError("validateForUse", dto.token)),
                       Effect.flatMap(() =>
                         // 6. Mark token as used
                         this.downloadTokenRepository.markAsUsed(dto.token).pipe(
-                          Effect.mapError((error) => {
-                            if (error instanceof DownloadTokenAlreadyUsedError || 
-                                error instanceof BusinessRuleViolationError) {
-                              return mapDownloadTokenDomainError("markAsUsed", dto.token)(error)
-                            }
-                            return mapDownloadTokenPersistenceError("markAsUsed")(error)
-                          }),
+                          Effect.catchAll(mapDownloadTokenDomainError("markAsUsed", dto.token)),
+                          Effect.catchAll(mapDownloadTokenPersistenceError("markAsUsed")),
                           Effect.map((usedToken) => ({ usedToken, document, version, dto }))
                         )
                       )
@@ -637,21 +620,10 @@ export class DownloadTokenWorkflow {
               Effect.flatMap(({ usedToken, document, version, dto }) =>
                 // 7. Download file from storage using fileKey from version
                 this.fileStoragePort.downloadFile(version.fileKey).pipe(
-                  Effect.mapError((error) => {
-                    if (error.code === "NOT_FOUND") {
-                      return new FileNotFoundError(
-                        `File not found in storage: ${version.fileKey}`,
-                        version.fileKey,
-                        { originalError: error }
-                      ) as WorkflowError
-                    }
-                    return new WorkflowDependencyError(
-                      `Failed to download file: ${error.message}`,
-                      "FileStoragePort",
-                      "downloadFile",
-                      { originalError: error, storageError: error.code }
-                    ) as WorkflowError
-                  }),
+                  Effect.catchAll(mapDownloadTokenFileStorageError({ 
+                    fileKey: version.fileKey, 
+                    operation: "downloadFile" 
+                  })),
                   Effect.map((downloadResponse) => ({ 
                     downloadResponse, 
                     usedToken, 

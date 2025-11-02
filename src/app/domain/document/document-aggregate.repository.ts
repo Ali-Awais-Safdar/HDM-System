@@ -3,7 +3,7 @@ import { DocumentAggregate } from "@domain/document/document.aggregate"
 import { DocumentEntity } from "@domain/document/document.entity"
 import { DocumentNotFoundError, DocumentValidationError } from "@domain/document/document.error"
 import { DocumentVersionNotFoundError, DocumentVersionValidationError } from "@domain/documentVersion/document-version.error"
-import { BusinessRuleViolationError, DatabaseError, ValidationError } from "@domain/utils/base.errors"
+import { BusinessRuleViolationError, ValidationError } from "@domain/utils/base.errors"
 import { Paginated, PaginationOptions } from "@domain/utils/pagination"
 import { DocumentId, DocumentVersionId, UserId, WorkspaceId } from "@domain/refined/ids"
 
@@ -33,7 +33,7 @@ export abstract class DocumentAggregateRepository {
     documentId: DocumentId
   ): Effect.Effect<
     Option.Option<DocumentAggregate>,
-    DocumentNotFoundError | ValidationError | DatabaseError,
+    DocumentNotFoundError | ValidationError,
     Clock.Clock
   >
 
@@ -50,8 +50,7 @@ export abstract class DocumentAggregateRepository {
     | DocumentValidationError
     | DocumentVersionValidationError
     | ValidationError
-    | BusinessRuleViolationError
-    | DatabaseError,
+    | BusinessRuleViolationError,
     never
   >
 
@@ -65,7 +64,7 @@ export abstract class DocumentAggregateRepository {
     options?: DeleteOptions
   ): Effect.Effect<
     boolean,
-    DocumentNotFoundError | BusinessRuleViolationError | DatabaseError,
+    DocumentNotFoundError | BusinessRuleViolationError,
     Clock.Clock
   >
 
@@ -75,7 +74,7 @@ export abstract class DocumentAggregateRepository {
     documentId: DocumentId
   ): Effect.Effect<
     Option.Option<DocumentEntity>,
-    DocumentNotFoundError | ValidationError | DatabaseError,
+    DocumentNotFoundError | ValidationError,
     Clock.Clock
   >
 
@@ -83,7 +82,7 @@ export abstract class DocumentAggregateRepository {
     filters: DocumentSearchFilters
   ): Effect.Effect<
     Paginated<DocumentEntity>,
-    DocumentNotFoundError | ValidationError | DatabaseError,
+    DocumentNotFoundError | ValidationError,
     Clock.Clock
   >
 
@@ -92,7 +91,7 @@ export abstract class DocumentAggregateRepository {
     ownerId: UserId
   ): Effect.Effect<
     readonly DocumentEntity[],
-    DocumentNotFoundError | ValidationError | DatabaseError,
+    DocumentNotFoundError | ValidationError,
     Clock.Clock
   >
 
@@ -100,7 +99,7 @@ export abstract class DocumentAggregateRepository {
     versionId: DocumentVersionId
   ): Effect.Effect<
     Option.Option<DocumentId>,
-    DocumentVersionNotFoundError | ValidationError | DatabaseError,
+    DocumentVersionNotFoundError | ValidationError,
     never
   >
 }

@@ -14,11 +14,9 @@ import { DocumentAggregateRepository } from "@domain/document/document-aggregate
 import { AccessPolicyRepository } from "@domain/accessPolicy/access-policy.repository"
 import { UserRepository } from "@domain/user/user.repository"
 
-// Domain errors
-import { DatabaseError } from "@domain/utils/base.errors"
 
 // Application services
-import { FileStoragePort, FileStorageError } from "@application/services/ports/file-storage.port"
+import { FileStoragePort } from "@application/services/ports/file-storage.port"
 
 // Application errors
 import {
@@ -27,7 +25,8 @@ import {
   ChecksumValidationError,
   FileNotFoundError,
   WorkflowDependencyError,
-  WorkflowError
+  WorkflowError,
+  ExternalPortError
 } from "@application/errors/application.errors"
 
 // Application DTOs
@@ -47,11 +46,14 @@ import {
   loadActor,
   loadDocument,
   ensurePermission,
-  mapUploadInitiationError,
-  mapUploadConfirmationError,
   recordAudit,
   createEntityId
 } from "@application/workflow/helpers"
+import {
+  mapUploadInitiationError,
+  mapUploadConfirmationError,
+  mapFileStorageError
+} from "@application/workflow/helpers/errors/upload-errors"
 
 // Refined types
 import { DocumentId, DocumentVersionId } from "@domain/refined/ids"
@@ -98,7 +100,7 @@ export class UploadWorkflow {
     stream: ReadableStream<Uint8Array>,
     document: DocumentEntity,
     _actor: UserEntity
-  ): Effect.Effect<InitiateUploadResponse, UploadInitiationError, Clock.Clock> {
+  ): Effect.Effect<InitiateUploadResponse, UploadInitiationError | FileNotFoundError | WorkflowDependencyError | ExternalPortError, Clock.Clock> {
     return pipe(
       // Upload file to storage
       this.fileStoragePort.uploadFile({
@@ -110,12 +112,14 @@ export class UploadWorkflow {
           mimeType: dto.mimeType,
           expectedSize: dto.size
         }
-      }),
-      Effect.map((uploadResponse): InitiateUploadResponse => ({
-        fileKey: uploadResponse.fileKey,
-        checksum: uploadResponse.checksum,
-        contentRef: dto.contentRef
-      })),
+      }).pipe(
+        Effect.catchAll(mapFileStorageError({ operation: "uploadFile", fileKey: dto.documentId })),
+        Effect.map((uploadResponse): InitiateUploadResponse => ({
+          fileKey: uploadResponse.fileKey,
+          checksum: uploadResponse.checksum,
+          contentRef: dto.contentRef
+        }))
+      ),
       Effect.tap(() =>
         // Record audit event for direct upload
         recordAudit(this.audit, {
@@ -133,13 +137,7 @@ export class UploadWorkflow {
             contentRef: dto.contentRef
           }
         })
-      ),
-      Effect.mapError((error) => new UploadInitiationError(
-        `Failed to upload file directly: ${error instanceof Error ? error.message : String(error)}`,
-        dto.documentId,
-        document.title,
-        { originalError: error, storageError: error instanceof FileStorageError ? error.code : undefined }
-      ))
+      )
     )
   }
 
@@ -147,29 +145,14 @@ export class UploadWorkflow {
     dto: S.Schema.Type<typeof ConfirmUploadCommandSchema>
   ): Effect.Effect<
     { checksum: Sha256; fileKey: FileKey; actualSize: number; actualMimeType: string; contentRefValid: boolean },
-    ChecksumValidationError | FileNotFoundError | UploadConfirmationError,
+    ChecksumValidationError | FileNotFoundError | UploadConfirmationError | WorkflowDependencyError | ExternalPortError,
     never
   > {
     return pipe(
       // Verify file exists and get metadata
-      this.fileStoragePort.downloadFile(dto.fileKey),
-      Effect.mapError((error): ChecksumValidationError | FileNotFoundError | UploadConfirmationError => {
-        if (error.code === "NOT_FOUND") {
-          return new FileNotFoundError(
-            `File not found in storage: ${dto.fileKey}`,
-            dto.fileKey,
-            { originalError: error }
-          )
-        }
-        // Map storage errors to appropriate confirmation error
-        return new UploadConfirmationError(
-          `Failed to verify file: ${error.message}`,
-          dto.documentId,
-          "",
-          "CHECKSUM_MISMATCH", // Use as generic failure reason
-          { originalError: error, storageErrorCode: error.code }
-        )
-      }),
+      this.fileStoragePort.downloadFile(dto.fileKey).pipe(
+        Effect.catchAll(mapFileStorageError({ operation: "downloadFile", fileKey: dto.fileKey }))
+      ),
       Effect.flatMap((fileResponse): Effect.Effect<
         { checksum: Sha256; fileKey: FileKey; actualSize: number; actualMimeType: string; contentRefValid: boolean },
         ChecksumValidationError | FileNotFoundError | UploadConfirmationError,
@@ -231,14 +214,7 @@ export class UploadWorkflow {
       // Load aggregate to check for existing version by checksum
       this.documentAggregateRepository.loadById(documentId).pipe(
         Effect.mapError((error) => {
-          if (error instanceof DatabaseError) {
-            return new WorkflowDependencyError(
-              `Database error loading aggregate: ${documentId}`,
-              "DocumentAggregateRepository",
-              "loadById",
-              { originalError: error }
-            )
-          }
+          // Infrastructure errors should already be mapped by repository
           return new WorkflowDependencyError(
             `Failed to load aggregate: ${documentId}`,
             "DocumentAggregateRepository",
@@ -302,7 +278,7 @@ export class UploadWorkflow {
             )
             )
           ),
-          Effect.mapError(mapUploadInitiationError({ documentId: dto.documentId }))
+          Effect.catchAll(mapUploadInitiationError({ documentId: dto.documentId }))
         )
       )
     ) as Effect.Effect<InitiateUploadResponse, WorkflowError | ParseResult.ParseError, Clock.Clock>
@@ -437,7 +413,7 @@ export class UploadWorkflow {
               )
             )
           ),
-          Effect.mapError(mapUploadConfirmationError({ documentId: dto.documentId }))
+          Effect.catchAll(mapUploadConfirmationError({ documentId: dto.documentId }))
         )
       )
     ) as Effect.Effect<ConfirmUploadResponse, WorkflowError | ParseResult.ParseError, Clock.Clock>

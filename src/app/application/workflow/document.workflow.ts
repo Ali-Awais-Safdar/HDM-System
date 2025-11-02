@@ -14,12 +14,15 @@ import { UserRepository } from "@domain/user/user.repository"
 // Domain services
 import { DocumentAccessService } from "@domain/accessPolicy/document-access.service"
 
-// Domain errors
-import { DocumentNotFoundError } from "@domain/document/document.error"
-import { DatabaseError, ValidationError } from "@domain/utils/base.errors"
-
 // Application errors
-import { PermissionCheckError, WorkflowError, WorkflowDependencyError } from "@application/errors/application.errors"
+import { 
+  WorkflowDependencyError,
+  PersistenceDependencyError,
+  InteractionValidationError,
+  PermissionCheckError,
+  AccessPolicyCreationError
+} from "@application/errors/application.errors"
+import type { InfraUnexpected } from "@infra/errors/infrastructure.errors"
 
 // Application DTOs
 import { 
@@ -55,13 +58,15 @@ import {
   serializeDocument,
   serializeDocumentSummary,
   getEffectivePermissionLevel,
-  mapDocumentDomainError,
-  mapDocumentPersistenceError,
   optionToUndefined,
   optionToNull,
   filterUndefined,
   recordAudit
 } from "@application/workflow/helpers"
+import {
+  mapDocumentDomainError,
+  mapDocumentPersistenceError
+} from "@application/workflow/helpers/errors/document-errors"
 
 // Application workflows
 import { AccessPolicyWorkflow } from "./access-policy.workflow"
@@ -106,7 +111,7 @@ export class DocumentWorkflow {
     private readonly audit: AuditPort
   ) {}
 
-  createDocument(input: CreateDocumentCommandEncoded): Effect.Effect<SerializedDocument, WorkflowError | ParseResult.ParseError, Clock.Clock> {
+  createDocument(input: CreateDocumentCommandEncoded): Effect.Effect<SerializedDocument, WorkflowDependencyError | PersistenceDependencyError | InteractionValidationError | PermissionCheckError | InfraUnexpected | ParseResult.ParseError, Clock.Clock> {
     return pipe(
       // 1. Decode DTO using schema validation
       S.decodeUnknown(CreateDocumentCommandSchema)(input),
@@ -140,10 +145,10 @@ export class DocumentWorkflow {
           })
         )
       ),
-      Effect.mapError(mapDocumentDomainError("create")),
+      Effect.catchAll(mapDocumentDomainError("create")),
       Effect.flatMap(({ aggregate, dto }) =>
         this.documentAggregateRepository.save(aggregate).pipe(
-          Effect.mapError(mapDocumentPersistenceError("save")),
+          Effect.catchAll(mapDocumentPersistenceError("save")),
           Effect.map((savedAggregate) => ({ savedAggregate, dto }))
         )
       ),
@@ -168,10 +173,10 @@ export class DocumentWorkflow {
         // 9. Return serialized document
         serializeDocument(savedDocument)
       )
-    )
+    ) as Effect.Effect<SerializedDocument, WorkflowDependencyError | PersistenceDependencyError | InteractionValidationError | PermissionCheckError | InfraUnexpected | ParseResult.ParseError, Clock.Clock>
   }
 
-  updateDocument(input: UpdateDocumentCommandEncoded): Effect.Effect<SerializedDocument, WorkflowError | ParseResult.ParseError, Clock.Clock> {
+  updateDocument(input: UpdateDocumentCommandEncoded): Effect.Effect<SerializedDocument, WorkflowDependencyError | PersistenceDependencyError | InteractionValidationError | PermissionCheckError | InfraUnexpected | ParseResult.ParseError, Clock.Clock> {
     return pipe(
       // 1. Decode DTO using schema validation
       S.decodeUnknown(UpdateDocumentCommandSchema)(input),
@@ -179,20 +184,10 @@ export class DocumentWorkflow {
         // 2. Load actor and aggregate in parallel
         Effect.all([
           loadActor(this.userRepository, dto.actorId),
-          this.documentAggregateRepository.loadById(dto.id)
+          this.documentAggregateRepository.loadById(dto.id).pipe(
+            Effect.catchAll(mapDocumentPersistenceError("loadById"))
+          )
         ]).pipe(
-          Effect.mapError((error) => {
-            // Map aggregate load errors to WorkflowDependencyError
-            if (error instanceof DatabaseError || error instanceof ValidationError) {
-              return new WorkflowDependencyError(
-                `Failed to load document aggregate: ${error.message}`,
-                "DocumentAggregateRepository",
-                "loadById",
-                { originalError: error, documentId: dto.id }
-              )
-            }
-            return error
-          }),
           Effect.flatMap(([actor, aggregateOption]) =>
             // Handle Option.none - fail with WorkflowDependencyError
             Option.match(aggregateOption, {
@@ -256,10 +251,10 @@ export class DocumentWorkflow {
           )
         )
       ),
-      Effect.mapError(mapDocumentDomainError("update")),
+      Effect.catchAll(mapDocumentDomainError("update")),
       Effect.flatMap(({ aggregate, dto }) =>
         this.documentAggregateRepository.save(aggregate).pipe(
-          Effect.mapError(mapDocumentPersistenceError("save")),
+          Effect.catchAll(mapDocumentPersistenceError("save")),
           Effect.map((savedAggregate) => ({ savedAggregate, dto }))
         )
       ),
@@ -288,10 +283,10 @@ export class DocumentWorkflow {
         // 7. Return serialized document
         serializeDocument(savedDocument)
       )
-    )
+    ) as Effect.Effect<SerializedDocument, WorkflowDependencyError | PersistenceDependencyError | InteractionValidationError | PermissionCheckError | InfraUnexpected | ParseResult.ParseError, Clock.Clock>
   }
 
-  publishDocument(input: PublishDocumentCommandEncoded): Effect.Effect<SerializedDocument, WorkflowError | ParseResult.ParseError, Clock.Clock> {
+  publishDocument(input: PublishDocumentCommandEncoded): Effect.Effect<SerializedDocument, WorkflowDependencyError | PersistenceDependencyError | InteractionValidationError | PermissionCheckError | AccessPolicyCreationError | InfraUnexpected | ParseResult.ParseError, Clock.Clock> {
     return pipe(
       // 1. Decode DTO using schema validation
       S.decodeUnknown(PublishDocumentCommandSchema)(input),
@@ -299,20 +294,10 @@ export class DocumentWorkflow {
         // 2. Load actor and aggregate in parallel
         Effect.all([
           loadActor(this.userRepository, dto.actorId),
-          this.documentAggregateRepository.loadById(dto.documentId)
+          this.documentAggregateRepository.loadById(dto.documentId).pipe(
+            Effect.catchAll(mapDocumentPersistenceError("loadById"))
+          )
         ]).pipe(
-          Effect.mapError((error) => {
-            // Map aggregate load errors to WorkflowDependencyError
-            if (error instanceof DatabaseError || error instanceof ValidationError) {
-              return new WorkflowDependencyError(
-                `Failed to load document aggregate: ${error.message}`,
-                "DocumentAggregateRepository",
-                "loadById",
-                { originalError: error, documentId: dto.documentId }
-              )
-            }
-            return error
-          }),
           Effect.flatMap(([actor, aggregateOption]) =>
             // Handle Option.none - fail with WorkflowDependencyError
             Option.match(aggregateOption, {
@@ -361,7 +346,7 @@ export class DocumentWorkflow {
           Effect.flatMap(({ aggregate, dto }) =>
             // 5. Save document aggregate after policy sync
             this.documentAggregateRepository.save(aggregate).pipe(
-              Effect.mapError(mapDocumentPersistenceError("save")),
+              Effect.catchAll(mapDocumentPersistenceError("save")),
               Effect.map((savedAggregate) => ({ savedAggregate, dto }))
             )
           ),
@@ -388,11 +373,11 @@ export class DocumentWorkflow {
           )
         )
       ),
-      Effect.mapError(mapDocumentDomainError("publish"))
-    )
+      Effect.catchAll(mapDocumentDomainError("publish"))
+    ) as Effect.Effect<SerializedDocument, WorkflowDependencyError | PersistenceDependencyError | InteractionValidationError | PermissionCheckError | AccessPolicyCreationError | InfraUnexpected | ParseResult.ParseError, Clock.Clock>
   }
 
-  getDocument(input: GetDocumentQueryEncoded): Effect.Effect<SerializedDocument, WorkflowError | ParseResult.ParseError, Clock.Clock> {
+  getDocument(input: GetDocumentQueryEncoded): Effect.Effect<SerializedDocument, WorkflowDependencyError | InteractionValidationError | PermissionCheckError | ParseResult.ParseError, Clock.Clock> {
     return pipe(
       // 1. Decode DTO using schema validation
       S.decodeUnknown(GetDocumentQuerySchema)(input),
@@ -413,25 +398,11 @@ export class DocumentWorkflow {
           )
         )
       ),
-      Effect.mapError((error) => {
-        // Map domain errors to WorkflowError
-        if (error instanceof DocumentNotFoundError) {
-          return new WorkflowDependencyError(
-            `Document not found: ${error.message}`,
-            "DocumentAggregateRepository",
-            "findDocumentById",
-            { originalError: error }
-          )
-        }
-        if (error instanceof PermissionCheckError) {
-          return error // Already a WorkflowError
-        }
-        return error as unknown as WorkflowError
-      })
-    )
+      Effect.catchAll(mapDocumentDomainError("getDocument"))
+    ) as Effect.Effect<SerializedDocument, WorkflowDependencyError | InteractionValidationError | PermissionCheckError | ParseResult.ParseError, Clock.Clock>
   }
 
-  listDocuments(input: ListDocumentsQueryEncoded): Effect.Effect<PaginatedDocumentsResponseEncoded, WorkflowError | ParseResult.ParseError, Clock.Clock> {
+  listDocuments(input: ListDocumentsQueryEncoded): Effect.Effect<PaginatedDocumentsResponseEncoded, WorkflowDependencyError | PersistenceDependencyError | PermissionCheckError | InfraUnexpected | ParseResult.ParseError, Clock.Clock> {
     return pipe(
       // 1. Decode DTO using schema validation
       S.decodeUnknown(ListDocumentsQuerySchema)(input),
@@ -456,7 +427,7 @@ export class DocumentWorkflow {
 
             // 4. Search documents with repository-level permission filtering
             return this.documentAggregateRepository.searchDocuments(searchFilters).pipe(
-              Effect.mapError(mapDocumentPersistenceError("search")),
+              Effect.catchAll(mapDocumentPersistenceError("search")),
               Effect.flatMap((paginatedResults) => {
                 // 5. Serialize accessible documents (already filtered by repository)
                 return pipe(
@@ -476,27 +447,33 @@ export class DocumentWorkflow {
             )
           })
         )
-      ),
-      Effect.mapError((error) => {
-        if (error instanceof ParseResult.ParseError) {
-          return error
-        }
-        return error as unknown as WorkflowError
-      })
-    )
+      )
+    ) as Effect.Effect<PaginatedDocumentsResponseEncoded, WorkflowDependencyError | PersistenceDependencyError | PermissionCheckError | InfraUnexpected | ParseResult.ParseError, Clock.Clock>
   }
 
   private checkDocumentDependencies(
     documentId: DocumentId
-  ): Effect.Effect<void, WorkflowDependencyError | DatabaseError, Clock.Clock> {
+  ): Effect.Effect<void, WorkflowDependencyError, Clock.Clock> {
     // Check non-aggregate dependencies (tokens and policies)
     // Version checks are handled by aggregate.canDelete(force)
     return pipe(
       Effect.all([
         this.downloadTokenRepository.findByDocumentId(documentId).pipe(
+          Effect.mapError((error) => new WorkflowDependencyError(
+            `Failed to check download tokens: ${error instanceof Error ? error.message : String(error)}`,
+            "DownloadTokenRepository",
+            "findByDocumentId",
+            { originalError: error, documentId }
+          )),
           Effect.map((tokens) => ({ type: "tokens" as const, count: tokens.length }))
         ),
         this.accessPolicyWorkflow.getPoliciesForDocument(documentId).pipe(
+          Effect.mapError((error) => new WorkflowDependencyError(
+            `Failed to check access policies: ${error instanceof Error ? error.message : String(error)}`,
+            "AccessPolicyWorkflow",
+            "getPoliciesForDocument",
+            { originalError: error, documentId }
+          )),
           Effect.map((policies) => ({ type: "policies" as const, count: policies.length }))
         )
       ]),
@@ -514,25 +491,11 @@ export class DocumentWorkflow {
         }
         
         return Effect.void
-      }),
-      Effect.mapError((error) => {
-        if (error instanceof WorkflowDependencyError) {
-          return error
-        }
-        if (error instanceof DatabaseError) {
-          return error
-        }
-        return new WorkflowDependencyError(
-          `Failed to check document dependencies: ${error instanceof Error ? error.message : String(error)}`,
-          "Document",
-          "checkDependencies",
-          { originalError: error, documentId }
-        )
       })
     )
   }
 
-  deleteDocument(input: DeleteDocumentCommandEncoded): Effect.Effect<boolean, WorkflowError | ParseResult.ParseError, Clock.Clock> {
+  deleteDocument(input: DeleteDocumentCommandEncoded): Effect.Effect<boolean, WorkflowDependencyError | PersistenceDependencyError | PermissionCheckError | InfraUnexpected | ParseResult.ParseError, Clock.Clock> {
     return pipe(
       // 1. Decode DTO using schema validation
       S.decodeUnknown(DeleteDocumentCommandSchema)(input),
@@ -540,20 +503,10 @@ export class DocumentWorkflow {
         // 2. Load actor and aggregate in parallel
         Effect.all([
           loadActor(this.userRepository, dto.actorId),
-          this.documentAggregateRepository.loadById(dto.id)
+          this.documentAggregateRepository.loadById(dto.id).pipe(
+            Effect.catchAll(mapDocumentPersistenceError("loadById"))
+          )
         ]).pipe(
-          Effect.mapError((error) => {
-            // Map aggregate load errors to WorkflowDependencyError
-            if (error instanceof DatabaseError || error instanceof ValidationError) {
-              return new WorkflowDependencyError(
-                `Failed to load document aggregate: ${error.message}`,
-                "DocumentAggregateRepository",
-                "loadById",
-                { originalError: error, documentId: dto.id }
-              )
-            }
-            return error
-          }),
           Effect.flatMap(([actor, aggregateOption]) =>
             // Handle Option.none - fail with WorkflowDependencyError
             Option.match(aggregateOption, {
@@ -627,19 +580,13 @@ export class DocumentWorkflow {
             })
           )
         )
-      ),
-      Effect.mapError((error) => {
-        if (error instanceof ParseResult.ParseError) {
-          return error
-        }
-        return error as unknown as WorkflowError
-      })
-    )
+      )
+    ) as Effect.Effect<boolean, WorkflowDependencyError | PersistenceDependencyError | PermissionCheckError | InfraUnexpected | ParseResult.ParseError, Clock.Clock>
   }
 
   getDocumentAccess(
     input: GetDocumentAccessQueryEncoded
-  ): Effect.Effect<DocumentAccessResponseEncoded, WorkflowError | ParseResult.ParseError, Clock.Clock> {
+  ): Effect.Effect<DocumentAccessResponseEncoded, WorkflowDependencyError | InteractionValidationError | PermissionCheckError | ParseResult.ParseError, Clock.Clock> {
     return pipe(
       // 1. Decode query DTO using schema validation
       S.decodeUnknown(GetDocumentAccessQuerySchema)(input),
@@ -704,13 +651,7 @@ export class DocumentWorkflow {
             )
           )
         )
-      ),
-      Effect.mapError((error) => {
-        if (error instanceof ParseResult.ParseError) {
-          return error
-        }
-        return error as unknown as WorkflowError
-      })
-    )
+      )
+    ) as Effect.Effect<DocumentAccessResponseEncoded, WorkflowDependencyError | InteractionValidationError | PermissionCheckError | ParseResult.ParseError, Clock.Clock>
   }
 }

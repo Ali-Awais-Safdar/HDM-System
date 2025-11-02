@@ -10,7 +10,6 @@ import { UserRepository } from "@domain/user/user.repository"
 
 // Domain errors
 import { DocumentVersionNotFoundError } from "@domain/documentVersion/document-version.error"
-import { DatabaseError } from "@domain/utils/base.errors"
 
 // Application errors
 import { WorkflowError, WorkflowDependencyError } from "@application/errors/application.errors"
@@ -40,6 +39,9 @@ import {
   mapDocumentVersionError,
   applyPagination
 } from "@application/workflow/helpers"
+import {
+  mapDocumentPersistenceError
+} from "@application/workflow/helpers/errors/document-errors"
 
 // DI tokens
 import { TOKENS } from "@infra/di/container"
@@ -82,22 +84,7 @@ export class DocumentVersionWorkflow {
               Effect.flatMap(() =>
                 // 4. Load aggregate to access versions
                 this.documentAggregateRepository.loadById(dto.documentId).pipe(
-                  Effect.mapError((error) => {
-                    if (error instanceof DatabaseError) {
-                      return new WorkflowDependencyError(
-                        `Database error loading aggregate: ${dto.documentId}`,
-                        "DocumentAggregateRepository",
-                        "loadById",
-                        { originalError: error }
-                      )
-                    }
-                    return new WorkflowDependencyError(
-                      `Failed to load aggregate: ${dto.documentId}`,
-                      "DocumentAggregateRepository",
-                      "loadById",
-                      { originalError: error }
-                    )
-                  }),
+                  Effect.catchAll(mapDocumentPersistenceError("loadById")),
                   Effect.flatMap(
                     Option.match({
                       onNone: () => Effect.fail(new WorkflowDependencyError(
@@ -177,22 +164,7 @@ export class DocumentVersionWorkflow {
               Effect.flatMap(() =>
                 // 4. Load aggregate to access versions
                 this.documentAggregateRepository.loadById(dto.documentId).pipe(
-                  Effect.mapError((error) => {
-                    if (error instanceof DatabaseError) {
-                      return new WorkflowDependencyError(
-                        `Database error loading aggregate: ${dto.documentId}`,
-                        "DocumentAggregateRepository",
-                        "loadById",
-                        { originalError: error }
-                      )
-                    }
-                    return new WorkflowDependencyError(
-                      `Failed to load aggregate: ${dto.documentId}`,
-                      "DocumentAggregateRepository",
-                      "loadById",
-                      { originalError: error }
-                    )
-                  }),
+                  Effect.catchAll(mapDocumentPersistenceError("loadById")),
                   Effect.flatMap(
                     Option.match({
                       onNone: () => Effect.fail(new WorkflowDependencyError(

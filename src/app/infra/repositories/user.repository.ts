@@ -15,9 +15,10 @@ import { users, type UserModel } from "@infra/db/models/user.model"
 import { UserMapper } from "@infra/db/mappers"
 import { eq, count } from "drizzle-orm"
 import type { DatabaseInterface } from "@infra/db/interfaces"
-import { isUniqueConstraintError, getErrorMessage, translateDbError, translateQueryError } from "@infra/db/errors"
-import { DatabaseError } from "@domain/utils/base.errors"
-import { fetchSingle } from "./helpers"
+import { isUniqueConstraintError, getErrorMessage, translateDbError } from "@infra/db/errors"
+import type { InfrastructureErrorType } from "@infra/errors/infrastructure.errors"
+import { fetchSingle, mapInfraErrorToDomainWithFailFast, executeQuery } from "./helpers"
+import { isInfraError } from "app/shared/error-matching"
 import { TOKENS } from "@infra/di/container"
 
 /**
@@ -31,61 +32,94 @@ export class UserDrizzleRepository extends UserRepository {
 
   // ========== Repository Methods ==========
 
+  /**
+   * Wrapper for UserMapper.fromDb that converts UserValidationError to ValidationError
+   */
+  private mapUserFromDb(row: UserModel): E.Effect<UserEntity, ValidationError, Clock.Clock> {
+    return pipe(
+      UserMapper.fromDb(row),
+      E.mapError((error) => new ValidationError(error.message, error.field, error.value))
+    )
+  }
+
   findById(
     id: UserId
-  ): E.Effect<O.Option<UserEntity>, UserNotFoundError | ValidationError | DatabaseError, Clock.Clock> {
+  ): E.Effect<O.Option<UserEntity>, UserNotFoundError | ValidationError, Clock.Clock> {
     return pipe(
       fetchSingle(
         () => this.db.select().from(users).where(eq(users.id, id)).limit(1),
-        UserMapper.fromDb,
-        "User",
-        UserNotFoundError
+        this.mapUserFromDb.bind(this),
+        {
+          entityType: "User",
+          operation: "findById",
+          entityId: id
+        }
       ),
-      E.mapError((error): UserNotFoundError | ValidationError | DatabaseError =>
-        error instanceof UserValidationError
-          ? new ValidationError(error.message, error.field, error.value)
-          : error
-      )
+      E.catchAll((error) => {
+        // Map infrastructure errors to domain errors
+        if (isInfraError(error)) {
+          return mapInfraErrorToDomainWithFailFast("User", (msg, field, value) => new UserNotFoundError(msg, field, value))(error)
+        }
+        // Pass through ValidationError
+        return E.fail(error as ValidationError)
+      })
     )
   }
 
   findByEmail(
     email: EmailAddress
-  ): E.Effect<O.Option<UserEntity>, UserNotFoundError | ValidationError | DatabaseError, Clock.Clock> {
+  ): E.Effect<O.Option<UserEntity>, UserNotFoundError | ValidationError, Clock.Clock> {
     return pipe(
       fetchSingle(
         () => this.db.select().from(users).where(eq(users.email, email)).limit(1),
-        UserMapper.fromDb,
-        "User",
-        UserNotFoundError
+        this.mapUserFromDb.bind(this),
+        {
+          entityType: "User",
+          operation: "findByEmail",
+          entityId: email
+        }
       ),
-      E.mapError((error): UserNotFoundError | ValidationError | DatabaseError =>
-        error instanceof UserValidationError
-          ? new ValidationError(error.message, error.field, error.value)
-          : error
-      )
+      E.catchAll((error) => {
+        // Map infrastructure errors to domain errors
+        if (isInfraError(error)) {
+          return mapInfraErrorToDomainWithFailFast("User", (msg, field, value) => new UserNotFoundError(msg, field, value))(error)
+        }
+        // Pass through ValidationError
+        return E.fail(error as ValidationError)
+      })
     )
   }
 
   exists(
     id: UserId
-  ): E.Effect<boolean, DatabaseError, never> {
+  ): E.Effect<boolean, InfrastructureErrorType> {
     return pipe(
-      E.tryPromise({
-        try: (): Promise<Pick<UserModel, "id">[]> =>
-          this.db.select({ id: users.id }).from(users).where(eq(users.id, id)).limit(1),
-        catch: (error) => new DatabaseError(
-          `Database error during exists check on User`,
-          { originalError: error }
-        )
-      }),
+      executeQuery(
+        () => this.db.select({ id: users.id }).from(users).where(eq(users.id, id)).limit(1),
+        {
+          entityType: "User",
+          operation: "exists",
+          entityId: id
+        }
+      ),
       E.map((result) => result.length > 0)
     )
   }
 
-  private ensureExists(id: UserId): E.Effect<void, UserNotFoundError | DatabaseError, never> {
+  private ensureExists(id: UserId): E.Effect<void, UserNotFoundError, never> {
     return pipe(
       this.exists(id),
+      E.catchAll((error) => {
+        // Map infrastructure errors (unexpected errors will fail fast as defects via mapInfraErrorToDomainWithFailFast)
+        if (isInfraError(error)) {
+          return pipe(
+            mapInfraErrorToDomainWithFailFast("User", (msg, field, value) => new UserNotFoundError(msg, field, value))(error),
+            E.mapError((err) => err instanceof UserNotFoundError ? err : new UserNotFoundError(err.message, err.field, err.value))
+          )
+        }
+        // Unknown errors should fail fast
+        return E.die(error)
+      }),
       E.flatMap((exists) =>
         E.if(exists, {
           onTrue: () => E.succeed(undefined),
@@ -97,17 +131,13 @@ export class UserDrizzleRepository extends UserRepository {
 
   // ========== Pure Helper Functions ==========
 
-  private mapSaveError(error: unknown, user: UserEntity): UserAlreadyExistsError | UserValidationError | DatabaseError {
-    return error instanceof DatabaseError
-      ? error
-      : error instanceof UserAlreadyExistsError
+  private mapSaveError(error: unknown, user: UserEntity): UserAlreadyExistsError | UserValidationError | ValidationError {
+    return error instanceof UserAlreadyExistsError
       ? error
       : error instanceof ValidationError
-      ? new UserValidationError(
-          error.message,
-          error.field,
-          error.value
-        )
+      ? error
+      : error instanceof UserValidationError
+      ? error
       : new UserValidationError(
           `Failed to save user: ${getErrorMessage(error)}`,
           "save",
@@ -126,7 +156,7 @@ export class UserDrizzleRepository extends UserRepository {
 
   save(
     user: UserEntity
-  ): E.Effect<UserEntity, UserAlreadyExistsError | UserValidationError | ValidationError | DatabaseError, Clock.Clock> {
+  ): E.Effect<UserEntity, UserAlreadyExistsError | UserValidationError | ValidationError, Clock.Clock> {
     return pipe(
       this.findByEmail(user.email),
       E.flatMap((existingUser) =>
@@ -141,75 +171,111 @@ export class UserDrizzleRepository extends UserRepository {
 
   private insert(
     user: UserEntity
-  ): E.Effect<UserEntity, UserAlreadyExistsError | ValidationError | DatabaseError | UserValidationError, never> {
+  ): E.Effect<UserEntity, UserAlreadyExistsError | ValidationError | UserValidationError, never> {
     return pipe(
       UserMapper.toDb(user),
       E.flatMap((dbData) =>
-        E.tryPromise({
-          try: () => this.db.insert(users).values(dbData),
-          catch: (error) => 
-            isUniqueConstraintError(error)
-              ? new UserAlreadyExistsError(`User already exists with email: ${user.email}`, "email", user.email)
-              : translateDbError(
-                  error,
-                  { operation: "insert", entityType: "User" },
-                  {
-                    createConflictError: (message: string) => new ValidationError(message, "userId", user.id),
-                    createNotFoundError: (field: string, value: string) => new ValidationError(`User not found: ${field}=${value}`, field, value),
-                    createValidationError: (message: string, field: string) => new ValidationError(message, field, user.id)
-                  }
-                )
-        })
+        pipe(
+          E.tryPromise({
+            try: () => this.db.insert(users).values(dbData),
+            catch: (error) => error
+          }),
+          E.catchAll((error): E.Effect<void, UserAlreadyExistsError | UserNotFoundError | ValidationError, never> => {
+            // Handle unique constraint violations with domain-specific error
+            if (isUniqueConstraintError(error)) {
+              return E.fail(new UserAlreadyExistsError(`User already exists with email: ${user.email}`, "email", user.email))
+            }
+            // Translate infrastructure errors to domain errors
+            return pipe(
+              translateDbError(error, { operation: "insert", entityType: "User", entityId: user.id }),
+              E.catchAll(mapInfraErrorToDomainWithFailFast("User", (msg, field, value) => new UserNotFoundError(msg, field, value)))
+            )
+          })
+        )
       ),
-      E.as(user)
+      E.as(user),
+      E.mapError((error): UserAlreadyExistsError | ValidationError | UserValidationError => {
+        if (error instanceof UserValidationError) {
+          return error
+        }
+        if (error instanceof UserAlreadyExistsError) {
+          return error
+        }
+        if (error instanceof UserNotFoundError) {
+          // Convert UserNotFoundError to ValidationError
+          return new ValidationError(error.message, error.field, error.value)
+        }
+        return error as ValidationError
+      })
     )
   }
   
   private update(
     user: UserEntity
-  ): E.Effect<UserEntity, ValidationError | UserNotFoundError | DatabaseError | UserValidationError, never> {
+  ): E.Effect<UserEntity, ValidationError | UserNotFoundError | UserValidationError, never> {
     return pipe(
       this.ensureExists(user.id),
       E.flatMap(() => UserMapper.toDb(user)),
       E.flatMap((dbData) =>
-        E.tryPromise({
-          try: () => this.db.update(users).set(dbData).where(eq(users.id, user.id)),
-          catch: (error) => translateDbError(
-            error,
-            { operation: "update", entityType: "User" },
-            {
-              createConflictError: (message: string) => new ValidationError(message, "userId", user.id),
-              createNotFoundError: (field: string, value: string) => new ValidationError(`User not found: ${field}=${value}`, field, value),
-              createValidationError: (message: string, field: string) => new ValidationError(message, field, user.id)
-            }
+        pipe(
+          E.tryPromise({
+            try: () => this.db.update(users).set(dbData).where(eq(users.id, user.id)),
+            catch: (error) => error
+          }),
+          E.catchAll((error) =>
+            pipe(
+              translateDbError(error, { operation: "update", entityType: "User", entityId: user.id }),
+              E.catchAll(mapInfraErrorToDomainWithFailFast("User", (msg, field, value) => new UserNotFoundError(msg, field, value)))
+            )
           )
-        })
+        )
       ),
-      E.as(user)
+      E.as(user),
+      E.mapError((error): ValidationError | UserNotFoundError | UserValidationError => 
+        error instanceof UserValidationError
+          ? error
+          : error instanceof UserNotFoundError
+          ? error
+          : error as ValidationError
+      )
     )
   }
 
   delete(
     id: UserId
-  ): E.Effect<boolean, UserNotFoundError | DatabaseError, never> {
+  ): E.Effect<boolean, UserNotFoundError, never> {
     return pipe(
       this.exists(id),
+      E.catchAll((error) => {
+        // Map infrastructure errors (unexpected errors will fail fast as defects via mapInfraErrorToDomainWithFailFast)
+        if (isInfraError(error)) {
+          return pipe(
+            mapInfraErrorToDomainWithFailFast("User", (msg, field, value) => new UserNotFoundError(msg, field, value))(error),
+            E.mapError((err) => err instanceof UserNotFoundError ? err : new UserNotFoundError(err.message, err.field, err.value))
+          )
+        }
+        // Unknown errors should fail fast
+        return E.die(error)
+      }),
       E.flatMap((exists) =>
         E.if(exists, {
           onTrue: () =>
             pipe(
               E.tryPromise({
                 try: () => this.db.delete(users).where(eq(users.id, id)),
-                catch: (error) => translateDbError(
-                  error,
-                  { operation: "delete", entityType: "User" },
-                  {
-                    createConflictError: (message: string) => new DatabaseError(message),
-                    createNotFoundError: (field: string, value: string) => new UserNotFoundError(`User not found: ${field}=${value}`, field, value),
-                    createValidationError: (message: string) => new DatabaseError(message)
-                  }
-                )
+                catch: (error) => error
               }),
+              E.catchAll((error) =>
+                pipe(
+                  translateDbError(error, { operation: "delete", entityType: "User", entityId: id }),
+                  E.catchAll(mapInfraErrorToDomainWithFailFast("User", (msg, field, value) => new UserNotFoundError(msg, field, value)))
+                )
+              ),
+              E.mapError((error): UserNotFoundError => 
+                error instanceof UserNotFoundError
+                  ? error
+                  : new UserNotFoundError(`Failed to delete user: ${error instanceof Error ? error.message : String(error)}`, "id", id)
+              ),
               E.as(true)
             ),
           onFalse: () => E.fail(new UserNotFoundError(`User not found: id=${id}`, "id", id))
@@ -218,7 +284,7 @@ export class UserDrizzleRepository extends UserRepository {
     )
   }
 
-  list(options?: PaginationOptions): E.Effect<Paginated<UserEntity>, UserNotFoundError | ValidationError | DatabaseError, Clock.Clock> {
+  list(options?: PaginationOptions): E.Effect<Paginated<UserEntity>, UserNotFoundError | ValidationError, Clock.Clock> {
     const paginationOptions = options ?? defaultPaginationOptions()
     const offset = (paginationOptions.pageNum - 1) * paginationOptions.pageSize
 
@@ -242,12 +308,14 @@ export class UserDrizzleRepository extends UserRepository {
             total: Number(totalResult[0]?.count ?? 0)
           }
         },
-        catch: (error) => translateQueryError(
-          error,
-          { operation: "list", entityType: "User", field: "list", value: "all" },
-          (message, field, value, details) => new UserNotFoundError(message, field, value, details)
-        )
+        catch: (error) => error
       }),
+      E.catchAll((error) =>
+        pipe(
+          translateDbError(error, { operation: "list", entityType: "User" }),
+          E.catchAll(mapInfraErrorToDomainWithFailFast("User", (msg, field, value) => new UserNotFoundError(msg, field, value)))
+        )
+      ),
       E.flatMap(({ data, total }) =>
         data.length === 0
           ? E.succeed({
@@ -258,16 +326,7 @@ export class UserDrizzleRepository extends UserRepository {
               totalPages: calculateTotalPages(total, paginationOptions.pageSize)
             } as Paginated<UserEntity>)
           : pipe(
-              E.forEach(data, (row) =>
-                pipe(
-                  UserMapper.fromDb(row),
-                  E.mapError((error): UserNotFoundError | ValidationError =>
-                    error instanceof UserValidationError
-                      ? new ValidationError(error.message, error.field, error.value)
-                      : error
-                  )
-                )
-              ),
+              E.forEach(data, (row) => this.mapUserFromDb(row)),
               E.map((entities): Paginated<UserEntity> => ({
                 data: entities,
                 total,

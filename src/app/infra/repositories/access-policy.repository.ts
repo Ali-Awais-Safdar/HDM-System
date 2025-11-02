@@ -14,9 +14,10 @@ import { accessPolicies, type AccessPolicyModel } from "@infra/db/models/access-
 import { AccessPolicyMapper } from "@infra/db/mappers"
 import { eq, and, count, type SQL } from "drizzle-orm"
 import type { DatabaseInterface } from "@infra/db/interfaces"
-import { isUniqueConstraintError, getErrorMessage, translateDbError, translateQueryError } from "@infra/db/errors"
-import { DatabaseError } from "@domain/utils/base.errors"
-import { fetchSingle, fetchMultiple } from "./helpers"
+import { isUniqueConstraintError, getErrorMessage, translateDbError } from "@infra/db/errors"
+import type { InfrastructureErrorType } from "@infra/errors/infrastructure.errors"
+import { fetchSingle, fetchMultiple, mapInfraErrorToDomainWithFailFast, executeQuery } from "./helpers"
+import { isInfraError } from "app/shared/error-matching"
 import { TOKENS } from "@infra/di/container"
 
 /**
@@ -30,32 +31,67 @@ export class AccessPolicyDrizzleRepository extends AccessPolicyRepository {
 
   // ========== Repository Methods ==========
 
+  /**
+   * Wrapper for AccessPolicyMapper.fromDb that converts AccessPolicyValidationError to ValidationError
+   */
+  private mapPolicyFromDb(row: AccessPolicyModel): E.Effect<AccessPolicyEntity, ValidationError, Clock.Clock> {
+    return pipe(
+      AccessPolicyMapper.fromDb(row),
+      E.mapError((error) => new ValidationError(error.message, error.field, error.value))
+    )
+  }
+
   findById(
     id: AccessPolicyId
-  ): E.Effect<O.Option<AccessPolicyEntity>, AccessPolicyNotFoundError | ValidationError | DatabaseError, Clock.Clock> {
+  ): E.Effect<O.Option<AccessPolicyEntity>, AccessPolicyNotFoundError | ValidationError, Clock.Clock> {
     return pipe(
       fetchSingle(
         () => this.db.select().from(accessPolicies).where(eq(accessPolicies.id, id)).limit(1),
-        AccessPolicyMapper.fromDb,
-        "AccessPolicy",
-        AccessPolicyNotFoundError
+        this.mapPolicyFromDb.bind(this),
+        {
+          entityType: "AccessPolicy",
+          operation: "findById",
+          entityId: id
+        }
       ),
-      E.mapError((error): AccessPolicyNotFoundError | ValidationError | DatabaseError =>
-        error instanceof AccessPolicyValidationError
-          ? new ValidationError(error.message, error.field, error.value)
-          : error
-      )
+      E.catchAll((error) => {
+        // Map infrastructure errors to domain errors (with fail-fast for unexpected)
+        if (isInfraError(error)) {
+          return mapInfraErrorToDomainWithFailFast("AccessPolicy", (msg, field, value) => new AccessPolicyNotFoundError(msg, field, value))(error)
+        }
+        // Pass through ValidationError
+        return E.fail(error as ValidationError)
+      })
     )
   }
 
   findByResourceId(
     resourceId: DocumentId
-  ): E.Effect<readonly AccessPolicyEntity[], AccessPolicyNotFoundError | AccessPolicyValidationError | DatabaseError, Clock.Clock> {
-    return fetchMultiple(
-      () => this.db.select().from(accessPolicies).where(eq(accessPolicies.resourceId, resourceId)),
-      AccessPolicyMapper.fromDb,
-      "AccessPolicy",
-      AccessPolicyNotFoundError
+  ): E.Effect<readonly AccessPolicyEntity[], AccessPolicyNotFoundError | AccessPolicyValidationError, Clock.Clock> {
+    return pipe(
+      fetchMultiple(
+        () => this.db.select().from(accessPolicies).where(eq(accessPolicies.resourceId, resourceId)),
+        this.mapPolicyFromDb.bind(this),
+        {
+          entityType: "AccessPolicy",
+          operation: "findByResourceId"
+        }
+      ),
+      E.catchAll((error) => {
+        // Map infrastructure errors to domain errors
+        if (isInfraError(error)) {
+          return mapInfraErrorToDomainWithFailFast("AccessPolicy", (msg, field, value) => new AccessPolicyNotFoundError(msg, field, value))(error)
+        }
+        // Pass through ValidationError (which will become AccessPolicyValidationError in mapper)
+        return E.fail(error as ValidationError)
+      }),
+      E.mapError((error): AccessPolicyNotFoundError | AccessPolicyValidationError =>
+        error instanceof AccessPolicyValidationError
+          ? error
+          : error instanceof AccessPolicyNotFoundError
+          ? error
+          : new AccessPolicyValidationError(error.message, error.field, error.value)
+      )
     )
   }
 
@@ -77,65 +113,114 @@ export class AccessPolicyDrizzleRepository extends AccessPolicyRepository {
     subjectType: SubjectType,
     subjectId?: UserId,
     role?: Role
-  ): E.Effect<readonly AccessPolicyEntity[], AccessPolicyNotFoundError | AccessPolicyValidationError | DatabaseError, Clock.Clock> {
-    return fetchMultiple(
-      () => {
-        const conditions = this.buildSubjectConditions(subjectType, subjectId, role)
-        return this.db
-          .select()
-          .from(accessPolicies)
-          .where(and(...conditions))
-      },
-      AccessPolicyMapper.fromDb,
-      "AccessPolicy",
-      AccessPolicyNotFoundError
+  ): E.Effect<readonly AccessPolicyEntity[], AccessPolicyNotFoundError | AccessPolicyValidationError, Clock.Clock> {
+    return pipe(
+      fetchMultiple(
+        () => {
+          const conditions = this.buildSubjectConditions(subjectType, subjectId, role)
+          return this.db
+            .select()
+            .from(accessPolicies)
+            .where(and(...conditions))
+        },
+        this.mapPolicyFromDb.bind(this),
+        {
+          entityType: "AccessPolicy",
+          operation: "findBySubject"
+        }
+      ),
+      E.catchAll((error) => {
+        // Map infrastructure errors to domain errors (with fail-fast for unexpected)
+        if (isInfraError(error)) {
+          return mapInfraErrorToDomainWithFailFast("AccessPolicy", (msg, field, value) => new AccessPolicyNotFoundError(msg, field, value))(error)
+        }
+        // Pass through ValidationError
+        return E.fail(error as ValidationError)
+      }),
+      E.mapError((error): AccessPolicyNotFoundError | AccessPolicyValidationError =>
+        error instanceof AccessPolicyValidationError
+          ? error
+          : error instanceof AccessPolicyNotFoundError
+          ? error
+          : new AccessPolicyValidationError(error.message, error.field, error.value)
+      )
     )
   }
 
   findByUserAndResource(
     userId: UserId,
     resourceId: DocumentId
-  ): E.Effect<readonly AccessPolicyEntity[], AccessPolicyNotFoundError | AccessPolicyValidationError | DatabaseError, Clock.Clock> {
-    return fetchMultiple(
-      () => this.db
-        .select()
-        .from(accessPolicies)
-        .where(
-          and(
-            eq(accessPolicies.resourceId, resourceId),
-            eq(accessPolicies.subjectType, "user"),
-            eq(accessPolicies.subjectId, userId)
-          )
-        ),
-      AccessPolicyMapper.fromDb,
-      "AccessPolicy",
-      AccessPolicyNotFoundError
+  ): E.Effect<readonly AccessPolicyEntity[], AccessPolicyNotFoundError | AccessPolicyValidationError, Clock.Clock> {
+    return pipe(
+      fetchMultiple(
+        () => this.db
+          .select()
+          .from(accessPolicies)
+          .where(
+            and(
+              eq(accessPolicies.resourceId, resourceId),
+              eq(accessPolicies.subjectType, "user"),
+              eq(accessPolicies.subjectId, userId)
+            )
+          ),
+        this.mapPolicyFromDb.bind(this),
+        {
+          entityType: "AccessPolicy",
+          operation: "findByUserAndResource"
+        }
+      ),
+      E.catchAll((error) => {
+        // Map infrastructure errors to domain errors (with fail-fast for unexpected)
+        if (isInfraError(error)) {
+          return mapInfraErrorToDomainWithFailFast("AccessPolicy", (msg, field, value) => new AccessPolicyNotFoundError(msg, field, value))(error)
+        }
+        // Pass through ValidationError
+        return E.fail(error as ValidationError)
+      }),
+      E.mapError((error): AccessPolicyNotFoundError | AccessPolicyValidationError =>
+        error instanceof AccessPolicyValidationError
+          ? error
+          : error instanceof AccessPolicyNotFoundError
+          ? error
+          : new AccessPolicyValidationError(error.message, error.field, error.value)
+      )
     )
   }
 
   exists(
     id: AccessPolicyId
-  ): E.Effect<boolean, DatabaseError, never> {
+  ): E.Effect<boolean, InfrastructureErrorType> {
     return pipe(
-      E.tryPromise({
-        try: (): Promise<Pick<AccessPolicyModel, "id">[]> =>
-          this.db
-            .select({ id: accessPolicies.id })
-            .from(accessPolicies)
-            .where(eq(accessPolicies.id, id))
-            .limit(1),
-        catch: (error) => new DatabaseError(
-          `Database error during exists check on AccessPolicy`,
-          { originalError: error }
-        )
-      }),
+      executeQuery(
+        () => this.db
+          .select({ id: accessPolicies.id })
+          .from(accessPolicies)
+          .where(eq(accessPolicies.id, id))
+          .limit(1),
+        {
+          entityType: "AccessPolicy",
+          operation: "exists",
+          entityId: id
+        }
+      ),
       E.map((result) => result.length > 0)
     )
   }
 
-  private ensureExists(id: AccessPolicyId): E.Effect<void, AccessPolicyNotFoundError | DatabaseError, never> {
+  private ensureExists(id: AccessPolicyId): E.Effect<void, AccessPolicyNotFoundError, never> {
     return pipe(
       this.exists(id),
+      E.catchAll((error) => {
+        // Map infrastructure errors (unexpected errors will fail fast as defects via mapInfraErrorToDomainWithFailFast)
+        if (isInfraError(error)) {
+          return pipe(
+            mapInfraErrorToDomainWithFailFast("AccessPolicy", (msg, field, value) => new AccessPolicyNotFoundError(msg, field, value))(error),
+            E.mapError((err) => err instanceof AccessPolicyNotFoundError ? err : new AccessPolicyNotFoundError(err.message, err.field, err.value))
+          )
+        }
+        // Unknown errors should fail fast
+        return E.die(error)
+      }),
       E.flatMap((exists) =>
         E.if(exists, {
           onTrue: () => E.succeed(undefined),
@@ -145,10 +230,10 @@ export class AccessPolicyDrizzleRepository extends AccessPolicyRepository {
     )
   }
 
-  private mapPolicySaveError(error: unknown, policy: AccessPolicyEntity): AccessPolicyConflictError | AccessPolicyValidationError | DatabaseError {
-    return error instanceof DatabaseError
+  private mapPolicySaveError(error: unknown, policy: AccessPolicyEntity): AccessPolicyConflictError | AccessPolicyValidationError {
+    return error instanceof AccessPolicyConflictError
       ? error
-      : error instanceof AccessPolicyConflictError || error instanceof AccessPolicyValidationError
+      : error instanceof AccessPolicyValidationError
       ? error
       : error instanceof ValidationError
       ? new AccessPolicyValidationError(error.message, error.field, error.value)
@@ -157,13 +242,13 @@ export class AccessPolicyDrizzleRepository extends AccessPolicyRepository {
 
   save(
     policy: AccessPolicyEntity
-  ): E.Effect<AccessPolicyEntity, AccessPolicyConflictError | AccessPolicyValidationError | DatabaseError, Clock.Clock> {
+  ): E.Effect<AccessPolicyEntity, AccessPolicyConflictError | AccessPolicyValidationError, Clock.Clock> {
     return pipe(
       this.findById(policy.id),
       E.flatMap((existingPolicy) =>
         O.match(existingPolicy, {
           onNone: () => this.insert(policy),
-          onSome: () => this.update(policy) as E.Effect<AccessPolicyEntity, AccessPolicyConflictError | AccessPolicyValidationError | DatabaseError, never>
+          onSome: () => this.update(policy)
         })
       ),
       E.mapError((error) => this.mapPolicySaveError(error, policy))
@@ -172,83 +257,122 @@ export class AccessPolicyDrizzleRepository extends AccessPolicyRepository {
 
   private insert(
     policy: AccessPolicyEntity
-  ): E.Effect<AccessPolicyEntity, AccessPolicyConflictError | AccessPolicyValidationError | ValidationError | DatabaseError, never> {
+  ): E.Effect<AccessPolicyEntity, AccessPolicyConflictError | AccessPolicyValidationError | ValidationError, never> {
     return pipe(
       AccessPolicyMapper.toDb(policy),
       E.flatMap((dbData) =>
-        E.tryPromise({
-          try: () => this.db.insert(accessPolicies).values(dbData),
-          catch: (error) =>
-            isUniqueConstraintError(error)
-              ? new AccessPolicyConflictError(
-                  `Access policy already exists for resource ${policy.resourceId} and subject ${policy.subjectId}`,
-                  "resourceId",
-                  policy.resourceId,
-                  { subjectId: O.getOrElse(policy.subjectId, () => "unknown") }
-                )
-              : translateDbError(
-                  error,
-                  { operation: "insert", entityType: "AccessPolicy" },
-                  {
-                    createConflictError: (message: string) => new AccessPolicyValidationError(message, "policyId", policy.id),
-                    createNotFoundError: (field: string, value: string) => new AccessPolicyValidationError(`Access policy not found: ${field}=${value}`, field, value),
-                    createValidationError: (message: string, field: string) => new AccessPolicyValidationError(message, field, policy.id)
-                  }
-                )
-        })
+        pipe(
+          E.tryPromise({
+            try: () => this.db.insert(accessPolicies).values(dbData),
+            catch: (error) => error
+          }),
+          E.catchAll((error): E.Effect<void, AccessPolicyConflictError | AccessPolicyNotFoundError | ValidationError, never> => {
+            // Handle unique constraint violations with domain-specific error
+            if (isUniqueConstraintError(error)) {
+              return E.fail(new AccessPolicyConflictError(
+                `Access policy already exists for resource ${policy.resourceId} and subject ${policy.subjectId}`,
+                "resourceId",
+                policy.resourceId,
+                { subjectId: O.getOrElse(policy.subjectId, () => "unknown") }
+              ))
+            }
+            // Translate infrastructure errors to domain errors
+            return pipe(
+              translateDbError(error, { operation: "insert", entityType: "AccessPolicy", entityId: policy.id }),
+              E.catchAll(mapInfraErrorToDomainWithFailFast("AccessPolicy", (msg, field, value) => new AccessPolicyNotFoundError(msg, field, value)))
+            )
+          })
+        )
       ),
-      E.as(policy)
+      E.as(policy),
+      E.mapError((error): AccessPolicyConflictError | AccessPolicyValidationError | ValidationError => {
+        if (error instanceof AccessPolicyConflictError) {
+          return error
+        }
+        if (error instanceof AccessPolicyValidationError) {
+          return error
+        }
+        if (error instanceof AccessPolicyNotFoundError) {
+          // Convert AccessPolicyNotFoundError to AccessPolicyValidationError for insert (save expects AccessPolicyValidationError)
+          return new AccessPolicyValidationError(error.message, error.field, error.value)
+        }
+        return error as ValidationError
+      })
     )
   }
 
   private update(
     policy: AccessPolicyEntity
-  ): E.Effect<AccessPolicyEntity, AccessPolicyValidationError | AccessPolicyNotFoundError | ValidationError | DatabaseError, never> {
+  ): E.Effect<AccessPolicyEntity, AccessPolicyValidationError | ValidationError, never> {
     return pipe(
       this.ensureExists(policy.id),
       E.flatMap(() => AccessPolicyMapper.toDb(policy)),
       E.flatMap((dbData) =>
-        E.tryPromise({
-          try: () => this.db
-            .update(accessPolicies)
-            .set(dbData)
-            .where(eq(accessPolicies.id, policy.id)),
-          catch: (error) => translateDbError(
-            error,
-            { operation: "update", entityType: "AccessPolicy" },
-            {
-              createConflictError: (message: string) => new AccessPolicyValidationError(message, "policyId", policy.id),
-              createNotFoundError: (field: string, value: string) => new AccessPolicyValidationError(`Access policy not found: ${field}=${value}`, field, value),
-              createValidationError: (message: string, field: string) => new AccessPolicyValidationError(message, field, policy.id)
-            }
+        pipe(
+          E.tryPromise({
+            try: () => this.db
+              .update(accessPolicies)
+              .set(dbData)
+              .where(eq(accessPolicies.id, policy.id)),
+            catch: (error) => error
+          }),
+          E.catchAll((error) =>
+            pipe(
+              translateDbError(error, { operation: "update", entityType: "AccessPolicy", entityId: policy.id }),
+              E.catchAll(mapInfraErrorToDomainWithFailFast("AccessPolicy", (msg, field, value) => new AccessPolicyNotFoundError(msg, field, value)))
+            )
           )
-        })
+        )
       ),
-      E.as(policy)
+      E.as(policy),
+      E.mapError((error): AccessPolicyValidationError | ValidationError => {
+        if (error instanceof AccessPolicyValidationError) {
+          return error
+        }
+        if (error instanceof AccessPolicyNotFoundError) {
+          // Convert NotFoundError to ValidationError for update (save expects ValidationError)
+          return new AccessPolicyValidationError(error.message, error.field, error.value)
+        }
+        return error as ValidationError
+      })
     )
   }
 
   delete(
     id: AccessPolicyId
-  ): E.Effect<boolean, AccessPolicyNotFoundError | DatabaseError, never> {
+  ): E.Effect<boolean, AccessPolicyNotFoundError, never> {
     return pipe(
       this.exists(id),
+      E.catchAll((error) => {
+        // Map infrastructure errors (unexpected errors will fail fast as defects via mapInfraErrorToDomainWithFailFast)
+        if (isInfraError(error)) {
+          return pipe(
+            mapInfraErrorToDomainWithFailFast("AccessPolicy", (msg, field, value) => new AccessPolicyNotFoundError(msg, field, value))(error),
+            E.mapError((err) => err instanceof AccessPolicyNotFoundError ? err : new AccessPolicyNotFoundError(err.message, err.field, err.value))
+          )
+        }
+        // Unknown errors should fail fast
+        return E.die(error)
+      }),
       E.flatMap((exists) =>
         E.if(exists, {
           onTrue: () =>
             pipe(
               E.tryPromise({
                 try: () => this.db.delete(accessPolicies).where(eq(accessPolicies.id, id)),
-                catch: (error) => translateDbError(
-                  error,
-                  { operation: "delete", entityType: "AccessPolicy" },
-                  {
-                    createConflictError: (message: string) => new DatabaseError(message),
-                    createNotFoundError: (field: string, value: string) => new AccessPolicyNotFoundError(`Access policy not found: ${field}=${value}`, field, value),
-                    createValidationError: (message: string) => new DatabaseError(message)
-                  }
-                )
+                catch: (error) => error
               }),
+              E.catchAll((error) =>
+                pipe(
+                  translateDbError(error, { operation: "delete", entityType: "AccessPolicy", entityId: id }),
+                  E.catchAll(mapInfraErrorToDomainWithFailFast("AccessPolicy", (msg, field, value) => new AccessPolicyNotFoundError(msg, field, value)))
+                )
+              ),
+              E.mapError((error): AccessPolicyNotFoundError => 
+                error instanceof AccessPolicyNotFoundError
+                  ? error
+                  : new AccessPolicyNotFoundError(`Failed to delete access policy: ${error instanceof Error ? error.message : String(error)}`, "id", id)
+              ),
               E.as(true)
             ),
           onFalse: () => E.fail(new AccessPolicyNotFoundError(`Access policy not found: id=${id}`, "id", id))
@@ -259,7 +383,7 @@ export class AccessPolicyDrizzleRepository extends AccessPolicyRepository {
 
   deleteByResourceId(
     resourceId: DocumentId
-  ): E.Effect<number, AccessPolicyNotFoundError | DatabaseError, never> {
+  ): E.Effect<number, AccessPolicyNotFoundError, never> {
     return pipe(
       E.tryPromise({
         try: async () => {
@@ -269,18 +393,25 @@ export class AccessPolicyDrizzleRepository extends AccessPolicyRepository {
           
           return result.rowCount ?? 0
         },
-        catch: (error) => translateQueryError(
-          error,
-          { operation: "deleteByResourceId", entityType: "AccessPolicy", field: "resourceId", value: resourceId },
-          (message, field, value, details) => new AccessPolicyNotFoundError(message, field, value, details)
+        catch: (error) => error
+      }),
+      E.catchAll((error) =>
+        pipe(
+          translateDbError(error, { operation: "deleteByResourceId", entityType: "AccessPolicy" }),
+          E.catchAll(mapInfraErrorToDomainWithFailFast("AccessPolicy", (msg, field, value) => new AccessPolicyNotFoundError(msg, field, value)))
         )
-      })
+      ),
+      E.mapError((error): AccessPolicyNotFoundError => 
+        error instanceof AccessPolicyNotFoundError
+          ? error
+          : new AccessPolicyNotFoundError(`Failed to delete access policies by resourceId: ${error instanceof Error ? error.message : String(error)}`, "resourceId", resourceId)
+      )
     )
   }
 
   deleteByUserId(
     userId: UserId
-  ): E.Effect<number, AccessPolicyNotFoundError | DatabaseError, never> {
+  ): E.Effect<number, AccessPolicyNotFoundError, never> {
     return pipe(
       E.tryPromise({
         try: async () => {
@@ -295,16 +426,23 @@ export class AccessPolicyDrizzleRepository extends AccessPolicyRepository {
           
           return result.rowCount ?? 0
         },
-        catch: (error) => translateQueryError(
-          error,
-          { operation: "deleteByUserId", entityType: "AccessPolicy", field: "userId", value: userId },
-          (message, field, value, details) => new AccessPolicyNotFoundError(message, field, value, details)
+        catch: (error) => error
+      }),
+      E.catchAll((error) =>
+        pipe(
+          translateDbError(error, { operation: "deleteByUserId", entityType: "AccessPolicy" }),
+          E.catchAll(mapInfraErrorToDomainWithFailFast("AccessPolicy", (msg, field, value) => new AccessPolicyNotFoundError(msg, field, value)))
         )
-      })
+      ),
+      E.mapError((error): AccessPolicyNotFoundError => 
+        error instanceof AccessPolicyNotFoundError
+          ? error
+          : new AccessPolicyNotFoundError(`Failed to delete access policies by userId: ${error instanceof Error ? error.message : String(error)}`, "userId", userId)
+      )
     )
   }
 
-  list(options?: PaginationOptions): E.Effect<Paginated<AccessPolicyEntity>, AccessPolicyNotFoundError | ValidationError | DatabaseError, Clock.Clock> {
+  list(options?: PaginationOptions): E.Effect<Paginated<AccessPolicyEntity>, AccessPolicyNotFoundError | ValidationError, Clock.Clock> {
     const paginationOptions = options ?? defaultPaginationOptions()
     const offset = (paginationOptions.pageNum - 1) * paginationOptions.pageSize
 
@@ -328,12 +466,14 @@ export class AccessPolicyDrizzleRepository extends AccessPolicyRepository {
             total: Number(totalResult[0]?.count ?? 0)
           }
         },
-        catch: (error) => translateQueryError(
-          error,
-          { operation: "list", entityType: "AccessPolicy", field: "list", value: "all" },
-          (message, field, value, details) => new AccessPolicyNotFoundError(message, field, value, details)
-        )
+        catch: (error) => error
       }),
+      E.catchAll((error) =>
+        pipe(
+          translateDbError(error, { operation: "list", entityType: "AccessPolicy" }),
+          E.catchAll(mapInfraErrorToDomainWithFailFast("AccessPolicy", (msg, field, value) => new AccessPolicyNotFoundError(msg, field, value)))
+        )
+      ),
       E.flatMap(({ data, total }) =>
         data.length === 0
           ? E.succeed({
@@ -344,16 +484,7 @@ export class AccessPolicyDrizzleRepository extends AccessPolicyRepository {
               totalPages: calculateTotalPages(total, paginationOptions.pageSize)
             } as Paginated<AccessPolicyEntity>)
           : pipe(
-              E.forEach(data, (row) =>
-                pipe(
-                  AccessPolicyMapper.fromDb(row),
-                  E.mapError((error): AccessPolicyNotFoundError | ValidationError =>
-                    error instanceof AccessPolicyValidationError
-                      ? new ValidationError(error.message, error.field, error.value)
-                      : error
-                  )
-                )
-              ),
+              E.forEach(data, (row) => this.mapPolicyFromDb(row)),
               E.map((entities): Paginated<AccessPolicyEntity> => ({
                 data: entities,
                 total,

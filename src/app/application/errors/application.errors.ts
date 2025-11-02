@@ -1,8 +1,21 @@
-import { DomainError } from "@domain/utils/base.errors"
+// ===== APPLICATION LAYER ERROR BASE =====
+
+export abstract class ApplicationError extends Error {
+  abstract readonly _tag: string
+  abstract readonly code: string
+
+  constructor(
+    message: string,
+    public readonly details?: Record<string, unknown>
+  ) {
+    super(message)
+    this.name = this.constructor.name
+  }
+}
 
 // ===== WORKFLOW ORCHESTRATION ERRORS =====
 
-export abstract class WorkflowError extends DomainError {
+export abstract class WorkflowError extends ApplicationError {
   abstract readonly _tag: string
   abstract readonly code: string
 }
@@ -160,9 +173,65 @@ export class DownloadTokenValidationError extends DownloadTokenWorkflowError {
   }
 }
 
+// ===== APPLICATION INFRASTRUCTURE DEPENDENCY ERRORS =====
+
+/**
+ * Persistence dependency error - failures from repository operations
+ * Maps infrastructure persistence errors (database, storage) to application layer
+ */
+export class PersistenceDependencyError extends ApplicationError {
+  readonly _tag = "PersistenceDependencyError" as const
+  readonly code = "PERSISTENCE_DEPENDENCY_ERROR"
+
+  constructor(
+    message: string,
+    public readonly dependency: string,
+    public readonly operation: string,
+    details?: Record<string, unknown>
+  ) {
+    super(message, { dependency, operation, ...details })
+  }
+}
+
+/**
+ * External port error - failures from external service ports (file storage, auth, etc.)
+ * Maps infrastructure port errors to application layer
+ */
+export class ExternalPortError extends ApplicationError {
+  readonly _tag = "ExternalPortError" as const
+  readonly code = "EXTERNAL_PORT_ERROR"
+
+  constructor(
+    message: string,
+    public readonly port: string,
+    public readonly operation: string,
+    details?: Record<string, unknown>
+  ) {
+    super(message, { port, operation, ...details })
+  }
+}
+
+/**
+ * Interaction validation error - failures from user input validation at application boundary
+ * Maps domain validation errors to application layer
+ */
+export class InteractionValidationError extends ApplicationError {
+  readonly _tag = "InteractionValidationError" as const
+  readonly code = "INTERACTION_VALIDATION_ERROR"
+
+  constructor(
+    message: string,
+    public readonly field?: string,
+    public readonly value?: unknown,
+    details?: Record<string, unknown>
+  ) {
+    super(message, { field, value, ...details })
+  }
+}
+
 // ===== ERROR TYPE UNIONS =====
 
-export type ApplicationError = 
+export type ApplicationErrorType = 
   | WorkflowDependencyError
   | UploadInitiationError
   | UploadConfirmationError
@@ -172,6 +241,9 @@ export type ApplicationError =
   | PermissionCheckError
   | DownloadTokenGenerationError
   | DownloadTokenValidationError
+  | PersistenceDependencyError
+  | ExternalPortError
+  | InteractionValidationError
 
 export type UploadWorkflowError = 
   | UploadInitiationError

@@ -13,10 +13,11 @@ import { DocumentAccessPolicy } from "@domain/accessPolicy/document-access.polic
 import type { DocumentAccessContext } from "@domain/accessPolicy/document-access.policy"
 import { DocumentNotFoundError } from "@domain/document/document.error"
 import { DocumentVersionNotFoundError } from "@domain/documentVersion/document-version.error"
-import { DatabaseError } from "@domain/utils/base.errors"
 import { DocumentAccessDeniedError, DocumentAccessInsufficientPermissionsError, DocumentAccessContextInvalidError } from "@domain/accessPolicy/document-access.error"
-import { PermissionCheckError, WorkflowDependencyError } from "@application/errors/application.errors"
+import { PermissionCheckError, WorkflowDependencyError, PersistenceDependencyError, AccessPolicyCreationError } from "@application/errors/application.errors"
+import type { InfraUnexpected } from "@infra/errors/infrastructure.errors"
 import { UserId, DocumentId, DocumentVersionId, WorkspaceId } from "@domain/refined/ids"
+import { mapAccessPolicyPersistenceError } from "./errors/access-policy-errors"
 
 // ===== ID GENERATION HELPERS =====
 
@@ -101,18 +102,15 @@ export const loadDocument = (
   return pipe(
     aggregateRepository.findDocumentById(documentId),
     Effect.mapError((error) => {
-      if (error instanceof DatabaseError) {
-        return new WorkflowDependencyError(
-          `Database error loading document: ${documentId}`,
-          "DocumentAggregateRepository",
-          "findDocumentById",
-          { originalError: error }
-        )
+      // Map domain errors directly, infrastructure errors should be handled by repository
+      if (error instanceof DocumentNotFoundError) {
+        return error
       }
-      return new DocumentNotFoundError(
+      // For any other error (infrastructure errors should already be mapped by repository)
+      return new WorkflowDependencyError(
         `Failed to load document: ${documentId}`,
-        "id",
-        documentId,
+        "DocumentAggregateRepository",
+        "findDocumentById",
         { originalError: error }
       )
     }),
@@ -154,18 +152,15 @@ export const loadDocumentVersion = (
     // 1. Find document ID by version ID (lightweight lookup)
     aggregateRepository.findDocumentIdByVersionId(versionId).pipe(
     Effect.mapError((error) => {
-      if (error instanceof DatabaseError) {
-        return new WorkflowDependencyError(
-            `Database error finding document by version: ${versionId}`,
-          "DocumentAggregateRepository",
-            "findDocumentIdByVersionId",
-          { originalError: error }
-        )
+      // Map domain errors directly, infrastructure errors should be handled by repository
+      if (error instanceof DocumentVersionNotFoundError) {
+        return error
       }
-      return new DocumentVersionNotFoundError(
-          `Version not found: ${versionId}`,
-        "id",
-        versionId,
+      // For any other error (infrastructure errors should already be mapped by repository)
+      return new WorkflowDependencyError(
+        `Failed to find document by version: ${versionId}`,
+        "DocumentAggregateRepository",
+        "findDocumentIdByVersionId",
         { originalError: error }
       )
     }),
@@ -184,14 +179,7 @@ export const loadDocumentVersion = (
     Effect.flatMap((documentId) =>
       aggregateRepository.loadById(documentId).pipe(
         Effect.mapError((error) => {
-          if (error instanceof DatabaseError) {
-            return new WorkflowDependencyError(
-              `Database error loading aggregate: ${documentId}`,
-              "DocumentAggregateRepository",
-              "loadById",
-              { originalError: error }
-            )
-          }
+          // Infrastructure errors should already be mapped by repository
           return new WorkflowDependencyError(
             `Failed to load aggregate: ${documentId}`,
             "DocumentAggregateRepository",
@@ -367,25 +355,10 @@ export const loadActorAccessContext = (
   accessPolicyRepository: AccessPolicyRepository,
   actor: UserEntity,
   document: DocumentEntity
-): Effect.Effect<ReadonlyArray<AccessPolicyEntity>, WorkflowDependencyError, Clock.Clock> => {
+): Effect.Effect<ReadonlyArray<AccessPolicyEntity>, WorkflowDependencyError | PersistenceDependencyError | InfraUnexpected | AccessPolicyCreationError, Clock.Clock> => {
   return pipe(
     accessPolicyRepository.findByResourceId(document.id),
-    Effect.mapError((error) => {
-      if (error instanceof DatabaseError) {
-        return new WorkflowDependencyError(
-          `Database error fetching access policies for document: ${document.id}`,
-          "AccessPolicyRepository",
-          "findByResourceId",
-          { originalError: error }
-        )
-      }
-      return new WorkflowDependencyError(
-        `Failed to fetch access policies for document: ${document.id}`,
-        "AccessPolicyRepository",
-        "findByResourceId",
-        { originalError: error }
-      )
-    }),
+    Effect.catchAll(mapAccessPolicyPersistenceError(undefined, "findByResourceId")),
     Effect.map((allPolicies) => filterPoliciesByActor(allPolicies, actor))
   )
 }

@@ -7,7 +7,6 @@ import {
 } from "@domain/accessPolicy/access-policy.error"
 import { BaseRepository } from "@domain/utils/base.repository"
 import { DocumentId, UserId } from "@domain/refined/ids"
-import { DatabaseError } from "@domain/utils/base.errors"
 
 /**
  * Access policy repository interface with Effect-based signatures and typed errors.
@@ -20,24 +19,24 @@ export abstract class AccessPolicyRepository extends BaseRepository<AccessPolicy
 
   abstract findByResourceId(
     resourceId: DocumentId
-  ): Effect.Effect<readonly AccessPolicyEntity[], AccessPolicyNotFoundError | AccessPolicyValidationError | DatabaseError, Clock.Clock>
+  ): Effect.Effect<readonly AccessPolicyEntity[], AccessPolicyNotFoundError | AccessPolicyValidationError, Clock.Clock>
 
   abstract findBySubject(
     subjectType: SubjectType,
     subjectId?: UserId,
     role?: Role
-  ): Effect.Effect<readonly AccessPolicyEntity[], AccessPolicyNotFoundError | AccessPolicyValidationError | DatabaseError, Clock.Clock>
+  ): Effect.Effect<readonly AccessPolicyEntity[], AccessPolicyNotFoundError | AccessPolicyValidationError, Clock.Clock>
 
   abstract findByUserAndResource(
     userId: UserId,
     resourceId: DocumentId
-  ): Effect.Effect<readonly AccessPolicyEntity[], AccessPolicyNotFoundError | AccessPolicyValidationError | DatabaseError, Clock.Clock>
+  ): Effect.Effect<readonly AccessPolicyEntity[], AccessPolicyNotFoundError | AccessPolicyValidationError, Clock.Clock>
 
   abstract deleteByResourceId(
     resourceId: DocumentId
-  ): Effect.Effect<number, AccessPolicyNotFoundError | DatabaseError>
+  ): Effect.Effect<number, AccessPolicyNotFoundError>
 
   abstract deleteByUserId(
     userId: UserId
-  ): Effect.Effect<number, AccessPolicyNotFoundError | DatabaseError>
+  ): Effect.Effect<number, AccessPolicyNotFoundError>
 }

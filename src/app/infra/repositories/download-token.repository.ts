@@ -14,9 +14,10 @@ import { downloadTokens, type DownloadTokenModel } from "@infra/db/models/downlo
 import { DownloadTokenMapper } from "@infra/db/mappers"
 import { eq, and, lt, count, isNull, gt } from "drizzle-orm"
 import type { DatabaseInterface } from "@infra/db/interfaces"
-import { isUniqueConstraintError, getErrorMessage, translateDbError, translateQueryError } from "@infra/db/errors"
-import { DatabaseError } from "@domain/utils/base.errors"
-import { fetchSingle, fetchMultiple } from "./helpers"
+import { isUniqueConstraintError, getErrorMessage, translateDbError } from "@infra/db/errors"
+import type { InfrastructureErrorType } from "@infra/errors/infrastructure.errors"
+import { fetchSingle, fetchMultiple, mapInfraErrorToDomainWithFailFast, executeQuery } from "./helpers"
+import { isInfraError } from "app/shared/error-matching"
 import { TOKENS } from "@infra/di/container"
 
 /**
@@ -30,82 +31,113 @@ export class DownloadTokenDrizzleRepository extends DownloadTokenRepository {
 
   // ========== Repository Methods ==========
 
+  /**
+   * Wrapper for DownloadTokenMapper.fromDb that converts DownloadTokenValidationError to ValidationError
+   */
+  private mapTokenFromDb(row: DownloadTokenModel): E.Effect<DownloadTokenEntity, ValidationError, Clock.Clock> {
+    return pipe(
+      DownloadTokenMapper.fromDb(row),
+      E.mapError((error) => new ValidationError(error.message, error.field, error.value))
+    )
+  }
+
   findById(
     id: DownloadTokenId
-  ): E.Effect<O.Option<DownloadTokenEntity>, DownloadTokenNotFoundError | ValidationError | DatabaseError, Clock.Clock> {
+  ): E.Effect<O.Option<DownloadTokenEntity>, DownloadTokenNotFoundError | ValidationError, Clock.Clock> {
     return pipe(
       fetchSingle(
         () => this.db.select().from(downloadTokens).where(eq(downloadTokens.id, id)).limit(1),
-        DownloadTokenMapper.fromDb,
-        "DownloadToken",
-        DownloadTokenNotFoundError
+        this.mapTokenFromDb.bind(this),
+        {
+          entityType: "DownloadToken",
+          operation: "findById",
+          entityId: id
+        }
       ),
-      E.mapError((error): DownloadTokenNotFoundError | ValidationError | DatabaseError =>
-        error instanceof DownloadTokenValidationError
-          ? new ValidationError(error.message, error.field, error.value)
-          : error
-      )
+      E.catchAll((error) => {
+        // Map infrastructure errors to domain errors
+        if (isInfraError(error)) {
+          return mapInfraErrorToDomainWithFailFast("DownloadToken", (msg, field, value) => new DownloadTokenNotFoundError(msg, field, value))(error)
+        }
+        // Pass through ValidationError
+        return E.fail(error as ValidationError)
+      })
     )
   }
 
   findByToken(
     token: string
-  ): E.Effect<O.Option<DownloadTokenEntity>, DownloadTokenNotFoundError | ValidationError | DatabaseError, Clock.Clock> {
+  ): E.Effect<O.Option<DownloadTokenEntity>, DownloadTokenNotFoundError | ValidationError, Clock.Clock> {
     return pipe(
       fetchSingle(
         () => this.db.select().from(downloadTokens).where(eq(downloadTokens.token, token)).limit(1),
-        DownloadTokenMapper.fromDb,
-        "DownloadToken",
-        DownloadTokenNotFoundError
+        this.mapTokenFromDb.bind(this),
+        {
+          entityType: "DownloadToken",
+          operation: "findByToken"
+        }
       ),
-      E.mapError((error): DownloadTokenNotFoundError | ValidationError | DatabaseError =>
-        error instanceof DownloadTokenValidationError
-          ? new ValidationError(error.message, error.field, error.value)
-          : error
-      )
+      E.catchAll((error) => {
+        // Map infrastructure errors to domain errors
+        if (isInfraError(error)) {
+          return mapInfraErrorToDomainWithFailFast("DownloadToken", (msg, field, value) => new DownloadTokenNotFoundError(msg, field, value))(error)
+        }
+        // Pass through ValidationError
+        return E.fail(error as ValidationError)
+      })
     )
   }
 
   findByUserId(
     userId: UserId
-  ): E.Effect<readonly DownloadTokenEntity[], DownloadTokenNotFoundError | ValidationError | DatabaseError, Clock.Clock> {
+  ): E.Effect<readonly DownloadTokenEntity[], DownloadTokenNotFoundError | ValidationError, Clock.Clock> {
     return pipe(
       fetchMultiple(
         () => this.db.select().from(downloadTokens).where(eq(downloadTokens.issuedTo, userId)),
-        DownloadTokenMapper.fromDb,
-        "DownloadToken",
-        DownloadTokenNotFoundError
+        this.mapTokenFromDb.bind(this),
+        {
+          entityType: "DownloadToken",
+          operation: "findByUserId"
+        }
       ),
-      E.mapError((error): DownloadTokenNotFoundError | ValidationError | DatabaseError =>
-        error instanceof DownloadTokenValidationError
-          ? new ValidationError(error.message, error.field, error.value)
-          : error
-      )
+      E.catchAll((error) => {
+        // Map infrastructure errors to domain errors
+        if (isInfraError(error)) {
+          return mapInfraErrorToDomainWithFailFast("DownloadToken", (msg, field, value) => new DownloadTokenNotFoundError(msg, field, value))(error)
+        }
+        // Pass through ValidationError
+        return E.fail(error as ValidationError)
+      })
     )
   }
 
   findByDocumentId(
     documentId: DocumentId
-  ): E.Effect<readonly DownloadTokenEntity[], DownloadTokenNotFoundError | ValidationError | DatabaseError, Clock.Clock> {
+  ): E.Effect<readonly DownloadTokenEntity[], DownloadTokenNotFoundError | ValidationError, Clock.Clock> {
     return pipe(
       fetchMultiple(
         () => this.db.select().from(downloadTokens).where(eq(downloadTokens.documentId, documentId)),
-        DownloadTokenMapper.fromDb,
-        "DownloadToken",
-        DownloadTokenNotFoundError
+        this.mapTokenFromDb.bind(this),
+        {
+          entityType: "DownloadToken",
+          operation: "findByDocumentId"
+        }
       ),
-      E.mapError((error): DownloadTokenNotFoundError | ValidationError | DatabaseError =>
-        error instanceof DownloadTokenValidationError
-          ? new ValidationError(error.message, error.field, error.value)
-          : error
-      )
+      E.catchAll((error) => {
+        // Map infrastructure errors to domain errors
+        if (isInfraError(error)) {
+          return mapInfraErrorToDomainWithFailFast("DownloadToken", (msg, field, value) => new DownloadTokenNotFoundError(msg, field, value))(error)
+        }
+        // Pass through ValidationError
+        return E.fail(error as ValidationError)
+      })
     )
   }
 
   findValidTokens(
     documentId: DocumentId,
     userId: UserId
-  ): E.Effect<readonly DownloadTokenEntity[], DownloadTokenNotFoundError | ValidationError | DatabaseError, Clock.Clock> {
+  ): E.Effect<readonly DownloadTokenEntity[], DownloadTokenNotFoundError | ValidationError, Clock.Clock> {
     return pipe(
       fetchMultiple(
         () => {
@@ -122,44 +154,47 @@ export class DownloadTokenDrizzleRepository extends DownloadTokenRepository {
               )
             )
         },
-        DownloadTokenMapper.fromDb,
-        "DownloadToken",
-        DownloadTokenNotFoundError
+        this.mapTokenFromDb.bind(this),
+        {
+          entityType: "DownloadToken",
+          operation: "findValidTokens"
+        }
       ),
-      E.mapError((error): DownloadTokenNotFoundError | ValidationError | DatabaseError =>
-        error instanceof DownloadTokenValidationError
-          ? new ValidationError(error.message, error.field, error.value)
-          : error
-      )
+      E.catchAll((error) => {
+        // Map infrastructure errors to domain errors
+        if (isInfraError(error)) {
+          return mapInfraErrorToDomainWithFailFast("DownloadToken", (msg, field, value) => new DownloadTokenNotFoundError(msg, field, value))(error)
+        }
+        // Pass through ValidationError
+        return E.fail(error as ValidationError)
+      })
     )
   }
 
   exists(
     id: DownloadTokenId
-  ): E.Effect<boolean, DatabaseError, never> {
+  ): E.Effect<boolean, InfrastructureErrorType> {
     return pipe(
-      E.tryPromise({
-        try: (): Promise<Pick<DownloadTokenModel, "id">[]> =>
-          this.db
-            .select({ id: downloadTokens.id })
-            .from(downloadTokens)
-            .where(eq(downloadTokens.id, id))
-            .limit(1),
-        catch: (error) => new DatabaseError(
-          `Database error during exists check on DownloadToken`,
-          { originalError: error }
-        )
-      }),
+      executeQuery(
+        () => this.db
+          .select({ id: downloadTokens.id })
+          .from(downloadTokens)
+          .where(eq(downloadTokens.id, id))
+          .limit(1),
+        {
+          entityType: "DownloadToken",
+          operation: "exists",
+          entityId: id
+        }
+      ),
       E.map((result) => result.length > 0)
     )
   }
 
   // ========== Pure Helper Functions ==========
 
-  private mapTokenSaveError(error: unknown, token: DownloadTokenEntity): ValidationError | BusinessRuleViolationError | DatabaseError {
-    return error instanceof DatabaseError
-      ? error
-      : error instanceof ValidationError || error instanceof BusinessRuleViolationError
+  private mapTokenSaveError(error: unknown, token: DownloadTokenEntity): ValidationError | BusinessRuleViolationError {
+    return error instanceof ValidationError || error instanceof BusinessRuleViolationError
       ? error
       : new ValidationError(
           `Failed to save download token: ${getErrorMessage(error)}`,
@@ -168,9 +203,20 @@ export class DownloadTokenDrizzleRepository extends DownloadTokenRepository {
         )
   }
 
-  private ensureExists(id: DownloadTokenId): E.Effect<void, DownloadTokenNotFoundError | DatabaseError, never> {
+  private ensureExists(id: DownloadTokenId): E.Effect<void, DownloadTokenNotFoundError, never> {
     return pipe(
       this.exists(id),
+      E.catchAll((error) => {
+        // Map infrastructure errors (unexpected errors will fail fast as defects via mapInfraErrorToDomainWithFailFast)
+        if (isInfraError(error)) {
+          return pipe(
+            mapInfraErrorToDomainWithFailFast("DownloadToken", (msg, field, value) => new DownloadTokenNotFoundError(msg, field, value))(error),
+            E.mapError((err) => err instanceof DownloadTokenNotFoundError ? err : new DownloadTokenNotFoundError(err.message, err.field, err.value))
+          )
+        }
+        // Unknown errors should fail fast
+        return E.die(error)
+      }),
       E.flatMap((exists) =>
         E.if(exists, {
           onTrue: () => E.succeed(undefined),
@@ -182,7 +228,7 @@ export class DownloadTokenDrizzleRepository extends DownloadTokenRepository {
 
   save(
     token: DownloadTokenEntity
-  ): E.Effect<DownloadTokenEntity, ValidationError | BusinessRuleViolationError | DatabaseError, Clock.Clock> {
+  ): E.Effect<DownloadTokenEntity, ValidationError | BusinessRuleViolationError, Clock.Clock> {
     return pipe(
       this.findById(token.id),
       E.flatMap((existingToken) =>
@@ -197,68 +243,91 @@ export class DownloadTokenDrizzleRepository extends DownloadTokenRepository {
 
   private insert(
     token: DownloadTokenEntity
-  ): E.Effect<DownloadTokenEntity, ValidationError | DownloadTokenValidationError | DatabaseError, never> {
+  ): E.Effect<DownloadTokenEntity, ValidationError | DownloadTokenValidationError, never> {
     return pipe(
       DownloadTokenMapper.toDb(token),
       E.flatMap((dbData) =>
-        E.tryPromise({
-          try: () => this.db.insert(downloadTokens).values(dbData),
-          catch: (error) =>
-            isUniqueConstraintError(error)
-              ? new ValidationError(
-                  `Download token with token '${token.token}' already exists`,
-                  'token',
-                  token.token
-                )
-              : translateDbError(
-                  error,
-                  { operation: "insert", entityType: "DownloadToken" },
-                  {
-                    createConflictError: (message: string) => new ValidationError(message, "tokenId", token.id),
-                    createNotFoundError: (field: string, value: string) => new ValidationError(`Download token not found: ${field}=${value}`, field, value),
-                    createValidationError: (message: string, field: string) => new ValidationError(message, field, token.id)
-                  }
-                )
-        })
+        pipe(
+          E.tryPromise({
+            try: () => this.db.insert(downloadTokens).values(dbData),
+            catch: (error) => error
+          }),
+          E.catchAll((error): E.Effect<void, ValidationError, never> => {
+            // Handle unique constraint violations with domain-specific error
+            if (isUniqueConstraintError(error)) {
+              return E.fail(new ValidationError(
+                `Download token with token '${token.token}' already exists`,
+                'token',
+                token.token
+              ))
+            }
+            // Translate infrastructure errors to domain errors
+            return pipe(
+              translateDbError(error, { operation: "insert", entityType: "DownloadToken", entityId: token.id }),
+              E.catchAll(mapInfraErrorToDomainWithFailFast("DownloadToken", (msg, field, value) => new DownloadTokenNotFoundError(msg, field, value))),
+              E.mapError((infraError): ValidationError => 
+                infraError instanceof DownloadTokenNotFoundError
+                  ? new ValidationError(infraError.message, infraError.field, infraError.value)
+                  : infraError as ValidationError
+              )
+            )
+          })
+        )
       ),
-      E.as(token)
+      E.as(token),
+      E.mapError((error): ValidationError | DownloadTokenValidationError => {
+        if (error instanceof DownloadTokenValidationError) {
+          return error
+        }
+        // error is ValidationError at this point (NotFoundError was already converted in catchAll)
+        return error as ValidationError
+      })
     )
   }
 
   private update(
     token: DownloadTokenEntity
-  ): E.Effect<DownloadTokenEntity, ValidationError | DownloadTokenNotFoundError | DatabaseError | DownloadTokenValidationError, never> {
+  ): E.Effect<DownloadTokenEntity, ValidationError | DownloadTokenValidationError, never> {
     return pipe(
       this.ensureExists(token.id),
       E.flatMap(() => DownloadTokenMapper.toDb(token)),
       E.flatMap((dbData) =>
-        E.tryPromise({
-          try: () => this.db
-            .update(downloadTokens)
-            .set(dbData)
-            .where(eq(downloadTokens.id, token.id)),
-          catch: (error) => translateDbError(
-            error,
-            { operation: "update", entityType: "DownloadToken" },
-            {
-              createConflictError: (message: string) => new ValidationError(message, "tokenId", token.id),
-              createNotFoundError: (field: string, value: string) => new ValidationError(`Download token not found: ${field}=${value}`, field, value),
-              createValidationError: (message: string, field: string) => new ValidationError(message, field, token.id)
-            }
+        pipe(
+          E.tryPromise({
+            try: () => this.db
+              .update(downloadTokens)
+              .set(dbData)
+              .where(eq(downloadTokens.id, token.id)),
+            catch: (error) => error
+          }),
+          E.catchAll((error) =>
+            pipe(
+              translateDbError(error, { operation: "update", entityType: "DownloadToken", entityId: token.id }),
+              E.catchAll(mapInfraErrorToDomainWithFailFast("DownloadToken", (msg, field, value) => new DownloadTokenNotFoundError(msg, field, value)))
+            )
           )
-        })
+        )
       ),
-      E.as(token)
+      E.as(token),
+      E.mapError((error): ValidationError | DownloadTokenValidationError => {
+        if (error instanceof DownloadTokenValidationError) {
+          return error
+        }
+        // Convert DownloadTokenNotFoundError to ValidationError
+        if (error instanceof DownloadTokenNotFoundError) {
+          return new ValidationError(error.message, error.field, error.value)
+        }
+        // error is ValidationError
+        return error as ValidationError
+      })
     )
   }
 
   private mapMarkAsUsedError(
     error: unknown,
     tokenString: string
-  ): DownloadTokenNotFoundError | DownloadTokenAlreadyUsedError | BusinessRuleViolationError | ValidationError | DatabaseError {
-
+  ): DownloadTokenNotFoundError | DownloadTokenAlreadyUsedError | BusinessRuleViolationError | ValidationError {
     if (
-      error instanceof DatabaseError ||
       error instanceof DownloadTokenAlreadyUsedError ||
       error instanceof BusinessRuleViolationError ||
       error instanceof ValidationError ||
@@ -277,7 +346,7 @@ export class DownloadTokenDrizzleRepository extends DownloadTokenRepository {
 
   markAsUsed(
     token: string
-  ): E.Effect<DownloadTokenEntity, DownloadTokenNotFoundError | DownloadTokenAlreadyUsedError | BusinessRuleViolationError | ValidationError | DatabaseError, Clock.Clock> {
+  ): E.Effect<DownloadTokenEntity, DownloadTokenNotFoundError | DownloadTokenAlreadyUsedError | BusinessRuleViolationError | ValidationError, Clock.Clock> {
     return pipe(
       this.findByToken(token),
       E.flatMap((tokenOption) =>
@@ -295,25 +364,39 @@ export class DownloadTokenDrizzleRepository extends DownloadTokenRepository {
 
   delete(
     id: DownloadTokenId
-  ): E.Effect<boolean, DownloadTokenNotFoundError | DatabaseError, never> {
+  ): E.Effect<boolean, DownloadTokenNotFoundError, never> {
     return pipe(
       this.exists(id),
+      E.catchAll((error) => {
+        // Map infrastructure errors (unexpected errors will fail fast as defects via mapInfraErrorToDomainWithFailFast)
+        if (isInfraError(error)) {
+          return pipe(
+            mapInfraErrorToDomainWithFailFast("DownloadToken", (msg, field, value) => new DownloadTokenNotFoundError(msg, field, value))(error),
+            E.mapError((err) => err instanceof DownloadTokenNotFoundError ? err : new DownloadTokenNotFoundError(err.message, err.field, err.value))
+          )
+        }
+        // Unknown errors should fail fast
+        return E.die(error)
+      }),
       E.flatMap((exists) =>
         E.if(exists, {
           onTrue: () =>
             pipe(
               E.tryPromise({
                 try: () => this.db.delete(downloadTokens).where(eq(downloadTokens.id, id)),
-                catch: (error) => translateDbError(
-                  error,
-                  { operation: "delete", entityType: "DownloadToken" },
-                  {
-                    createConflictError: (message: string) => new DatabaseError(message),
-                    createNotFoundError: (field: string, value: string) => new DownloadTokenNotFoundError(`Download token not found: ${field}=${value}`, field, value),
-                    createValidationError: (message: string) => new DatabaseError(message)
-                  }
-                )
+                catch: (error) => error
               }),
+              E.catchAll((error) =>
+                pipe(
+                  translateDbError(error, { operation: "delete", entityType: "DownloadToken", entityId: id }),
+                  E.catchAll(mapInfraErrorToDomainWithFailFast("DownloadToken", (msg, field, value) => new DownloadTokenNotFoundError(msg, field, value)))
+                )
+              ),
+              E.mapError((error): DownloadTokenNotFoundError => 
+                error instanceof DownloadTokenNotFoundError
+                  ? error
+                  : new DownloadTokenNotFoundError(`Failed to delete download token: ${error instanceof Error ? error.message : String(error)}`, "id", id)
+              ),
               E.as(true)
             ),
           onFalse: () => E.fail(new DownloadTokenNotFoundError(`Download token not found: id=${id}`, "id", id))
@@ -322,10 +405,10 @@ export class DownloadTokenDrizzleRepository extends DownloadTokenRepository {
     )
   }
 
-  deleteExpiredTokens(): E.Effect<number, DatabaseError, never> {
+  deleteExpiredTokens(): E.Effect<number, InfrastructureErrorType> {
     return pipe(
-      E.tryPromise({
-        try: async () => {
+      executeQuery(
+        async () => {
           const now = new Date()
           const result = await this.db
             .delete(downloadTokens)
@@ -333,24 +416,17 @@ export class DownloadTokenDrizzleRepository extends DownloadTokenRepository {
           
           return result.rowCount ?? 0
         },
-        catch: (error) => translateDbError(
-          error,
-          { operation: "deleteExpiredTokens", entityType: "DownloadToken" },
-          {
-            createConflictError: (message: string) => new DatabaseError(message),
-            createNotFoundError: (field: string, value: string) => 
-              new DatabaseError(`Token not found: ${field}=${value}`, { field, value }),
-            createValidationError: (message: string, field: string) => 
-              new DatabaseError(message, { constraint: field })
-          }
-        )
-      })
+        {
+          entityType: "DownloadToken",
+          operation: "deleteExpiredTokens"
+        }
+      )
     )
   }
 
   deleteByDocumentId(
     documentId: DocumentId
-  ): E.Effect<number, DownloadTokenNotFoundError | DatabaseError, never> {
+  ): E.Effect<number, DownloadTokenNotFoundError, never> {
     return pipe(
       E.tryPromise({
         try: async () => {
@@ -360,16 +436,23 @@ export class DownloadTokenDrizzleRepository extends DownloadTokenRepository {
           
           return result.rowCount ?? 0
         },
-        catch: (error) => translateQueryError(
-          error,
-          { operation: "deleteByDocumentId", entityType: "DownloadToken", field: "documentId", value: documentId },
-          (message, field, value, details) => new DownloadTokenNotFoundError(message, field, value, details)
+        catch: (error) => error
+      }),
+      E.catchAll((error) =>
+        pipe(
+          translateDbError(error, { operation: "deleteByDocumentId", entityType: "DownloadToken" }),
+          E.catchAll(mapInfraErrorToDomainWithFailFast("DownloadToken", (msg, field, value) => new DownloadTokenNotFoundError(msg, field, value)))
         )
-      })
+      ),
+      E.mapError((error): DownloadTokenNotFoundError => 
+        error instanceof DownloadTokenNotFoundError
+          ? error
+          : new DownloadTokenNotFoundError(`Failed to delete download tokens by documentId: ${error instanceof Error ? error.message : String(error)}`, "documentId", documentId)
+      )
     )
   }
 
-  list(options?: PaginationOptions): E.Effect<Paginated<DownloadTokenEntity>, DownloadTokenNotFoundError | ValidationError | DatabaseError, Clock.Clock> {
+  list(options?: PaginationOptions): E.Effect<Paginated<DownloadTokenEntity>, DownloadTokenNotFoundError | ValidationError, Clock.Clock> {
     const paginationOptions = options ?? defaultPaginationOptions()
     const offset = (paginationOptions.pageNum - 1) * paginationOptions.pageSize
 
@@ -393,12 +476,14 @@ export class DownloadTokenDrizzleRepository extends DownloadTokenRepository {
             total: Number(totalResult[0]?.count ?? 0)
           }
         },
-        catch: (error) => translateQueryError(
-          error,
-          { operation: "list", entityType: "DownloadToken", field: "list", value: "all" },
-          (message, field, value, details) => new DownloadTokenNotFoundError(message, field, value, details)
-        )
+        catch: (error) => error
       }),
+      E.catchAll((error) =>
+        pipe(
+          translateDbError(error, { operation: "list", entityType: "DownloadToken" }),
+          E.catchAll(mapInfraErrorToDomainWithFailFast("DownloadToken", (msg, field, value) => new DownloadTokenNotFoundError(msg, field, value)))
+        )
+      ),
       E.flatMap(({ data, total }) =>
         data.length === 0
           ? E.succeed({
@@ -409,16 +494,7 @@ export class DownloadTokenDrizzleRepository extends DownloadTokenRepository {
               totalPages: calculateTotalPages(total, paginationOptions.pageSize)
             } as Paginated<DownloadTokenEntity>)
           : pipe(
-              E.forEach(data, (row) =>
-                pipe(
-                  DownloadTokenMapper.fromDb(row),
-                  E.mapError((error): DownloadTokenNotFoundError | ValidationError =>
-                    error instanceof DownloadTokenValidationError
-                      ? new ValidationError(error.message, error.field, error.value)
-                      : error
-                  )
-                )
-              ),
+              E.forEach(data, (row) => this.mapTokenFromDb(row)),
               E.map((entities): Paginated<DownloadTokenEntity> => ({
                 data: entities,
                 total,

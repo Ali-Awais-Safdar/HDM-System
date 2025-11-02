@@ -1,2 +1,6 @@
 export * from './workflow.helpers'
-export * from './error-mappers'
+export * from './errors/document-errors'
+export * from './errors/access-policy-errors'
+export * from './errors/upload-errors'
+export * from './errors/download-token-errors'
+export * from './errors/user-errors'

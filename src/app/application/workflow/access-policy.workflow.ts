@@ -18,10 +18,11 @@ import {
   AccessPolicyNotFoundError,
   AccessPolicyValidationError
 } from "@domain/accessPolicy/access-policy.error"
-import { DatabaseError, BusinessRuleViolationError } from "@domain/utils/base.errors"
+import { BusinessRuleViolationError } from "@domain/utils/base.errors"
 
 // Application errors
-import { PermissionCheckError, WorkflowError, WorkflowDependencyError } from "@application/errors/application.errors"
+import { PermissionCheckError, WorkflowError, WorkflowDependencyError, PersistenceDependencyError, AccessPolicyCreationError } from "@application/errors/application.errors"
+import type { InfraUnexpected } from "@infra/errors/infrastructure.errors"
 
 // Application DTOs
 import {
@@ -45,12 +46,14 @@ import {
   loadDocument,
   ensurePermission,
   filterPoliciesByActor,
-  mapAccessPolicyPersistenceError,
-  mapAccessPolicyDomainError,
-  mapAccessPolicyDeletionError,
   optionToUndefined,
   recordAudit
 } from "@application/workflow/helpers"
+import {
+  mapAccessPolicyPersistenceError,
+  mapAccessPolicyDomainError,
+  mapAccessPolicyDeletionError
+} from "@application/workflow/helpers/errors/access-policy-errors"
 
 // Refined types
 import { AccessPolicyId, DocumentId } from "@domain/refined/ids"
@@ -100,25 +103,10 @@ export class AccessPolicyWorkflow {
 
   private loadPolicy(
     policyId: AccessPolicyId
-  ): Effect.Effect<AccessPolicyEntity, AccessPolicyNotFoundError | WorkflowDependencyError, Clock.Clock> {
+  ): Effect.Effect<AccessPolicyEntity, AccessPolicyNotFoundError | PersistenceDependencyError | InfraUnexpected | AccessPolicyCreationError, Clock.Clock> {
     return pipe(
       this.accessPolicyRepository.findById(policyId),
-      Effect.mapError((error) => {
-        if (error instanceof DatabaseError) {
-          return new WorkflowDependencyError(
-            `Database error loading access policy: ${policyId}`,
-            "AccessPolicyRepository",
-            "findById",
-            { originalError: error }
-          )
-        }
-        return new AccessPolicyNotFoundError(
-          `Failed to load access policy: ${policyId}`,
-          "id",
-          policyId,
-          { originalError: error }
-        )
-      }),
+      Effect.catchAll(mapAccessPolicyPersistenceError(undefined, "findById")),
       Effect.flatMap(
         Option.match({
           onNone: () => Effect.fail(new AccessPolicyNotFoundError(
@@ -182,7 +170,7 @@ export class AccessPolicyWorkflow {
           Effect.map(() => deleted)
         )
       ),
-      Effect.mapError(mapAccessPolicyDeletionError)
+      Effect.catchAll(mapAccessPolicyDeletionError)
     )
   }
 
@@ -217,15 +205,15 @@ export class AccessPolicyWorkflow {
           )
         )
       ),
-      Effect.mapError(mapAccessPolicyDomainError("update")),
+      Effect.catchAll(mapAccessPolicyDomainError("update")),
       Effect.flatMap(({ updatedPolicy, dto }) =>
         // 6. Persist with repository
         this.accessPolicyRepository.save(updatedPolicy).pipe(
-          Effect.mapError(mapAccessPolicyPersistenceError({
+          Effect.catchAll(mapAccessPolicyPersistenceError({
             resourceId: updatedPolicy.resourceId,
             subjectId: Option.getOrNull(updatedPolicy.subjectId),
             role: Option.getOrNull(updatedPolicy.role)
-          })),
+          }, "save")),
           Effect.map((saved) => ({ savedPolicy: saved, dto }))
         )
       ),
@@ -339,15 +327,15 @@ export class AccessPolicyWorkflow {
           )
         )
       ),
-      Effect.mapError(mapAccessPolicyDomainError("create")),
+      Effect.catchAll(mapAccessPolicyDomainError("create")),
       Effect.flatMap(({ policy, dto }) =>
         // 9. Persist with repository
         this.accessPolicyRepository.save(policy).pipe(
-          Effect.mapError(mapAccessPolicyPersistenceError({
+          Effect.catchAll(mapAccessPolicyPersistenceError({
             resourceId: policy.resourceId,
             subjectId: Option.getOrNull(policy.subjectId),
             role: Option.getOrNull(policy.role)
-          })),
+          }, "save")),
           Effect.map((saved) => ({ savedPolicy: saved, dto }))
         )
       ),
@@ -396,14 +384,7 @@ export class AccessPolicyWorkflow {
             ensurePermission(this.accessPolicyRepository, actor, document, "read").pipe(
               Effect.flatMap(() =>
                 // 4. Fetch all policies for the document
-                this.getPoliciesForDocument(document.id).pipe(
-                  Effect.mapError((error) => new WorkflowDependencyError(
-                    `Failed to fetch policies for document: ${document.id}`,
-                    "AccessPolicyRepository",
-                    "findByResourceId",
-                    { originalError: error }
-                  ))
-                )
+                this.getPoliciesForDocument(document.id)
               )
             )
           )
@@ -442,14 +423,7 @@ export class AccessPolicyWorkflow {
             ensurePermission(this.accessPolicyRepository, actor, document, "read").pipe(
               Effect.flatMap(() =>
                 // 4. Get policies filtered for this actor
-                this.getPoliciesForActor(document.id, actor).pipe(
-                  Effect.mapError((error) => new WorkflowDependencyError(
-                    `Failed to fetch actor policies for document: ${document.id}`,
-                    "AccessPolicyRepository",
-                    "findByResourceId",
-                    { originalError: error }
-                  ))
-                )
+                this.getPoliciesForActor(document.id, actor)
               )
             )
           )
@@ -475,32 +449,17 @@ export class AccessPolicyWorkflow {
 
   getPoliciesForDocument(
     documentId: DocumentId
-  ): Effect.Effect<readonly AccessPolicyEntity[], WorkflowDependencyError, Clock.Clock> {
+  ): Effect.Effect<readonly AccessPolicyEntity[], PersistenceDependencyError | InfraUnexpected | AccessPolicyCreationError, Clock.Clock> {
     return pipe(
       this.accessPolicyRepository.findByResourceId(documentId),
-      Effect.mapError((error) => {
-        if (error instanceof DatabaseError) {
-          return new WorkflowDependencyError(
-            `Database error fetching policies for document: ${documentId}`,
-            "AccessPolicyRepository",
-            "findByResourceId",
-            { originalError: error }
-          )
-        }
-        return new WorkflowDependencyError(
-          `Failed to fetch policies for document: ${documentId}`,
-          "AccessPolicyRepository",
-          "findByResourceId",
-          { originalError: error }
-        )
-      })
+      Effect.catchAll(mapAccessPolicyPersistenceError(undefined, "findByResourceId"))
     )
   }
 
   getPoliciesForActor(
     documentId: DocumentId,
     actor: UserEntity
-  ): Effect.Effect<readonly AccessPolicyEntity[], WorkflowDependencyError, Clock.Clock> {
+  ): Effect.Effect<readonly AccessPolicyEntity[], PersistenceDependencyError | InfraUnexpected | AccessPolicyCreationError, Clock.Clock> {
     return pipe(
       this.getPoliciesForDocument(documentId),
       Effect.map((allPolicies) => filterPoliciesByActor(allPolicies, actor))

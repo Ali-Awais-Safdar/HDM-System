@@ -1,30 +1,151 @@
-import { DatabaseError } from "@domain/utils/base.errors"
+import { Effect, Match } from "effect"
+import {
+  InfraConflict,
+  InfraValidation,
+  InfraNotFound,
+  InfraUnexpected,
+  type InfrastructureErrorType
+} from "@infra/errors/infrastructure.errors"
 
-export const isDatabaseError = (error: unknown): error is Error => {
-  return error instanceof Error
-}
+// ===== HELPER PREDICATES =====
 
 export const getErrorMessage = (error: unknown): string => {
   return error instanceof Error ? error.message : String(error)
 }
 
+export const getErrorCode = (error: unknown): string | undefined => {
+  return (error as any)?.code
+}
+
+/**
+ * Check if error is a database connection error (fail-fast)
+ */
+export const isConnectionError = (error: unknown): boolean => {
+  const message = getErrorMessage(error).toLowerCase()
+  const code = getErrorCode(error)
+  
+  return (
+    message.includes('connection') ||
+    message.includes('connect econnrefused') ||
+    message.includes('enotfound') ||
+    message.includes('etimedout') ||
+    code === 'ECONNREFUSED' ||
+    code === 'ENOTFOUND' ||
+    code === 'ETIMEDOUT'
+  )
+}
+
+/**
+ * Check if error is a database timeout error (fail-fast)
+ */
+export const isTimeoutError = (error: unknown): boolean => {
+  const message = getErrorMessage(error).toLowerCase()
+  const code = getErrorCode(error)
+  
+  return (
+    message.includes('timeout') ||
+    message.includes('timed out') ||
+    code === 'ETIMEDOUT' ||
+    code === '57014' // PostgreSQL query_canceled
+  )
+}
+
+/**
+ * Check if error is a driver bug or unexpected database issue (fail-fast)
+ */
+export const isDriverBug = (error: unknown): boolean => {
+  const message = getErrorMessage(error).toLowerCase()
+  
+  return (
+    message.includes('driver') ||
+    message.includes('protocol') ||
+    message.includes('unexpected') ||
+    message.includes('internal error')
+  )
+}
+
+/**
+ * Check if error is a serialization/deserialization error (fail-fast)
+ */
+export const isSerializationError = (error: unknown): boolean => {
+  const message = getErrorMessage(error).toLowerCase()
+  
+  return (
+    message.includes('serialization') ||
+    message.includes('deserialization') ||
+    message.includes('parse error') ||
+    message.includes('invalid json')
+  )
+}
+
+/**
+ * Check if error is a unique constraint violation (expected)
+ */
 export const isUniqueConstraintError = (error: unknown): boolean => {
-  const message = getErrorMessage(error)
-  return message.toLowerCase().includes('unique') || 
-         message.toLowerCase().includes('duplicate') ||
-         message.toLowerCase().includes('constraint')
+  const message = getErrorMessage(error).toLowerCase()
+  const code = getErrorCode(error)
+  
+  return (
+    message.includes('unique') ||
+    message.includes('duplicate') ||
+    (message.includes('constraint') && message.includes('violat')) ||
+    code === '23505' // PostgreSQL unique_violation
+  )
 }
 
+/**
+ * Check if error is a foreign key violation (expected)
+ */
 export const isForeignKeyError = (error: unknown): boolean => {
-  const message = getErrorMessage(error)
-  return message.toLowerCase().includes('foreign key') ||
-         message.toLowerCase().includes('violates foreign key')
+  const message = getErrorMessage(error).toLowerCase()
+  const code = getErrorCode(error)
+  
+  return (
+    message.includes('foreign key') ||
+    message.includes('violates foreign key') ||
+    code === '23503' // PostgreSQL foreign_key_violation
+  )
 }
 
+/**
+ * Check if error is a not-null violation (expected)
+ */
 export const isNotNullError = (error: unknown): boolean => {
-  const message = getErrorMessage(error)
-  return message.toLowerCase().includes('not null') ||
-         message.toLowerCase().includes('violates not-null')
+  const message = getErrorMessage(error).toLowerCase()
+  const code = getErrorCode(error)
+  
+  return (
+    message.includes('not null') ||
+    message.includes('violates not-null') ||
+    code === '23502' // PostgreSQL not_null_violation
+  )
+}
+
+/**
+ * Check if error is a check constraint violation (expected)
+ */
+export const isCheckConstraintError = (error: unknown): boolean => {
+  const message = getErrorMessage(error).toLowerCase()
+  const code = getErrorCode(error)
+  
+  return (
+    message.includes('check constraint') ||
+    message.includes('violates check') ||
+    code === '23514' // PostgreSQL check_violation
+  )
+}
+
+/**
+ * Check if error indicates entity not found (expected)
+ */
+export const isNotFoundError = (error: unknown): boolean => {
+  const message = getErrorMessage(error).toLowerCase()
+  
+  return (
+    message.includes('not found') ||
+    message.includes('does not exist') ||
+    message.includes('no such')
+  )
 }
 
 export const extractConstraintName = (error: unknown): string | undefined => {
@@ -39,95 +160,197 @@ export const extractTableName = (error: unknown): string | undefined => {
   return match?.[1]
 }
 
-export const translateDbError = <TConflictError, TNotFoundError, TValidationError>(
-  error: unknown,
-  context: {
-    operation: string
-    entityType: string
-    entityId?: string
-  },
-  creators: {
-    createConflictError: (message: string) => TConflictError
-    createNotFoundError: (field: string, value: string, details?: string) => TNotFoundError
-    createValidationError: (message: string, field: string, value: string) => TValidationError
-  }
-): TConflictError | TNotFoundError | TValidationError | DatabaseError => {
-  // Unique constraint violations → Conflict errors
-  if (isUniqueConstraintError(error)) {
-    const constraint = extractConstraintName(error)
-    return creators.createConflictError(
-      `${context.entityType} already exists${constraint ? ` (constraint: ${constraint})` : ''}`
-    )
-  }
-  
-  // Foreign key violations → Validation errors (referential integrity)
-  if (isForeignKeyError(error)) {
-    const constraint = extractConstraintName(error)
-    return creators.createValidationError(
-      `Foreign key constraint violation${constraint ? ` (${constraint})` : ''}`,
-      "foreignKey",
-      constraint || "unknown"
-    )
-  }
-  
-  // Not-null violations → Validation errors
-  if (isNotNullError(error)) {
-    return creators.createValidationError(
-      "Required field missing",
-      "notNull",
-      "null"
-    )
-  }
-  
-  // Unexpected database errors → DatabaseError with diagnostics
-  const constraint = extractConstraintName(error)
-  const table = extractTableName(error)
-  const code = (error as any)?.code
-  
-  return new DatabaseError(
-    `Database error during ${context.operation} on ${context.entityType}`,
-    {
-      ...(code !== undefined && { code }),
-      ...(constraint !== undefined && { constraint }),
-      ...(table !== undefined && { table }),
-      originalError: error
-    }
-  )
+export const extractFieldName = (error: unknown): string | undefined => {
+  const errorMsg = getErrorMessage(error)
+  const match = errorMsg.match(/column "([^"]+)"/)
+  return match?.[1]
 }
 
-export const translateQueryError = <TNotFoundError>(
+// ===== INFRASTRUCTURE ERROR TRANSLATION =====
+
+/**
+ * Translate database errors to infrastructure errors using Effect pattern matching
+ * 
+ * This function implements fail-fast for unexpected errors:
+ * - Connection errors → InfraUnexpected (fail fast)
+ * - Timeout errors → InfraUnexpected (fail fast)
+ * - Driver bugs → InfraUnexpected (fail fast)
+ * - Unique constraint → InfraConflict (expected)
+ * - Foreign key violation → InfraValidation (expected)
+ * - Not-null violation → InfraValidation (expected)
+ * - Not found → InfraNotFound (expected)
+ * - Unknown errors → InfraUnexpected (fail fast)
+ * 
+ * @param error - The unknown error from database operation
+ * @param context - Context about the operation (operation, entityType)
+ * @returns Effect that fails with appropriate InfrastructureErrorType
+ */
+export const translateDbError = (
   error: unknown,
   context: {
-    operation: string
-    entityType: string
-    field: string
-    value: string
-  },
-  createNotFoundError: (message: string, field?: string, value?: unknown, details?: Record<string, unknown>) => TNotFoundError
-): TNotFoundError | DatabaseError => {
-  // Suppress unused parameter warnings - field and value provide context for error messages  
-  void context.field
-  void context.value
+    readonly operation: string
+    readonly entityType: string
+    readonly entityId?: string
+  }
+): Effect.Effect<never, InfrastructureErrorType> => {
+  const errorMessage = getErrorMessage(error)
+  const errorCode = getErrorCode(error)
+  const constraint = extractConstraintName(error)
+  const table = extractTableName(error)
+  const field = extractFieldName(error)
   
-
-  // Use translateDbError to properly categorize the error
-  return translateDbError(
-    error,
-    { operation: context.operation, entityType: context.entityType },
-    {
-      // Constraint violations in queries are infrastructure issues
-      createConflictError: (message) => new DatabaseError(message),
-      // Let caller decide if empty result is NotFoundError
-      createNotFoundError: (field, value, details) => createNotFoundError(
-        `Database error during ${context.operation} on ${context.entityType}: ${field}=${value}`,
-        field,
-        value,
-        details ? { details } : undefined
-      ),
-      // Validation errors in queries are infrastructure issues
-      createValidationError: (message, field) =>
-        new DatabaseError(message, { constraint: field })
+  return Match.value(error).pipe(
+    // FAIL FAST: Connection errors (systemic failure)
+    Match.when(
+      isConnectionError,
+      () => Effect.fail(
+        new InfraUnexpected(
+          `Database connection failed during ${context.operation}`,
+          "CONNECTION",
+          error,
+          {
+            operation: context.operation,
+            entityType: context.entityType,
+            errorCode,
+            errorMessage
+          }
+        )
+      )
+    ),
+    
+    // FAIL FAST: Timeout errors (systemic failure)
+    Match.when(
+      isTimeoutError,
+      () => Effect.fail(
+        new InfraUnexpected(
+          `Database timeout during ${context.operation}`,
+          "TIMEOUT",
+          error,
+          {
+            operation: context.operation,
+            entityType: context.entityType,
+            errorCode,
+            errorMessage
+          }
+        )
+      )
+    ),
+    
+    // FAIL FAST: Driver bugs (systemic failure)
+    Match.when(
+      isDriverBug,
+      () => Effect.fail(
+        new InfraUnexpected(
+          `Database driver error during ${context.operation}`,
+          "UNKNOWN",
+          error,
+          {
+            operation: context.operation,
+            entityType: context.entityType,
+            errorCode,
+            errorMessage
     }
+  )
+      )
+    ),
+    
+    // EXPECTED: Unique constraint violation → Conflict
+    Match.when(
+      isUniqueConstraintError,
+      () => Effect.fail(
+        new InfraConflict(
+          `${context.entityType} already exists${constraint ? ` (constraint: ${constraint})` : ''}`,
+          constraint,
+          context.entityType,
+          {
+            operation: context.operation,
+            table,
+            field,
+            errorCode,
+            originalError: errorMessage
+          }
+        )
+      )
+    ),
+    
+    // EXPECTED: Foreign key violation → Validation
+    Match.when(
+      isForeignKeyError,
+      () => Effect.fail(
+        new InfraValidation(
+          `Foreign key constraint violation${constraint ? ` (${constraint})` : ''}`,
+          field || "foreignKey",
+          undefined,
+          constraint,
+          {
+            operation: context.operation,
+            entityType: context.entityType,
+            table,
+            errorCode,
+            originalError: errorMessage
+          }
+        )
+      )
+    ),
+    
+    // EXPECTED: Not-null violation → Validation
+    Match.when(
+      isNotNullError,
+      () => Effect.fail(
+        new InfraValidation(
+          `Required field missing${field ? ` (${field})` : ''}`,
+          field || "notNull",
+          null,
+          "NOT_NULL",
+          {
+            operation: context.operation,
+            entityType: context.entityType,
+            table,
+            errorCode,
+            originalError: errorMessage
+          }
+        )
+      )
+    ),
+    
+    // EXPECTED: Not found → InfraNotFound
+    Match.when(
+      isNotFoundError,
+      () => Effect.fail(
+        new InfraNotFound(
+          `${context.entityType} not found`,
+          context.entityType,
+          field,
+          context.entityId,
+          {
+            operation: context.operation,
+            errorCode,
+            originalError: errorMessage
+          }
+        )
+      )
+    ),
+    
+    // FAIL FAST: Unknown errors (unexpected)
+    Match.orElse(() =>
+      Effect.fail(
+        new InfraUnexpected(
+          `Unexpected database error during ${context.operation} on ${context.entityType}`,
+          "UNKNOWN",
+    error,
+          {
+            operation: context.operation,
+            entityType: context.entityType,
+            entityId: context.entityId,
+            errorCode,
+            constraint,
+            table,
+        field,
+            originalError: errorMessage
+    }
+        )
+      )
+    )
   )
 }
 

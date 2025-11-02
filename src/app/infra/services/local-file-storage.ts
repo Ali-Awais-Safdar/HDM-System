@@ -10,6 +10,8 @@ import { TOKENS } from "@infra/di/container"
 import { 
   FileStoragePort, 
   FileStorageError, 
+  FileStorageUnexpected,
+  type FileStorageErrorType,
   type UploadFileRequest,
   type UploadFileResponse,
   type DownloadFileResponse,
@@ -29,6 +31,45 @@ type StoredMetadata = {
 }
 
 /**
+ * Helper to determine if a filesystem error should fail fast
+ */
+function isFilesystemUnavailableError(error: unknown): boolean {
+  const code = (error as any)?.code
+  return (
+    code === 'EACCES' || // Permission denied
+    code === 'EPERM' ||  // Operation not permitted
+    code === 'ENOSPC' || // No space left on device
+    code === 'EROFS' ||  // Read-only file system
+    code === 'EIO'       // Input/output error
+  )
+}
+
+/**
+ * Helper to map filesystem errors to appropriate FileStorageErrorType
+ */
+function mapFilesystemError(
+  error: unknown,
+  message: string,
+  defaultCode: "STORAGE_ERROR" | "UPLOAD_FAILED" = "STORAGE_ERROR"
+): FileStorageErrorType {
+  if (isFilesystemUnavailableError(error)) {
+    const code = (error as any)?.code
+    const errorType = 
+      code === 'EACCES' || code === 'EPERM' ? "PERMISSION_DENIED" :
+      code === 'ENOSPC' ? "DISK_FULL" :
+      "FILESYSTEM_UNAVAILABLE"
+    
+    return new FileStorageUnexpected(
+      `${message}: ${error instanceof Error ? error.message : String(error)}`,
+      errorType,
+      error
+    )
+  }
+  
+  return new FileStorageError(message, defaultCode, error)
+}
+
+/**
  * LocalFileStorage implements FileStoragePort using the local filesystem.
  * 
  * This implementation:
@@ -37,6 +78,7 @@ type StoredMetadata = {
  * - Streams files directly to storage with checksum calculation during write
  * - Validates file size and MIME type during upload
  * - Uses Effect for error handling with proper error mapping
+ * - Implements fail-fast for systemic filesystem failures (EACCES, ENOSPC, etc.)
  */
 @injectable()
 export class LocalFileStorage extends FileStoragePort {
@@ -57,7 +99,7 @@ export class LocalFileStorage extends FileStoragePort {
 
   uploadFile(
     request: UploadFileRequest
-  ): Effect.Effect<UploadFileResponse, FileStorageError> {
+  ): Effect.Effect<UploadFileResponse, FileStorageErrorType> {
     this.logger.debug("Uploading file directly", {
       documentId: request.metadata.documentId,
       userId: request.metadata.userId,
@@ -81,10 +123,10 @@ export class LocalFileStorage extends FileStoragePort {
               await fs.mkdir(fileDir, { recursive: true })
               return { filePath, fileKey }
             },
-            catch: (error) => new FileStorageError(
-              `Failed to create file directory: ${error instanceof Error ? error.message : String(error)}`,
-              "STORAGE_ERROR",
-              error
+            catch: (error) => mapFilesystemError(
+              error,
+              "Failed to create file directory",
+              "STORAGE_ERROR"
             )
           })
         )
@@ -155,10 +197,10 @@ export class LocalFileStorage extends FileStoragePort {
                 reader.releaseLock()
               }
             },
-            catch: (error) => new FileStorageError(
-              `Failed to write file stream: ${error instanceof Error ? error.message : String(error)}`,
-              "UPLOAD_FAILED",
-              error
+            catch: (error) => mapFilesystemError(
+              error,
+              "Failed to write file stream",
+              "UPLOAD_FAILED"
             )
           })
         )
@@ -236,7 +278,7 @@ export class LocalFileStorage extends FileStoragePort {
 
   downloadFile(
     fileKey: FileKey
-  ): Effect.Effect<DownloadFileResponse, FileStorageError> {
+  ): Effect.Effect<DownloadFileResponse, FileStorageErrorType> {
     this.logger.debug("Downloading file", { fileKey })
 
     return pipe(
@@ -318,7 +360,7 @@ export class LocalFileStorage extends FileStoragePort {
 
   // ===== PRIVATE HELPERS =====
 
-  private generateFileKey(contentRef: string): Effect.Effect<FileKey, FileStorageError> {
+  private generateFileKey(contentRef: string): Effect.Effect<FileKey, FileStorageErrorType> {
     return pipe(
       Effect.sync(() => {
         // Generate deterministic hash from contentRef
@@ -330,7 +372,7 @@ export class LocalFileStorage extends FileStoragePort {
     )
   }
 
-  private getFileStats(filePath: string): Effect.Effect<{ size: number; mimeType: string }, FileStorageError> {
+  private getFileStats(filePath: string): Effect.Effect<{ size: number; mimeType: string }, FileStorageErrorType> {
     return pipe(
       Effect.tryPromise({
         try: async () => {
@@ -338,10 +380,10 @@ export class LocalFileStorage extends FileStoragePort {
           const mimeType = this.detectMimeType(filePath)
           return { size: stats.size, mimeType }
         },
-        catch: (error) => new FileStorageError(
-          `Failed to get file stats: ${error instanceof Error ? error.message : String(error)}`,
-          "STORAGE_ERROR",
-          error
+        catch: (error) => mapFilesystemError(
+          error,
+          "Failed to get file stats",
+          "STORAGE_ERROR"
         )
       })
     )
@@ -390,7 +432,7 @@ export class LocalFileStorage extends FileStoragePort {
   private writeMetadata(
     filePath: string,
     metadata: StoredMetadata
-  ): Effect.Effect<void, FileStorageError> {
+  ): Effect.Effect<void, FileStorageErrorType> {
     return Effect.tryPromise({
       try: async () => {
         await fs.writeFile(
@@ -399,17 +441,17 @@ export class LocalFileStorage extends FileStoragePort {
           "utf8"
         )
       },
-      catch: (error) => new FileStorageError(
-        `Failed to persist metadata for ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
-        "STORAGE_ERROR",
-        error
+      catch: (error) => mapFilesystemError(
+        error,
+        `Failed to persist metadata for ${filePath}`,
+        "STORAGE_ERROR"
       )
     })
   }
 
   private readMetadata(
     filePath: string
-  ): Effect.Effect<StoredMetadata, FileStorageError> {
+  ): Effect.Effect<StoredMetadata, FileStorageErrorType> {
     return Effect.tryPromise({
       try: async () => {
         const raw = await fs.readFile(this.metadataPath(filePath), "utf8")
@@ -422,15 +464,15 @@ export class LocalFileStorage extends FileStoragePort {
         
         return parsed
       },
-      catch: (error) => new FileStorageError(
-        `Failed to read metadata for ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
-        "STORAGE_ERROR",
-        error
+      catch: (error) => mapFilesystemError(
+        error,
+        `Failed to read metadata for ${filePath}`,
+        "STORAGE_ERROR"
       )
     })
   }
 
-  private cleanupFilesOnError(filePath: string): Effect.Effect<void, FileStorageError> {
+  private cleanupFilesOnError(filePath: string): Effect.Effect<void, FileStorageErrorType> {
     return Effect.tryPromise({
       try: async () => {
         try {
@@ -445,7 +487,7 @@ export class LocalFileStorage extends FileStoragePort {
           // Ignore cleanup errors for metadata file
         }
       },
-      catch: () => new FileStorageError("Cleanup failed", "STORAGE_ERROR")
+      catch: (error) => mapFilesystemError(error, "Cleanup failed", "STORAGE_ERROR")
     })
   }
 

@@ -5,6 +5,9 @@
  */
 
 export {
+  // Base application errors
+  ApplicationError,
+  
   // Base workflow errors
   WorkflowError,
   WorkflowDependencyError,
@@ -26,8 +29,13 @@ export {
   DownloadTokenGenerationError,
   DownloadTokenValidationError,
   
+  // Infrastructure dependency errors
+  PersistenceDependencyError,
+  ExternalPortError,
+  InteractionValidationError,
+  
   // Error type unions
-  type ApplicationError,
+  type ApplicationErrorType,
   type UploadWorkflowError,
   type AccessControlWorkflowError,
   type DownloadTokenWorkflowErrorType

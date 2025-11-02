@@ -10,7 +10,13 @@ import { UserEntity, SerializedUser } from "@domain/user/user.entity"
 import { UserRepository } from "@domain/user/user.repository"
 
 // Application errors
-import { PermissionCheckError, WorkflowError, WorkflowDependencyError } from "@application/errors/application.errors"
+import { 
+  PermissionCheckError, 
+  WorkflowDependencyError,
+  PersistenceDependencyError,
+  InteractionValidationError
+} from "@application/errors/application.errors"
+import type { InfraUnexpected } from "@infra/errors/infrastructure.errors"
 
 // Application DTOs
 import {
@@ -83,15 +89,15 @@ export class UserWorkflow {
 
   signUp(
     input: SignUpInputEncoded
-  ): Effect.Effect<SignUpResponseEncoded, WorkflowError | ParseResult.ParseError, Clock.Clock> {
+  ): Effect.Effect<SignUpResponseEncoded, WorkflowDependencyError | PersistenceDependencyError | InteractionValidationError | InfraUnexpected | ParseResult.ParseError, Clock.Clock> {
     return pipe(
       // 1. Decode DTO using schema validation
       S.decodeUnknown(SignUpInputSchema)(input),
       Effect.flatMap((dto) =>
-        // 2. Check email uniqueness
         pipe(
+          // 2. Check email uniqueness
           this.userRepository.findByEmail(dto.email),
-          Effect.mapError(mapUserPersistenceError("findByEmail")),
+          Effect.catchAll(mapUserPersistenceError("findByEmail")),
           Effect.flatMap((existingUser) =>
             Option.match(existingUser, {
               onSome: () => Effect.fail(new WorkflowDependencyError(
@@ -111,9 +117,6 @@ export class UserWorkflow {
             ])
           ),
           Effect.flatMap(([validatedId, now]) =>
-            Effect.succeed({ validatedId, now, dto })
-          ),
-          Effect.flatMap(({ validatedId, now, dto }) =>
             // 5. Hash password
             this.passwordHasher.hash(dto.password).pipe(
               Effect.mapError((error) => new WorkflowDependencyError(
@@ -122,77 +125,77 @@ export class UserWorkflow {
                 "hash",
                 { originalError: error }
               )),
-              Effect.map((hashedPassword) => ({ validatedId, now, dto, hashedPassword }))
-            )
-          ),
-          Effect.flatMap(({ validatedId, now, dto, hashedPassword }) =>
-            // 6. Validate hashed password
-            S.decodeUnknown(HashedPassword)(hashedPassword).pipe(
-              Effect.mapError((error) => new WorkflowDependencyError(
-                `Failed to validate hashed password: ${error.message}`,
-                "HashedPassword",
-                "validation",
-                { originalError: error }
-              )),
-              Effect.map((validatedHash) => ({ validatedId, now, dto, validatedHash }))
-            )
-          ),
-          Effect.flatMap(({ validatedId, now, dto, validatedHash }) => {
-            // 7. Build user data with validated ID and timestamp
-            const defaultRoles = ["USER"] as const satisfies readonly Role[]
-            const userData: Partial<SerializedUser> = {
-              id: validatedId,
-              email: dto.email,
-              passwordHash: validatedHash,
-              roles: dto.roles || defaultRoles,
-              createdAt: now.toISOString(),
-              updatedAt: undefined
-            }
+              Effect.flatMap((hashedPassword) =>
+                // 6. Validate hashed password
+                S.decodeUnknown(HashedPassword)(hashedPassword).pipe(
+                  Effect.mapError((error) => new WorkflowDependencyError(
+                    `Failed to validate hashed password: ${error.message}`,
+                    "HashedPassword",
+                    "validation",
+                    { originalError: error }
+                  )),
+                  Effect.flatMap((validatedHash) => {
+                    // 7. Build user data with validated ID and timestamp
+                    const defaultRoles = ["USER"] as const satisfies readonly Role[]
+                    const userData: Partial<SerializedUser> = {
+                      id: validatedId,
+                      email: dto.email,
+                      passwordHash: validatedHash,
+                      roles: dto.roles || defaultRoles,
+                      createdAt: now.toISOString(),
+                      updatedAt: undefined
+                    }
 
-            // 8. Create UserEntity (requires Clock internally but we provide timestamp)
-            return UserEntity.create(userData as SerializedUser)
-          })
-        )
-      ),
-      Effect.mapError(mapUserDomainError("create")),
-      Effect.flatMap((user) =>
-        // 9. Persist user
-        this.userRepository.save(user).pipe(
-          Effect.mapError(mapUserPersistenceError("save"))
-        )
-      ),
-      Effect.flatMap((savedUser) =>
-        // 10. Record audit event
-        recordAudit(this.audit, {
-          actorId: savedUser.id,
-          workspaceId: Option.match(savedUser.workspaceId, {
-            onSome: (wid) => wid as string,
-            onNone: () => "system"
-          }),
-          resourceType: "user",
-          resourceId: savedUser.id,
-          action: "signup",
-          outcome: "success" as const,
-          metadata: { email: savedUser.email }
-        }).pipe(
-          Effect.map(() => savedUser)
-        )
-      ),
-      Effect.flatMap((savedUser) =>
-        // 11. Serialize user summary and return
-        serializeUserSummary(savedUser).pipe(
-          Effect.map((userSummary) => ({
-            user: userSummary,
-            session: undefined // No automatic login on sign-up
-          }))
+                    // 8. Create UserEntity and catch domain errors
+                    return pipe(
+                      UserEntity.create(userData as SerializedUser),
+                      Effect.catchAll(mapUserDomainError("create"))
+                    )
+                  })
+                )
+              )
+            )
+          ),
+          Effect.flatMap((user) =>
+            // 9. Persist user
+            this.userRepository.save(user).pipe(
+              Effect.catchAll(mapUserPersistenceError("save"))
+            )
+          ),
+          Effect.flatMap((savedUser) =>
+            // 10. Record audit event
+            recordAudit(this.audit, {
+              actorId: savedUser.id,
+              workspaceId: Option.match(savedUser.workspaceId, {
+                onSome: (wid) => wid as string,
+                onNone: () => "system"
+              }),
+              resourceType: "user",
+              resourceId: savedUser.id,
+              action: "signup",
+              outcome: "success" as const,
+              metadata: { email: savedUser.email }
+            }).pipe(
+              Effect.map(() => savedUser)
+            )
+          ),
+          Effect.flatMap((savedUser) =>
+            // 11. Serialize user summary and return
+            serializeUserSummary(savedUser).pipe(
+              Effect.map((userSummary) => ({
+                user: userSummary,
+                session: undefined // No automatic login on sign-up
+              }))
+            )
+          )
         )
       )
-    ) as Effect.Effect<SignUpResponseEncoded, WorkflowError | ParseResult.ParseError, Clock.Clock>
+    ) as Effect.Effect<SignUpResponseEncoded, WorkflowDependencyError | PersistenceDependencyError | InteractionValidationError | InfraUnexpected | ParseResult.ParseError, Clock.Clock>
   }
 
   login(
     input: LoginInputEncoded
-  ): Effect.Effect<LoginResponseEncoded, WorkflowError | ParseResult.ParseError, Clock.Clock> {
+  ): Effect.Effect<LoginResponseEncoded, PermissionCheckError | WorkflowDependencyError | PersistenceDependencyError | InteractionValidationError | InfraUnexpected | ParseResult.ParseError, Clock.Clock> {
     return pipe(
       // 1. Decode DTO using schema validation
       S.decodeUnknown(LoginInputSchema)(input),
@@ -200,7 +203,7 @@ export class UserWorkflow {
         pipe(
           // 2. Load user by email
           this.userRepository.findByEmail(dto.email),
-          Effect.mapError(mapUserPersistenceError("findByEmail")),
+          Effect.catchAll(mapUserPersistenceError("findByEmail")),
           Effect.flatMap((userOption) =>
             Option.match(userOption, {
               onNone: () => Effect.fail(new PermissionCheckError(
@@ -314,7 +317,7 @@ export class UserWorkflow {
 
   changePassword(
     input: ChangePasswordCommandEncoded
-  ): Effect.Effect<ChangePasswordResponseEncoded, WorkflowError | ParseResult.ParseError, Clock.Clock> {
+  ): Effect.Effect<ChangePasswordResponseEncoded, PermissionCheckError | WorkflowDependencyError | PersistenceDependencyError | InteractionValidationError | InfraUnexpected | ParseResult.ParseError, Clock.Clock> {
     return pipe(
       // 1. Decode DTO using schema validation
       S.decodeUnknown(ChangePasswordCommandSchema)(input),
@@ -385,11 +388,11 @@ export class UserWorkflow {
           )
         )
       ),
-      Effect.mapError(mapUserDomainError("updatePasswordHash")),
+      Effect.catchAll(mapUserDomainError("updatePasswordHash")),
       Effect.flatMap(({ updatedUser, actor }) =>
         // 8. Persist updated user
         this.userRepository.save(updatedUser).pipe(
-          Effect.mapError(mapUserPersistenceError("save")),
+          Effect.catchAll(mapUserPersistenceError("save")),
           Effect.map(() => ({ updatedUser, actor }))
         )
       ),
@@ -415,7 +418,7 @@ export class UserWorkflow {
 
   getProfile(
     input: GetProfileQueryEncoded
-  ): Effect.Effect<UserSummaryEncoded, WorkflowError | ParseResult.ParseError, Clock.Clock> {
+  ): Effect.Effect<UserSummaryEncoded, PermissionCheckError | WorkflowDependencyError | ParseResult.ParseError, Clock.Clock> {
     return pipe(
       // 1. Decode DTO using schema validation
       S.decodeUnknown(GetProfileQuerySchema)(input),

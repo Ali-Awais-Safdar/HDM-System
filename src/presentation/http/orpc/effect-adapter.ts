@@ -1,8 +1,9 @@
-import { Effect, Clock, Option } from "effect"
+import { Effect, Clock, Option, ParseResult } from "effect"
 import { mapToORPCError, type ErrorMappingOptions } from "./error-map"
 import { resolveService } from "@infra/di/setup"
 import { TOKENS } from "@infra/di/container"
 import { AuditPort } from "@application/services/ports/audit.port"
+import type { ApplicationErrorType } from "@application/errors/application.errors"
 import type { RPCContext, AnonymousRPCContext } from "./context"
 
 /**
@@ -17,7 +18,7 @@ import type { RPCContext, AnonymousRPCContext } from "./context"
  * 6. Executes the Effect and returns a Promise
  */
 export const executeEffect = async <A>(
-  effect: Effect.Effect<A, unknown, Clock.Clock>,
+  effect: Effect.Effect<A, ApplicationErrorType | ParseResult.ParseError, Clock.Clock>,
   context: {
     procedureName: string
     rpcContext: RPCContext
@@ -128,7 +129,7 @@ export const executeEffect = async <A>(
  * 3. Still includes request correlation and structured logging
  */
 export const executeEffectAnonymous = async <A>(
-  effect: Effect.Effect<A, unknown, Clock.Clock>,
+  effect: Effect.Effect<A, ApplicationErrorType | ParseResult.ParseError, Clock.Clock>,
   context: {
     procedureName: string
     rpcContext: AnonymousRPCContext

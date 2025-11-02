@@ -1,3 +1,11 @@
+// Import module-specific domain errors
+import type { DocumentNotFoundError, DocumentValidationError } from "@domain/document/document.error"
+import type { DocumentVersionNotFoundError, DocumentVersionValidationError } from "@domain/documentVersion/document-version.error"
+import type { AccessPolicyNotFoundError, AccessPolicyValidationError, AccessPolicyConflictError } from "@domain/accessPolicy/access-policy.error"
+import type { DocumentAccessDeniedError, DocumentAccessInsufficientPermissionsError, DocumentAccessContextInvalidError } from "@domain/accessPolicy/document-access.error"
+import type { DownloadTokenNotFoundError, DownloadTokenValidationError, DownloadTokenAlreadyUsedError } from "@domain/downloadToken/download-token.error"
+import type { UserNotFoundError, UserAlreadyExistsError, UserValidationError } from "@domain/user/user.error"
+
 export abstract class DomainError extends Error {
   abstract readonly _tag: string
   abstract readonly code: string
@@ -38,32 +46,42 @@ export class BusinessRuleViolationError extends DomainError {
   }
 }
 
-export class DatabaseError extends DomainError {
-  readonly _tag = "DatabaseError" as const
-  readonly code = "DB_ERROR"
 
-  constructor(
-    message: string,
-    details?: {
-      code?: string
-      constraint?: string
-      table?: string
-      field?: string
-      value?: string
-      originalError?: unknown
-    }
-  ) {
-    const diagnosticInfo = {
-      ...details,
-      originalError: details?.originalError instanceof Error 
-        ? details.originalError.message 
-        : details?.originalError ? String(details.originalError) : undefined
-    }
-    super(message, diagnosticInfo)
-  }
-}
-
+/**
+ * Domain error type union.
+ * 
+ * Represents errors that originate from domain logic violations:
+ * - ValidationError: Input validation failures (invalid data format, constraints)
+ * - BusinessRuleViolationError: Business logic violations (state transitions, invariants)
+ * - Module-specific errors: Document, AccessPolicy, DownloadToken, User, DocumentVersion, DocumentAccess
+ * 
+ * **Layer Isolation:**
+ * - Domain errors represent business/validation failures
+ * - Infrastructure errors (InfrastructureErrorType) represent technical failures
+ * - Application errors (ApplicationErrorType) represent workflow orchestration failures
+ */
 export type DomainErrorType = 
   | ValidationError
   | BusinessRuleViolationError
-  | DatabaseError
+  // Document errors
+  | DocumentNotFoundError
+  | DocumentValidationError
+  // Document version errors
+  | DocumentVersionNotFoundError
+  | DocumentVersionValidationError
+  // Access policy errors
+  | AccessPolicyNotFoundError
+  | AccessPolicyValidationError
+  | AccessPolicyConflictError
+  // Document access errors
+  | DocumentAccessDeniedError
+  | DocumentAccessInsufficientPermissionsError
+  | DocumentAccessContextInvalidError
+  // Download token errors
+  | DownloadTokenNotFoundError
+  | DownloadTokenValidationError
+  | DownloadTokenAlreadyUsedError
+  // User errors
+  | UserNotFoundError
+  | UserAlreadyExistsError
+  | UserValidationError
